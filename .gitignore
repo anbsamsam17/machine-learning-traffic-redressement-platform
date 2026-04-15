@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Node
+node_modules/
+.next/
+.turbo/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Data & Models (never versioned)
+xData/
+xDataLearning/
+xMDL/
+xMDL_PL/
+xMDL_Results/
+xMDL_PL_Results/
+xMDL_final/
+xOut/
+results/
+*.h5
+*.mat
+*.geojson
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+
+# State runtime
+app/state/*.json
+app/state/*.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Logs
+*.log
+logs/
+
+# Temp
+tmp/
+*.tmp

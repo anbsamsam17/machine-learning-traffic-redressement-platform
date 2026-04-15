@@ -1,0 +1,233 @@
+"""Upload router — parse GeoJSON/CSV/SHP, upload validation data, upload model zip."""
+
+from __future__ import annotations
+
+import io
+import json
+import logging
+import tempfile
+import zipfile
+from pathlib import Path
+
+import pandas as pd
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel
+
+from ..config import get_settings
+from ..session import session_manager
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/upload", tags=["upload"])
+
+
+# ---------------------------------------------------------------------------
+# Response models
+# ---------------------------------------------------------------------------
+
+class UploadResponse(BaseModel):
+    session_id: str
+    filename: str
+    rows: int
+    columns: list[str]
+    preview: list[dict]
+
+
+class ValidationUploadResponse(BaseModel):
+    session_id: str
+    filename: str
+    rows: int
+    columns: list[str]
+
+
+class ModelUploadResponse(BaseModel):
+    session_id: str
+    model_files: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
+    """Parse raw bytes into a pandas DataFrame (GeoJSON, CSV, or SHP)."""
+    suffix = Path(filename).suffix.lower()
+
+    if suffix == ".csv":
+        for enc in ("utf-8", "latin-1", "cp1252"):
+            try:
+                return pd.read_csv(io.BytesIO(content), encoding=enc)
+            except UnicodeDecodeError:
+                continue
+        raise ValueError("Impossible de decoder le fichier CSV.")
+
+    if suffix in {".geojson", ".json"}:
+        raw = json.loads(content.decode("utf-8"))
+        if isinstance(raw, dict) and raw.get("type") == "FeatureCollection":
+            rows = []
+            for feature in raw.get("features", []):
+                props = dict(feature.get("properties", {}))
+                geom = feature.get("geometry")
+                if isinstance(geom, dict) and geom.get("type") == "Point":
+                    coords = geom.get("coordinates") or []
+                    props["__lon"] = coords[0] if len(coords) > 0 else None
+                    props["__lat"] = coords[1] if len(coords) > 1 else None
+                props["geometry"] = geom
+                props["__geometry_json"] = json.dumps(geom) if geom else None
+                rows.append(props)
+            return pd.DataFrame(rows)
+        if isinstance(raw, list):
+            return pd.DataFrame(raw)
+        raise ValueError("Structure JSON/GeoJSON non supportee.")
+
+    if suffix == ".shp":
+        raise HTTPException(
+            status_code=400,
+            detail="Shapefile upload requires a .zip containing .shp, .shx, .dbf. Use /api/upload/model endpoint.",
+        )
+
+    if suffix == ".zip":
+        # ZIP containing shapefile components
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                zf.extractall(tmpdir)
+            shp_files = list(Path(tmpdir).rglob("*.shp"))
+            if not shp_files:
+                raise ValueError("No .shp file found in the ZIP archive.")
+            try:
+                import geopandas as gpd
+                gdf = gpd.read_file(str(shp_files[0]))
+                df = pd.DataFrame(gdf.drop(columns="geometry", errors="ignore"))
+                if "geometry" in gdf.columns:
+                    df["geometry"] = gdf["geometry"].apply(
+                        lambda g: g.__geo_interface__ if g else None
+                    )
+                    df["__geometry_json"] = gdf["geometry"].apply(
+                        lambda g: json.dumps(g.__geo_interface__) if g else None
+                    )
+                return df
+            except Exception as exc:
+                raise ValueError(f"Impossible de lire le Shapefile: {exc}")
+
+    raise ValueError(f"Format de fichier non supporte: {suffix}")
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@router.post("", response_model=UploadResponse)
+async def upload_data(
+    file: UploadFile = File(...),
+    mode: str = Form("TV"),
+) -> UploadResponse:
+    """Upload a raw data file (GeoJSON, CSV, or zipped Shapefile), parse it in memory."""
+    settings = get_settings()
+
+    content = await file.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Fichier trop volumineux ({len(content) // (1024*1024)} MB). "
+                   f"Maximum autorise: {settings.MAX_UPLOAD_MB} MB.",
+        )
+
+    try:
+        df = _parse_file_to_df(content, file.filename or "data.csv")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    session = session_manager.create_session(mode=mode)
+    session_manager.store_data(session.session_id, "raw_df", df)
+    session_manager.store_data(session.session_id, "filename", file.filename)
+
+    preview = df.head(10).fillna("").to_dict(orient="records")
+    # Convert geometry dicts to string in preview for JSON serialization
+    for row in preview:
+        for k, v in row.items():
+            if isinstance(v, dict):
+                row[k] = json.dumps(v)
+
+    logger.info(
+        "Upload OK: session=%s file=%s rows=%d cols=%d",
+        session.session_id, file.filename, len(df), len(df.columns),
+    )
+
+    return UploadResponse(
+        session_id=session.session_id,
+        filename=file.filename or "unknown",
+        rows=len(df),
+        columns=list(df.columns),
+        preview=preview,
+    )
+
+
+@router.post("/validation", response_model=ValidationUploadResponse)
+async def upload_validation_data(
+    file: UploadFile = File(...),
+    session_id: str = Form(...),
+) -> ValidationUploadResponse:
+    """Upload a validation dataset for model evaluation."""
+    session = session_manager.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+
+    settings = get_settings()
+    content = await file.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail="Fichier trop volumineux.")
+
+    try:
+        df = _parse_file_to_df(content, file.filename or "validation.csv")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    session_manager.store_data(session_id, "validation_df", df)
+    session_manager.store_data(session_id, "validation_filename", file.filename)
+
+    logger.info("Validation data uploaded: session=%s rows=%d", session_id, len(df))
+
+    return ValidationUploadResponse(
+        session_id=session_id,
+        filename=file.filename or "unknown",
+        rows=len(df),
+        columns=list(df.columns),
+    )
+
+
+@router.post("/model", response_model=ModelUploadResponse)
+async def upload_model(
+    file: UploadFile = File(...),
+    session_id: str = Form(...),
+) -> ModelUploadResponse:
+    """Upload a model archive (.zip containing .h5, .json, .mat)."""
+    session = session_manager.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+
+    content = await file.read()
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Un fichier .zip est attendu.")
+
+    try:
+        model_files: dict[str, bytes] = {}
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            for name in zf.namelist():
+                if name.endswith((".h5", ".json", ".mat", ".weights.h5")):
+                    model_files[name] = zf.read(name)
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Archive ZIP invalide.")
+
+    if not model_files:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun fichier modele (.h5, .json, .mat) trouve dans l'archive.",
+        )
+
+    session_manager.store_data(session_id, "uploaded_models", model_files)
+
+    logger.info("Model uploaded: session=%s files=%s", session_id, list(model_files.keys()))
+
+    return ModelUploadResponse(
+        session_id=session_id,
+        model_files=list(model_files.keys()),
+    )
