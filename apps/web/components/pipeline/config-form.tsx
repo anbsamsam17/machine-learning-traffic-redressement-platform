@@ -338,7 +338,12 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [onOffNorm, setOnOffNorm] = useState<Record<string, boolean>>(
     () => Object.fromEntries(defaultCols.map((c) => [c, true]))
   );
-  const [outputCol] = useState(isTv ? "TxPenTVRef" : "TxPenPLRef");
+  const OUTPUT_OPTIONS = isTv
+    ? ["TxPenTVRef", "TxPen"]
+    : ["TxPenPLRef", "TxPenPL"];
+  const [outputCols, setOutputCols] = useState<string[]>(
+    isTv ? ["TxPenTVRef"] : ["TxPenPLRef"]
+  );
 
   // Available extras = all columns from the mapped table that are not already selected
   // If availableColumns is provided (from the learning table), use those; otherwise fallback
@@ -534,7 +539,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       mode: "grid",
       model_type: isTv ? "TV" : "PL",
       input_cols: finalInputCols,
-      output_cols: [outputCol],
+      output_cols: outputCols,
       on_off_norm: finalOnOff,
       use_year_feature: useYearFeature,
       year_column_name: useYearFeature ? yearColumnName : null,
@@ -564,7 +569,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   }, [
     inputCols,
     onOffNorm,
-    outputCol,
+    outputCols,
     useYearFeature,
     yearColumnName,
     yearNormalization,
@@ -591,6 +596,12 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   useEffect(() => {
     setMandatoryCols((prev) => prev.filter((c) => inputCols.includes(c)));
   }, [inputCols]);
+
+  // Auto-adjust minInputCount when mandatoryCols changes so it never goes below mandatoryCols.length
+  useEffect(() => {
+    const floor = mandatoryCols.length || 1;
+    setMinInputCount((prev) => Math.max(prev, floor));
+  }, [mandatoryCols]);
 
   return (
     <div className="space-y-4">
@@ -670,12 +681,34 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
           {/* OUTPUT_COLS */}
           <div>
-            <label className="text-xs font-medium text-slate-400 mb-1 block">
+            <label className="text-xs font-medium text-slate-400 mb-2 block">
               OUTPUT_COLS (colonne cible)
             </label>
-            <div className="px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/60 text-xs text-indigo-300 font-mono">
-              {outputCol}
+            <div className="flex flex-wrap gap-1.5">
+              {OUTPUT_OPTIONS.map((col) => {
+                const active = outputCols.includes(col);
+                return (
+                  <Chip
+                    key={col}
+                    label={col}
+                    active={active}
+                    onClick={() =>
+                      setOutputCols((prev) => {
+                        if (active) {
+                          // Prevent deselecting all — at least one must remain
+                          if (prev.length <= 1) return prev;
+                          return prev.filter((c) => c !== col);
+                        }
+                        return [...prev, col];
+                      })
+                    }
+                  />
+                );
+              })}
             </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              Selectionnez la ou les colonnes cibles. Au moins une requise.
+            </p>
           </div>
 
           {/* Normalisation ON/OFF */}
@@ -899,9 +932,9 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             label="Nombre minimum d'entrees (min_input_count)"
             value={minInputCount}
             onChange={setMinInputCount}
-            min={0}
+            min={mandatoryCols.length || 1}
             max={inputCols.length || 10}
-            help={`Defaut ${isTv ? "TV" : "PL"} : ${isTv ? 3 : 2}. Vous pouvez mettre 0.`}
+            help={`Minimum = ${mandatoryCols.length || 1} (nombre de colonnes obligatoires). Defaut ${isTv ? "TV" : "PL"} : ${isTv ? 3 : 2}.`}
           />
         </div>
       </Section>

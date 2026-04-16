@@ -136,31 +136,109 @@ _COL_RENAMES = {
 # Grid search: generate all combinations
 # ---------------------------------------------------------------------------
 
+def _feature_mask_name(feature_cols: list[str], all_input_cols: list[str]) -> str:
+    """Compact bitmask identifier, e.g. ``fmask_111010``.
+
+    Exact replica of ``feature_mask_name()`` from ``xScripts/CreateMDL_TV.py``.
+    """
+    feature_set = set(feature_cols)
+    bits = "".join("1" if c in feature_set else "0" for c in all_input_cols)
+    return f"fmask_{bits}"
+
+
+def _build_feature_sets(
+    all_input_cols: list[str],
+    mandatory_cols: list[str],
+    min_input_count: int,
+    enable_feature_subset_grid: bool,
+) -> list[list[str]]:
+    """Generate all valid feature subsets.
+
+    Exact replica of ``build_feature_sets()`` from ``xScripts/CreateMDL_TV.py``.
+    """
+    mandatory_cols = [c for c in mandatory_cols if c]
+    missing_mandatory = [c for c in mandatory_cols if c not in all_input_cols]
+    if missing_mandatory:
+        raise ValueError(
+            f"Mandatory columns are not part of input-cols: {missing_mandatory}"
+        )
+
+    if min_input_count < len(mandatory_cols):
+        raise ValueError(
+            f"min-input-count={min_input_count} cannot be less than "
+            f"number of mandatory columns={len(mandatory_cols)}"
+        )
+
+    if not enable_feature_subset_grid:
+        return [all_input_cols.copy()]
+
+    optional_cols = [c for c in all_input_cols if c not in mandatory_cols]
+    min_optional = max(0, min_input_count - len(mandatory_cols))
+
+    feature_sets: list[list[str]] = []
+    for k in range(min_optional, len(optional_cols) + 1):
+        for subset in itertools.combinations(optional_cols, k):
+            chosen = set(mandatory_cols).union(subset)
+            ordered = [c for c in all_input_cols if c in chosen]
+            feature_sets.append(ordered)
+
+    if not feature_sets:
+        raise ValueError("No valid feature-set generated with current constraints.")
+    return feature_sets
+
+
 def _build_combinations(cfg: dict) -> list[dict]:
-    """Build all hyperparameter combinations for grid search."""
-    combos = []
-    for activation in cfg.get("activations", ["elu"]):
-        for lr in cfg.get("learning_rates", [0.01]):
-            for min_ep in cfg.get("min_nb_epochs_list", [500]):
-                for loss_fn in cfg.get("losses", ["mse"]):
-                    for dropout in cfg.get("dropouts", [0.05]):
-                        for nf in cfg.get("neurons_factors_list", [[1.0, 1.0]]):
-                            for bs in cfg.get("batch_sizes", [256]):
-                                nf_label = "x".join(str(f) for f in nf)
-                                run_name = (
-                                    f"{activation}_lr{lr}_ep{min_ep}_{loss_fn}"
-                                    f"_drp{dropout}_nf{nf_label}_bs{bs}"
-                                )
-                                combos.append({
-                                    "run_name": run_name,
-                                    "activation": activation,
-                                    "learning_rate": lr,
-                                    "min_nb_epochs": min_ep,
-                                    "loss": loss_fn,
-                                    "dropout": dropout,
-                                    "neurons_factors": nf,
-                                    "batch_size": bs,
-                                })
+    """Build all hyperparameter combinations for grid search.
+
+    When ``feature_subset_grid`` is enabled, generates feature subsets from
+    mandatory/optional columns (exactly like ``xScripts/CreateMDL_TV.py``),
+    then takes the cartesian product with the 7 other hyper-parameter axes.
+    Each combination carries its own ``feature_cols`` and ``feature_mask``.
+    """
+    all_input_cols: list[str] = cfg.get("input_cols", [
+        "TMJAFCDTV", "TMJAFCDPL",
+        "car_average_distance_km", "car_average_speed_kmh",
+        "truck_min_average_distance_km", "truck_average_speed_kmh",
+    ])
+    mandatory_input_cols: list[str] = cfg.get("mandatory_input_cols", [])
+    min_input_count: int = int(cfg.get("min_input_count", 0))
+    feature_subset_grid: bool = bool(cfg.get("feature_subset_grid", False))
+
+    feature_sets = _build_feature_sets(
+        all_input_cols=all_input_cols,
+        mandatory_cols=mandatory_input_cols,
+        min_input_count=min_input_count,
+        enable_feature_subset_grid=feature_subset_grid,
+    )
+
+    combos: list[dict] = []
+    for feature_cols in feature_sets:
+        fmask = _feature_mask_name(feature_cols, all_input_cols)
+        for activation in cfg.get("activations", ["elu"]):
+            for lr in cfg.get("learning_rates", [0.01]):
+                for min_ep in cfg.get("min_nb_epochs_list", [500]):
+                    for loss_fn in cfg.get("losses", ["mse"]):
+                        for dropout in cfg.get("dropouts", [0.05]):
+                            for nf in cfg.get("neurons_factors_list", [[1.0, 1.0]]):
+                                for bs in cfg.get("batch_sizes", [256]):
+                                    nf_label = "x".join(str(f) for f in nf)
+                                    run_name = (
+                                        f"{activation}_lr{lr}_ep{min_ep}_{loss_fn}"
+                                        f"_drp{dropout}_nf{nf_label}"
+                                        f"_bs{bs}_{fmask}"
+                                    )
+                                    combos.append({
+                                        "run_name": run_name,
+                                        "feature_cols": feature_cols,
+                                        "feature_mask": fmask,
+                                        "activation": activation,
+                                        "learning_rate": lr,
+                                        "min_nb_epochs": min_ep,
+                                        "loss": loss_fn,
+                                        "dropout": dropout,
+                                        "neurons_factors": nf,
+                                        "batch_size": bs,
+                                    })
     return combos
 
 
@@ -168,8 +246,31 @@ def _build_combinations(cfg: dict) -> list[dict]:
 # Background training worker
 # ---------------------------------------------------------------------------
 
+def _normalize(
+    x: np.ndarray,
+    on_off_mask: np.ndarray,
+    mu: np.ndarray | None = None,
+    sigma: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Z-score normalisation — exact replica of ``normalize()`` in CreateMDL_TV.py."""
+    if mu is None or sigma is None:
+        mu = np.mean(x[:, on_off_mask], axis=0)
+        sigma = np.std(x[:, on_off_mask], axis=0)
+    sigma = np.where(sigma == 0, 1.0, sigma)
+
+    x_norm = np.zeros_like(x, dtype=float)
+    x_norm[:, on_off_mask] = (x[:, on_off_mask] - mu) / sigma
+    x_norm[:, ~on_off_mask] = x[:, ~on_off_mask]
+    return x_norm, mu, sigma
+
+
 def _training_worker(task: TrainingTask) -> None:
-    """Runs grid search training in a separate thread."""
+    """Runs grid search training in a separate thread.
+
+    Feature subsets are grouped so that the (expensive) normalisation
+    statistics ``mu_x / sigma_x`` are computed only once per feature set,
+    exactly like the outer loop in ``CreateMDL_TV.run_training()``.
+    """
     import os
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
@@ -181,34 +282,12 @@ def _training_worker(task: TrainingTask) -> None:
         from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
         from tensorflow.keras.optimizers import Adam
         from tensorflow.keras.losses import MeanSquaredError, Huber, MeanAbsoluteError
-        from tensorflow.keras.metrics import R2Score, MeanAbsolutePercentageError
 
         tf.config.threading.set_intra_op_parallelism_threads(4)
         tf.config.threading.set_inter_op_parallelism_threads(2)
 
         task.status = "running"
         cfg = task.config
-
-        # Log received config for debugging
-        combos_preview = _build_combinations(cfg)
-        logger.info(
-            "Training worker started: task=%s | input_cols=%s | output_dir=%s | "
-            "max_epochs=%s | activations=%s | learning_rates=%s | losses=%s | "
-            "min_nb_epochs_list=%s | dropouts=%s | batch_sizes=%s | "
-            "neurons_factors_list=%s | total_combinations=%d",
-            task.task_id,
-            cfg.get("input_cols"),
-            cfg.get("output_dir"),
-            cfg.get("max_epochs"),
-            cfg.get("activations"),
-            cfg.get("learning_rates"),
-            cfg.get("losses"),
-            cfg.get("min_nb_epochs_list"),
-            cfg.get("dropouts"),
-            cfg.get("batch_sizes"),
-            cfg.get("neurons_factors_list"),
-            len(combos_preview),
-        )
 
         # -- Get learning DataFrame -------------------------------------------
         session = session_manager.get_session(task.session_id)
@@ -223,16 +302,20 @@ def _training_worker(task: TrainingTask) -> None:
             if old_name in df.columns and new_name not in df.columns:
                 df[new_name] = df[old_name]
 
-        input_cols: list[str] = cfg["input_cols"]
-        output_col: str = cfg.get("output_cols", ["TxPenTVRef"])[0] if isinstance(cfg.get("output_cols"), list) else cfg.get("output_col", "TxPenTVRef")
+        all_input_cols: list[str] = cfg["input_cols"]
+        output_col: str = (
+            cfg.get("output_cols", ["TxPenTVRef"])[0]
+            if isinstance(cfg.get("output_cols"), list)
+            else cfg.get("output_col", "TxPenTVRef")
+        )
 
-        # Check columns
-        missing = [c for c in input_cols + [output_col] if c not in df.columns]
+        # Check all candidate columns exist
+        missing = [c for c in all_input_cols + [output_col] if c not in df.columns]
         if missing:
             raise RuntimeError(f"Colonnes manquantes dans le DF: {missing}")
 
-        # Build X, y
-        sub = df[input_cols + [output_col]].dropna()
+        # Drop rows with NaN in ANY candidate column (union of all feature sets)
+        sub = df[all_input_cols + [output_col]].dropna()
         if len(sub) < 5:
             raise RuntimeError(f"Trop peu de lignes valides ({len(sub)}).")
 
@@ -240,253 +323,346 @@ def _training_worker(task: TrainingTask) -> None:
         np.random.seed(seed)
         tf.random.set_seed(seed)
 
-        X = sub[input_cols].values.astype(np.float64)
-        y = sub[output_col].values.astype(np.float64).reshape(-1, 1)
+        # ON_OFF_NORM mask — mapped per column name so subsets can derive theirs
+        on_off_norm_list = cfg.get("on_off_norm", [True] * len(all_input_cols))
+        if len(on_off_norm_list) != len(all_input_cols):
+            on_off_norm_list = [True] * len(all_input_cols)
+        col_to_mask: dict[str, bool] = {
+            c: bool(v) for c, v in zip(all_input_cols, on_off_norm_list)
+        }
 
-        # ON_OFF_NORM mask
-        on_off_norm = cfg.get("on_off_norm", [True] * len(input_cols))
-        if len(on_off_norm) != len(input_cols):
-            on_off_norm = [True] * len(input_cols)
-        on_off_mask = np.array(on_off_norm, dtype=bool)
+        # Full y (output) array — shared across all feature sets
+        y_full = sub[output_col].values.astype(np.float64).reshape(-1, 1)
+        y_on_off = np.ones(y_full.shape[1], dtype=bool)
 
-        # Z-score normalize
-        x_mean = np.zeros(X.shape[1])
-        x_std = np.ones(X.shape[1])
-        if on_off_mask.any():
-            x_mean[on_off_mask] = X[:, on_off_mask].mean(axis=0)
-            x_std[on_off_mask] = X[:, on_off_mask].std(axis=0)
-            x_std[x_std == 0] = 1.0
-        y_mean = y.mean()
-        y_std = y.std()
-        if y_std == 0:
-            y_std = 1.0
-
-        X_norm = X.copy()
-        X_norm[:, on_off_mask] = (X[:, on_off_mask] - x_mean[on_off_mask]) / x_std[on_off_mask]
-        y_norm = (y - y_mean) / y_std
-
-        # Train/valid split
+        # Train/valid split on *indices* (shared across feature sets)
         test_size = cfg.get("test_size", 0.0)
+        indices = np.arange(len(sub))
         if test_size > 0:
-            from sklearn.model_selection import train_test_split
-            X_train, X_val, y_train, y_val = train_test_split(
-                X_norm, y_norm, test_size=test_size, random_state=seed
-            )
+            from sklearn.model_selection import train_test_split as _tts
+            idx_train, idx_valid = _tts(indices, test_size=test_size, random_state=seed)
         else:
-            X_train, y_train = X_norm, y_norm
-            X_val, y_val = X_norm, y_norm
+            idx_train = indices
+            idx_valid = None
 
-        # Generate all combinations
+        y_train = y_full[idx_train]
+        y_valid = y_full[idx_valid] if idx_valid is not None else None
+
+        # Normalise y (once — independent of feature set)
+        y_train_norm, mu_y, sigma_y = _normalize(y_train, y_on_off)
+        y_valid_norm = None
+        if y_valid is not None:
+            y_valid_norm, _, _ = _normalize(y_valid, y_on_off, mu_y, sigma_y)
+        y_all_norm, _, _ = _normalize(y_full, y_on_off, mu_y, sigma_y)
+
+        # Generate all combinations (now includes feature_cols & feature_mask)
         combos = _build_combinations(cfg)
         total_models = len(combos)
         max_epochs = cfg.get("max_epochs", 2050)
         use_batch_norm = cfg.get("use_batch_norm", False)
         output_dir = cfg.get("output_dir")
 
-        # Prepare output dir
+        # Skip already-trained models
         if output_dir:
             out_path = Path(output_dir)
             out_path.mkdir(parents=True, exist_ok=True)
+            pending_combos = [
+                c for c in combos
+                if not (out_path / c["run_name"] / "NNweights.weights.h5").exists()
+                and not (out_path / c["run_name"] / "NNweights.h5").exists()
+            ]
+        else:
+            pending_combos = combos
+
+        total_pending = len(pending_combos)
+
+        logger.info(
+            "Training worker started: task=%s | input_cols=%s | output_dir=%s | "
+            "max_epochs=%s | total_combinations=%d | pending=%d | "
+            "feature_subset_grid=%s | mandatory_input_cols=%s | min_input_count=%s",
+            task.task_id,
+            cfg.get("input_cols"),
+            cfg.get("output_dir"),
+            cfg.get("max_epochs"),
+            total_models,
+            total_pending,
+            cfg.get("feature_subset_grid"),
+            cfg.get("mandatory_input_cols"),
+            cfg.get("min_input_count"),
+        )
+
+        if output_dir:
             logger.info("Output directory created/verified: %s", out_path.resolve())
         else:
             logger.warning("No output_dir specified — models will NOT be saved to disk!")
 
         task.progress.append({
             "type": "info",
-            "message": f"Demarrage du grid search : {total_models} combinaisons",
-            "total_models": total_models,
+            "message": (
+                f"Demarrage du grid search : {total_pending} combinaisons "
+                f"({total_models - total_pending} deja entraines, ignores)"
+            ),
+            "total_models": total_pending,
         })
+
+        if total_pending == 0:
+            task.result = {
+                "total_models": 0,
+                "skipped": total_models,
+                "best_model": "",
+                "best_val_loss": None,
+                "output_dir": output_dir,
+                "results": [],
+            }
+            task.status = "completed"
+            return
+
+        # -- Group pending combos by feature_mask for normalisation reuse ------
+        from collections import OrderedDict
+
+        groups: OrderedDict[str, list[dict]] = OrderedDict()
+        for combo in pending_combos:
+            fmask = combo["feature_mask"]
+            groups.setdefault(fmask, []).append(combo)
 
         best_global_val_loss = float("inf")
         best_model_name = ""
-        results_list = []
+        results_list: list[dict] = []
+        model_counter = 0
 
-        for model_idx, combo in enumerate(combos):
+        for fmask, group_combos in groups.items():
             if task.cancelled:
                 task.status = "cancelled"
                 return
 
-            run_name = combo["run_name"]
+            # -- Per-feature-set normalisation (computed once per group) --------
+            feature_cols = group_combos[0]["feature_cols"]
+            on_off_subset = np.array(
+                [col_to_mask[c] for c in feature_cols], dtype=bool
+            )
 
-            task.progress.append({
-                "type": "model_start",
-                "model_index": model_idx,
-                "total_models": total_models,
-                "model_name": run_name,
-            })
+            x_subset = sub[feature_cols].values.astype(np.float64)
+            x_tr = x_subset[idx_train]
+            x_va = x_subset[idx_valid] if idx_valid is not None else None
 
-            # Build model
-            nf = combo["neurons_factors"]
-            activation = combo["activation"]
-            dropout = combo["dropout"]
-            initializer = "lecun_normal" if activation == "selu" else "he_normal"
+            x_train_norm, mu_x, sigma_x = _normalize(x_tr, on_off_subset)
+            x_valid_norm = None
+            if x_va is not None:
+                x_valid_norm, _, _ = _normalize(x_va, on_off_subset, mu_x, sigma_x)
+            x_all_norm, _, _ = _normalize(x_subset, on_off_subset, mu_x, sigma_x)
 
-            model = Sequential()
-            model.add(Dropout(dropout, input_shape=(len(input_cols),)))
-            for factor in nf:
-                n_units = max(2, int(round(len(input_cols) * factor)))
-                model.add(Dense(n_units, activation=activation, kernel_initializer=initializer))
-                if use_batch_norm:
-                    model.add(BatchNormalization())
-                model.add(Dropout(dropout))
-            model.add(Dense(1, activation="linear"))
-
-            # Loss
-            loss_name = combo["loss"]
-            if loss_name == "huber":
-                loss_fn = Huber(delta=1.0, name="huber")
-            elif loss_name == "mae":
-                loss_fn = MeanAbsoluteError(name="mae_loss")
+            # Use validation set for eval; fall back to all data if no split
+            if x_valid_norm is not None and y_valid_norm is not None:
+                X_eval, y_eval = x_valid_norm, y_valid_norm
             else:
-                loss_fn = MeanSquaredError(name="mse")
+                X_eval, y_eval = x_all_norm, y_all_norm
 
-            model.compile(
-                optimizer=Adam(learning_rate=combo["learning_rate"]),
-                loss=loss_fn,
-                metrics=["mae"],
-            )
+            # Use all data for both train and val when test_size == 0
+            X_val_fit = x_valid_norm if x_valid_norm is not None else x_all_norm
+            y_val_fit = y_valid_norm if y_valid_norm is not None else y_all_norm
 
-            # Callbacks
-            min_ep = combo["min_nb_epochs"]
-            patience = max(30, max_epochs // 10)
+            input_dim = len(feature_cols)
 
-            callbacks_list = [
-                tf.keras.callbacks.EarlyStopping(
-                    monitor="val_loss",
-                    patience=patience,
-                    restore_best_weights=True,
-                    start_from_epoch=min_ep,
-                ),
-            ]
+            for combo in group_combos:
+                if task.cancelled:
+                    task.status = "cancelled"
+                    return
 
-            # Progress callback
-            class GridProgressCallback(tf.keras.callbacks.Callback):
-                def on_epoch_end(cb_self, epoch, logs=None):
-                    if task.cancelled:
-                        cb_self.model.stop_training = True
-                        return
-                    logs = logs or {}
-                    task.progress.append({
-                        "type": "epoch",
-                        "model_index": model_idx,
-                        "total_models": total_models,
-                        "model_name": run_name,
-                        "epoch": epoch + 1,
-                        "total_epochs": max_epochs,
-                        "loss": float(logs.get("loss", 0)),
-                        "val_loss": float(logs.get("val_loss", 0)),
-                        "elapsed": time.time() - task.started_at,
-                    })
+                run_name = combo["run_name"]
+                model_counter += 1
 
-            callbacks_list.append(GridProgressCallback())
+                task.progress.append({
+                    "type": "model_start",
+                    "model_index": model_counter - 1,
+                    "total_models": total_pending,
+                    "model_name": run_name,
+                })
 
-            # Train
-            history = model.fit(
-                X_train, y_train,
-                validation_data=(X_val, y_val),
-                epochs=max_epochs,
-                batch_size=combo["batch_size"],
-                verbose=0,
-                callbacks=callbacks_list,
-            )
+                # Build model — architecture mirrors build_model() in CreateMDL_TV.py
+                nf = combo["neurons_factors"]
+                activation = combo["activation"]
+                dropout = combo["dropout"]
+                initializer = "lecun_normal" if activation == "selu" else "he_normal"
 
-            if task.cancelled:
-                task.status = "cancelled"
-                return
+                layers_list = []
+                for i, factor in enumerate(nf):
+                    n_units = max(2, int(round(input_dim * factor)))
+                    if i == 0:
+                        layers_list.append(Dropout(dropout, input_shape=(input_dim,)))
+                    else:
+                        layers_list.append(Dropout(dropout))
+                    if use_batch_norm:
+                        layers_list.append(BatchNormalization())
+                    layers_list.append(
+                        Dense(n_units, activation=activation, kernel_initializer=initializer)
+                    )
+                layers_list.append(Dense(1, activation="linear"))
+                model = Sequential(layers_list)
 
-            # Evaluate
-            val_loss = float(model.evaluate(X_val, y_val, verbose=0)[0])
-            epochs_trained = len(history.history.get("loss", []))
+                # Loss
+                loss_name = combo["loss"]
+                if loss_name == "huber":
+                    loss_fn = Huber(delta=1.0, name="huber")
+                elif loss_name == "mae":
+                    loss_fn = MeanAbsoluteError(name="mae_loss")
+                else:
+                    loss_fn = MeanSquaredError(name="mse")
 
-            if val_loss < best_global_val_loss:
-                best_global_val_loss = val_loss
-                best_model_name = run_name
-
-            results_list.append({
-                "run_name": run_name,
-                "val_loss": val_loss,
-                "epochs_trained": epochs_trained,
-                **combo,
-            })
-
-            task.progress.append({
-                "type": "model_end",
-                "model_index": model_idx,
-                "model_name": run_name,
-                "val_loss": val_loss,
-                "epochs_trained": epochs_trained,
-                "best_val_loss": best_global_val_loss,
-                "best_model_name": best_model_name,
-            })
-
-            # Save model to output_dir
-            if output_dir:
-                model_dir = Path(output_dir) / run_name
-                logger.info("Saving model to %s", model_dir)
-                model_dir.mkdir(parents=True, exist_ok=True)
-
-                (model_dir / "NNarchitecture.json").write_text(
-                    model.to_json(), encoding="utf-8"
-                )
-                model.save_weights(str(model_dir / "NNweights.weights.h5"))
-
-                norm_json = json.dumps({
-                    "muX": [x_mean.tolist()],
-                    "SX": [x_std.tolist()],
-                    "muY": [[float(y_mean)]],
-                    "SY": [[float(y_std)]],
-                }, indent=2)
-                (model_dir / "NNnormCoefficients.json").write_text(
-                    norm_json, encoding="utf-8"
+                model.compile(
+                    optimizer=Adam(learning_rate=combo["learning_rate"]),
+                    loss=loss_fn,
+                    metrics=["mae"],
                 )
 
-                train_cfg = json.dumps({
+                # Callbacks
+                min_ep = combo["min_nb_epochs"]
+                patience = max(30, max_epochs // 10)
+
+                # Capture loop vars for the callback closure
+                _model_counter = model_counter
+                _run_name = run_name
+
+                class GridProgressCallback(tf.keras.callbacks.Callback):
+                    def on_epoch_end(cb_self, epoch, logs=None):
+                        if task.cancelled:
+                            cb_self.model.stop_training = True
+                            return
+                        logs = logs or {}
+                        task.progress.append({
+                            "type": "epoch",
+                            "model_index": _model_counter - 1,
+                            "total_models": total_pending,
+                            "model_name": _run_name,
+                            "epoch": epoch + 1,
+                            "total_epochs": max_epochs,
+                            "loss": float(logs.get("loss", 0)),
+                            "val_loss": float(logs.get("val_loss", 0)),
+                            "elapsed": time.time() - task.started_at,
+                        })
+
+                callbacks_list = [
+                    tf.keras.callbacks.EarlyStopping(
+                        monitor="val_loss",
+                        patience=patience,
+                        restore_best_weights=True,
+                        start_from_epoch=min_ep,
+                    ),
+                    GridProgressCallback(),
+                ]
+
+                # Train
+                history = model.fit(
+                    x_train_norm, y_train_norm,
+                    validation_data=(X_val_fit, y_val_fit),
+                    epochs=max_epochs,
+                    batch_size=min(combo["batch_size"], len(x_train_norm)),
+                    verbose=0,
+                    callbacks=callbacks_list,
+                )
+
+                if task.cancelled:
+                    task.status = "cancelled"
+                    return
+
+                # Evaluate
+                val_loss = float(model.evaluate(X_eval, y_eval, verbose=0)[0])
+                epochs_trained = len(history.history.get("loss", []))
+
+                if val_loss < best_global_val_loss:
+                    best_global_val_loss = val_loss
+                    best_model_name = run_name
+
+                results_list.append({
                     "run_name": run_name,
-                    "input_cols": input_cols,
-                    "output_col": output_col,
-                    "epochs_requested": max_epochs,
-                    "epochs_trained": epochs_trained,
-                    "batch_size": combo["batch_size"],
-                    "learning_rate": combo["learning_rate"],
-                    "activation": combo["activation"],
-                    "dropout": combo["dropout"],
-                    "loss": combo["loss"],
-                    "neurons_factors": combo["neurons_factors"],
-                    "seed": seed,
-                    "train_rows": len(X_train),
-                    "val_rows": len(X_val),
-                }, indent=2)
-                (model_dir / "training_config.json").write_text(
-                    train_cfg, encoding="utf-8"
-                )
-
-                metrics_json = json.dumps({
                     "val_loss": val_loss,
                     "epochs_trained": epochs_trained,
-                }, indent=2)
-                (model_dir / "training_metrics.json").write_text(
-                    metrics_json, encoding="utf-8"
-                )
+                    **combo,
+                })
+
+                task.progress.append({
+                    "type": "model_end",
+                    "model_index": model_counter - 1,
+                    "model_name": run_name,
+                    "val_loss": val_loss,
+                    "epochs_trained": epochs_trained,
+                    "best_val_loss": best_global_val_loss,
+                    "best_model_name": best_model_name,
+                })
+
+                # Save model to output_dir
+                if output_dir:
+                    model_dir = Path(output_dir) / run_name
+                    model_dir.mkdir(parents=True, exist_ok=True)
+
+                    (model_dir / "NNarchitecture.json").write_text(
+                        model.to_json(), encoding="utf-8"
+                    )
+                    model.save_weights(str(model_dir / "NNweights.weights.h5"))
+
+                    # Normalisation coefficients — per feature set
+                    norm_json = json.dumps({
+                        "muX": [mu_x.tolist()],
+                        "SX": [sigma_x.tolist()],
+                        "muY": [mu_y.tolist()],
+                        "SY": [sigma_y.tolist()],
+                    }, indent=2)
+                    (model_dir / "NNnormCoefficients.json").write_text(
+                        norm_json, encoding="utf-8"
+                    )
+
+                    train_cfg = json.dumps({
+                        "run_name": run_name,
+                        "input_cols": feature_cols,
+                        "output_col": output_col,
+                        "feature_mask": fmask,
+                        "epochs_requested": max_epochs,
+                        "epochs_trained": epochs_trained,
+                        "batch_size": int(min(combo["batch_size"], len(x_train_norm))),
+                        "test_size": test_size,
+                        "learning_rate": combo["learning_rate"],
+                        "activation": combo["activation"],
+                        "dropout": combo["dropout"],
+                        "loss": combo["loss"],
+                        "neurons_factors": combo["neurons_factors"],
+                        "use_batch_norm": use_batch_norm,
+                        "start_from_epoch": min_ep,
+                        "patience": patience,
+                        "seed": seed,
+                        "train_rows": int(len(x_train_norm)),
+                        "val_rows": int(len(X_val_fit)),
+                    }, indent=2)
+                    (model_dir / "training_config.json").write_text(
+                        train_cfg, encoding="utf-8"
+                    )
+
+                    metrics_json = json.dumps({
+                        "val_loss": val_loss,
+                        "epochs_trained": epochs_trained,
+                    }, indent=2)
+                    (model_dir / "training_metrics.json").write_text(
+                        metrics_json, encoding="utf-8"
+                    )
+
+                    logger.info(
+                        "Model %d/%d saved: %s (NNarchitecture.json, NNweights.weights.h5, "
+                        "NNnormCoefficients.json, training_config.json, training_metrics.json)",
+                        model_counter, total_pending, model_dir,
+                    )
+                else:
+                    logger.warning(
+                        "Model %d/%d NOT saved (no output_dir): %s",
+                        model_counter, total_pending, run_name,
+                    )
 
                 logger.info(
-                    "Model %d/%d saved: %s (4 files: NNarchitecture.json, NNweights.weights.h5, "
-                    "NNnormCoefficients.json, training_config.json, training_metrics.json)",
-                    model_idx + 1, total_models, model_dir,
+                    "Model %d/%d done: %s val_loss=%.6f epochs=%d",
+                    model_counter, total_pending, run_name, val_loss, epochs_trained,
                 )
-            else:
-                logger.warning(
-                    "Model %d/%d NOT saved (no output_dir): %s",
-                    model_idx + 1, total_models, run_name,
-                )
-
-            logger.info(
-                "Model %d/%d done: %s val_loss=%.6f epochs=%d",
-                model_idx + 1, total_models, run_name, val_loss, epochs_trained,
-            )
 
         # Done
         task.result = {
-            "total_models": total_models,
+            "total_models": total_pending,
+            "skipped": total_models - total_pending,
             "best_model": best_model_name,
             "best_val_loss": best_global_val_loss,
             "output_dir": output_dir,
@@ -494,8 +670,9 @@ def _training_worker(task: TrainingTask) -> None:
         }
         task.status = "completed"
         logger.info(
-            "Grid search completed: %d models, best=%s (%.6f)",
-            total_models, best_model_name, best_global_val_loss,
+            "Grid search completed: %d models trained (%d skipped), best=%s (%.6f)",
+            total_pending, total_models - total_pending,
+            best_model_name, best_global_val_loss,
         )
 
     except Exception as exc:
