@@ -80,6 +80,7 @@ from .routers import (  # noqa: E402
     evaluation,
     export,
     mapping,
+    models,
     training,
     upload,
 )
@@ -91,6 +92,7 @@ app.include_router(evaluation.router)
 app.include_router(export.router)
 app.include_router(carte.router)
 app.include_router(compteurs.router)
+app.include_router(models.router)
 
 
 # -- Health -----------------------------------------------------------------

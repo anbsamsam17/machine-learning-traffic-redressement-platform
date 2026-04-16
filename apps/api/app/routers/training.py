@@ -189,6 +189,27 @@ def _training_worker(task: TrainingTask) -> None:
         task.status = "running"
         cfg = task.config
 
+        # Log received config for debugging
+        combos_preview = _build_combinations(cfg)
+        logger.info(
+            "Training worker started: task=%s | input_cols=%s | output_dir=%s | "
+            "max_epochs=%s | activations=%s | learning_rates=%s | losses=%s | "
+            "min_nb_epochs_list=%s | dropouts=%s | batch_sizes=%s | "
+            "neurons_factors_list=%s | total_combinations=%d",
+            task.task_id,
+            cfg.get("input_cols"),
+            cfg.get("output_dir"),
+            cfg.get("max_epochs"),
+            cfg.get("activations"),
+            cfg.get("learning_rates"),
+            cfg.get("losses"),
+            cfg.get("min_nb_epochs_list"),
+            cfg.get("dropouts"),
+            cfg.get("batch_sizes"),
+            cfg.get("neurons_factors_list"),
+            len(combos_preview),
+        )
+
         # -- Get learning DataFrame -------------------------------------------
         session = session_manager.get_session(task.session_id)
         if session is None:
@@ -266,6 +287,9 @@ def _training_worker(task: TrainingTask) -> None:
         if output_dir:
             out_path = Path(output_dir)
             out_path.mkdir(parents=True, exist_ok=True)
+            logger.info("Output directory created/verified: %s", out_path.resolve())
+        else:
+            logger.warning("No output_dir specified — models will NOT be saved to disk!")
 
         task.progress.append({
             "type": "info",
@@ -398,6 +422,7 @@ def _training_worker(task: TrainingTask) -> None:
             # Save model to output_dir
             if output_dir:
                 model_dir = Path(output_dir) / run_name
+                logger.info("Saving model to %s", model_dir)
                 model_dir.mkdir(parents=True, exist_ok=True)
 
                 (model_dir / "NNarchitecture.json").write_text(
@@ -441,6 +466,17 @@ def _training_worker(task: TrainingTask) -> None:
                 }, indent=2)
                 (model_dir / "training_metrics.json").write_text(
                     metrics_json, encoding="utf-8"
+                )
+
+                logger.info(
+                    "Model %d/%d saved: %s (4 files: NNarchitecture.json, NNweights.weights.h5, "
+                    "NNnormCoefficients.json, training_config.json, training_metrics.json)",
+                    model_idx + 1, total_models, model_dir,
+                )
+            else:
+                logger.warning(
+                    "Model %d/%d NOT saved (no output_dir): %s",
+                    model_idx + 1, total_models, run_name,
                 )
 
             logger.info(
@@ -496,7 +532,10 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
     thread = threading.Thread(target=_training_worker, args=(task,), daemon=True)
     thread.start()
 
-    logger.info("Grid search started: task=%s session=%s combos=%d", task_id, body.session_id, total)
+    logger.info(
+        "Grid search started: task=%s session=%s combos=%d output_dir=%s max_epochs=%d",
+        task_id, body.session_id, total, body.output_dir, body.max_epochs,
+    )
 
     return TrainingStartResponse(
         task_id=task_id,
@@ -563,6 +602,9 @@ async def training_status(task_id: str) -> TrainingStatusResponse:
             current_model = entry.get("model_index", 0)
             total_models = entry.get("total_models", 1)
             model_name = entry.get("model_name", "")
+        # Also pick up total_models from the initial info entry
+        if entry.get("type") == "info" and total_models <= 1 and "total_models" in entry:
+            total_models = entry["total_models"]
         if last_epoch and last_model_end and model_name:
             break
 

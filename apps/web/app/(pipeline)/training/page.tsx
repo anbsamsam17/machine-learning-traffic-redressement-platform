@@ -13,6 +13,7 @@ import {
   Cpu,
   ScrollText,
   ChevronRight,
+  FolderOpen,
 } from "lucide-react";
 import {
   LineChart,
@@ -213,13 +214,28 @@ export default function TrainingPage() {
       }
 
       // If no taskId, start a new training with the config from the config page
+      const storedConfig = trainingConfig ?? useAppStore.getState().trainingConfig;
+      if (!storedConfig) {
+        addLog("ATTENTION : Aucune configuration trouvee. Retournez a l'etape Configuration.", "error");
+        toast.error("Configuration manquante. Retournez a l'etape precedente.");
+        setStatus("idle");
+        return;
+      }
+
+      addLog(`Dossier de sortie : ${localOutputDir.trim()}`, "info");
+      addLog(`Max epochs (config) : ${storedConfig.max_epochs ?? "defaut backend"}`, "info");
       addLog("Import de TensorFlow et preparation des donnees...", "info");
 
-      const payload = {
+      const payload: Record<string, unknown> = {
+        ...storedConfig,
         session_id: sessionId,
         output_dir: localOutputDir.trim(),
-        ...(trainingConfig ?? {}),
       };
+
+      // Log the number of combinations that will be trained
+      const arr = (k: string) => Array.isArray(payload[k]) ? (payload[k] as unknown[]).length : 1;
+      const totalCombos = arr("activations") * arr("learning_rates") * arr("min_nb_epochs_list") * arr("losses") * arr("dropouts") * arr("neurons_factors_list") * arr("batch_sizes");
+      addLog(`Configuration : ${totalCombos} combinaisons (${arr("activations")} act × ${arr("learning_rates")} lr × ${arr("min_nb_epochs_list")} ep × ${arr("losses")} loss × ${arr("dropouts")} drop × ${arr("neurons_factors_list")} arch × ${arr("batch_sizes")} bs)`, "info");
 
       const res = await fetch("/api/training/start", {
         method: "POST",
@@ -235,8 +251,11 @@ export default function TrainingPage() {
       const data = await res.json();
       const newTaskId = data.task_id;
       setTaskId(newTaskId);
+      if (data.total_combinations) {
+        setTotalModels(data.total_combinations);
+      }
 
-      addLog(`Tache creee : ${newTaskId}`, "info");
+      addLog(`Tache creee : ${newTaskId} — ${data.total_combinations ?? "?"} combinaisons`, "info");
       addLog("Entrainement en cours...", "info");
       setStatus("running");
       startPolling(newTaskId);
@@ -336,13 +355,32 @@ export default function TrainingPage() {
                 Tous les modeles du grid search seront sauvegardes dans ce
                 dossier (un sous-dossier par combinaison).
               </p>
-              <input
-                type="text"
-                value={localOutputDir}
-                onChange={(e) => setLocalOutputDir(e.target.value)}
-                placeholder={`Ex: C:\\xMDL\\${mode === "pl" ? "PL" : "TV"}\\MonTerritoire`}
-                className="w-full px-3 py-2 rounded-lg text-sm bg-slate-900/80 border border-white/[0.08] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition-colors"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={localOutputDir}
+                  onChange={(e) => setLocalOutputDir(e.target.value)}
+                  placeholder={`Ex: C:\\xMDL\\${mode === "pl" ? "PL" : "TV"}\\MonTerritoire`}
+                  className="flex-1 px-3 py-2 rounded-lg text-sm bg-slate-900/80 border border-white/[0.08] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      // @ts-expect-error -- showDirectoryPicker is not in all TS types yet
+                      const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+                      setLocalOutputDir(handle.name);
+                      toast.info(`Dossier selectionne : ${handle.name} (chemin relatif — saisissez le chemin complet si necessaire)`);
+                    } catch {
+                      // User cancelled or API not supported
+                    }
+                  }}
+                  className="px-3 py-2 rounded-lg text-sm bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20 transition-colors flex items-center gap-1.5 shrink-0"
+                >
+                  <FolderOpen size={14} />
+                  Parcourir
+                </button>
+              </div>
               {!localOutputDir && (
                 <p className="text-xs text-amber-400">
                   Veuillez indiquer un dossier avant de lancer l&apos;entrainement.
