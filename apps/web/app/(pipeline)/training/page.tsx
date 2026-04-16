@@ -274,14 +274,16 @@ export default function TrainingPage() {
       // Debug: log actual payload keys to verify config is transmitted
       console.log("[Training] Payload being sent:", JSON.stringify(payload, null, 2));
 
-      // Log the number of combinations that will be trained
+      // Log config summary
       const arr = (k: string) => Array.isArray(payload[k]) ? (payload[k] as unknown[]).length : 1;
-      const totalCombos = arr("activations") * arr("learning_rates") * arr("min_nb_epochs_list") * arr("losses") * arr("dropouts") * arr("neurons_factors_list") * arr("batch_sizes");
-      addLog(`Configuration : ${totalCombos} combinaisons (${arr("activations")} act × ${arr("learning_rates")} lr × ${arr("min_nb_epochs_list")} ep × ${arr("losses")} loss × ${arr("dropouts")} drop × ${arr("neurons_factors_list")} arch × ${arr("batch_sizes")} bs)`, "info");
-
-      if (totalCombos <= 1) {
-        addLog("ATTENTION : Seulement 1 combinaison detectee. Verifiez que la configuration a bien ete sauvegardee depuis l'etape precedente.", "error");
-        addLog(`Cles du payload: ${Object.keys(payload).join(", ")}`, "info");
+      const hyperCombos = arr("activations") * arr("learning_rates") * arr("min_nb_epochs_list") * arr("losses") * arr("dropouts") * arr("neurons_factors_list") * arr("batch_sizes");
+      const hasGrid = payload.feature_subset_grid === true;
+      addLog(`Hyperparametres : ${hyperCombos} combinaisons (${arr("activations")} act × ${arr("learning_rates")} lr × ${arr("min_nb_epochs_list")} ep × ${arr("losses")} loss × ${arr("dropouts")} drop × ${arr("neurons_factors_list")} arch × ${arr("batch_sizes")} bs)`, "info");
+      if (hasGrid) {
+        addLog(`Feature subset grid : ACTIVE (mandatory=${JSON.stringify(payload.mandatory_input_cols)}, min_input=${payload.min_input_count})`, "info");
+        addLog("Le total sera hyperparametres × feature_sets (calcule par le backend)", "info");
+      } else {
+        addLog("Feature subset grid : DESACTIVE (un seul feature set)", "info");
       }
 
       const res = await fetch("/api/training/start", {
@@ -302,7 +304,7 @@ export default function TrainingPage() {
         setTotalModels(data.total_combinations);
       }
 
-      addLog(`Tache creee : ${newTaskId} — ${data.total_combinations ?? "?"} combinaisons`, "info");
+      addLog(`Tache creee : ${newTaskId} — ${data.total_combinations ?? "?"} combinaisons totales (feature_sets × hyperparametres)`, "success");
       addLog("Entrainement en cours...", "info");
       setStatus("running");
       startPolling(newTaskId);
