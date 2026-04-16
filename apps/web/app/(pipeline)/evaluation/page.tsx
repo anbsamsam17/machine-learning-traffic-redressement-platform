@@ -21,9 +21,6 @@ import { NeonButton } from "@/components/ui/neon-button";
 import { StatCard } from "@/components/ui/stat-card";
 import { DropZone } from "@/components/upload/drop-zone";
 import { useAppStore } from "@/lib/store";
-import { fetchJSON } from "@/lib/api";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /* ---------- Types ---------- */
 
@@ -59,7 +56,7 @@ interface EvalRunResponse {
 /* ---------- Page ---------- */
 
 export default function EvaluationPage() {
-  const { mode, sessionId, outputDir } = useAppStore();
+  const { mode, sessionId, setSessionId, outputDir } = useAppStore();
 
   // --- State ---
   const [validationFile, setValidationFile] = useState<File | null>(null);
@@ -73,28 +70,36 @@ export default function EvaluationPage() {
   const [modelDir, setModelDir] = useState(outputDir ?? "");
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // --- Load models from output_dir ---
+  // --- Load models from directory (uses proxy /api/models/list) ---
   const loadModels = useCallback(async (dir: string) => {
-    if (!dir) return;
+    if (!dir.trim()) {
+      toast.error("Veuillez saisir un dossier de modeles.");
+      return;
+    }
     setLoadingModels(true);
     try {
-      const data = await fetchJSON<{ models: ModelInfo[] }>(
-        `/api/models/list?dir=${encodeURIComponent(dir)}`
+      const res = await fetch(
+        `/api/models/list?dir=${encodeURIComponent(dir.trim())}`
       );
-      setModels(data.models);
-      if (data.models.length > 0 && !selectedModel) {
-        setSelectedModel(data.models[0].name);
+      if (!res.ok) {
+        throw new Error(`Erreur ${res.status}`);
       }
-      if (data.models.length === 0) {
-        toast.info("Aucun modele trouve dans ce dossier.");
+      const data = await res.json();
+      const modelList: ModelInfo[] = data.models ?? [];
+      setModels(modelList);
+      if (modelList.length > 0) {
+        setSelectedModel(modelList[0].name);
+        toast.success(`${modelList.length} modele(s) trouve(s)`);
+      } else {
+        toast.warning("Aucun modele trouve dans ce dossier.");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Impossible de lister les modeles.");
+      toast.error("Impossible de lister les modeles. Verifiez le chemin.");
     } finally {
       setLoadingModels(false);
     }
-  }, [selectedModel]);
+  }, []);
 
   // Auto-load on mount if outputDir is set
   useEffect(() => {
@@ -102,8 +107,29 @@ export default function EvaluationPage() {
       setModelDir(outputDir);
       loadModels(outputDir);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outputDir]);
+  }, [outputDir, loadModels]);
+
+  // --- Ensure we have a session (create one if needed for standalone mode) ---
+  async function ensureSession(): Promise<string> {
+    if (sessionId) return sessionId;
+
+    // Create a lightweight session for standalone evaluation
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: (() => {
+        const fd = new FormData();
+        // Upload the validation file as the raw data to create a session
+        if (validationFile) fd.append("file", validationFile);
+        fd.append("mode", mode === "pl" ? "PL" : "TV");
+        return fd;
+      })(),
+    });
+
+    if (!res.ok) throw new Error("Impossible de creer une session.");
+    const data = await res.json();
+    setSessionId(data.session_id);
+    return data.session_id;
+  }
 
   // --- Run evaluation ---
   const handleRun = useCallback(async () => {
@@ -115,10 +141,6 @@ export default function EvaluationPage() {
       toast.error("Veuillez selectionner un modele.");
       return;
     }
-    if (!sessionId) {
-      toast.error("Aucune session active. Retournez a l'etape Donnees.");
-      return;
-    }
 
     setRunning(true);
     setMetrics(null);
@@ -126,36 +148,44 @@ export default function EvaluationPage() {
     setReportBlob(null);
 
     try {
-      // 1. Upload validation file
+      // 1. Ensure session exists
+      const sid = await ensureSession();
+
+      // 2. Upload validation file
       const form = new FormData();
       form.append("file", validationFile);
-      form.append("session_id", sessionId);
+      form.append("session_id", sid);
 
-      const uploadRes = await fetch(`${API_BASE}/api/evaluation/upload-validation`, {
+      const uploadRes = await fetch("/api/evaluation/upload-validation", {
         method: "POST",
         body: form,
       });
       if (!uploadRes.ok) {
-        const errText = await uploadRes.text();
-        throw new Error(`Upload echoue: ${errText}`);
+        const err = await uploadRes.json().catch(() => ({ detail: "Upload echoue" }));
+        throw new Error(err.detail ?? "Upload echoue");
       }
 
-      // 2. Run evaluation
-      const evalRes = await fetchJSON<EvalRunResponse>("/api/evaluation/run", {
+      // 3. Run evaluation
+      const evalRes = await fetch("/api/evaluation/run", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          session_id: sessionId,
+          session_id: sid,
           model_name: selectedModel,
-          model_dir: modelDir,
+          model_dir: modelDir.trim(),
         }),
       });
 
-      setMetrics(evalRes.metrics);
+      if (!evalRes.ok) {
+        const err = await evalRes.json().catch(() => ({ detail: "Evaluation echouee" }));
+        throw new Error(err.detail ?? "Evaluation echouee");
+      }
 
-      // 3. Fetch report HTML
-      const reportRes = await fetch(
-        `${API_BASE}/api/evaluation/report/${sessionId}`
-      );
+      const evalData: EvalRunResponse = await evalRes.json();
+      setMetrics(evalData.metrics);
+
+      // 4. Fetch report HTML
+      const reportRes = await fetch(`/api/evaluation/report/${sid}`);
       if (reportRes.ok) {
         const reportData = await reportRes.json();
         setReportHtml(reportData.report_html);
@@ -172,7 +202,8 @@ export default function EvaluationPage() {
     } finally {
       setRunning(false);
     }
-  }, [validationFile, selectedModel, sessionId, modelDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validationFile, selectedModel, modelDir, sessionId]);
 
   // --- Download helpers ---
   const downloadReport = useCallback(() => {
@@ -186,10 +217,10 @@ export default function EvaluationPage() {
   }, [reportBlob, selectedModel]);
 
   const downloadModelZip = useCallback(async () => {
-    if (!sessionId || !selectedModel) return;
+    if (!selectedModel || !modelDir) return;
     try {
       const res = await fetch(
-        `${API_BASE}/api/evaluation/download-model?session_id=${sessionId}&model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(modelDir)}`
+        `/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(modelDir.trim())}`
       );
       if (!res.ok) throw new Error("Telechargement echoue");
       const blob = await res.blob();
@@ -199,10 +230,10 @@ export default function EvaluationPage() {
       a.download = `${selectedModel}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
+    } catch {
       toast.error("Impossible de telecharger le modele.");
     }
-  }, [sessionId, selectedModel, modelDir]);
+  }, [selectedModel, modelDir]);
 
   return (
     <div className="space-y-6">
@@ -212,9 +243,9 @@ export default function EvaluationPage() {
           Evaluation
         </GradientText>
         <p className="text-sm text-muted">
-          Evaluez les modeles {mode === "pl" ? "PL" : "TV"} entraines sur un
-          fichier de validation, generez un rapport HTML interactif et
-          telechargez les resultats.
+          Evaluez un modele {mode === "pl" ? "PL" : "TV"} sur un fichier de
+          validation. Cette etape peut etre lancee independamment des etapes
+          precedentes.
         </p>
       </div>
 
@@ -223,7 +254,7 @@ export default function EvaluationPage() {
         <div className="flex items-center gap-2 mb-4">
           <Upload size={18} className="text-accent" />
           <h3 className="text-sm font-semibold text-foreground">
-            Fichier de validation
+            1. Fichier de validation
           </h3>
         </div>
         <DropZone
@@ -235,7 +266,7 @@ export default function EvaluationPage() {
             "text/csv": [".csv"],
           }}
           label="Deposez votre fichier de validation ici"
-          description="GeoJSON ou CSV avec donnees de comptage"
+          description="GeoJSON ou CSV avec donnees de comptage (TMJABCTV, TMJAFCDTV, etc.)"
         />
       </GlowCard>
 
@@ -244,60 +275,85 @@ export default function EvaluationPage() {
         <div className="flex items-center gap-2 mb-4">
           <FolderOpen size={18} className="text-cyan-400" />
           <h3 className="text-sm font-semibold text-foreground">
-            Selection du modele
+            2. Selection du modele
           </h3>
         </div>
 
-        {/* Model directory input */}
         <div className="space-y-3">
+          <p className="text-xs text-slate-400">
+            Indiquez le dossier contenant les modeles entraines, puis
+            selectionnez un modele dans la liste.
+          </p>
+
+          {/* Model directory input + browse + load */}
           <div className="flex gap-2">
             <input
               type="text"
               value={modelDir}
               onChange={(e) => setModelDir(e.target.value)}
-              placeholder="Dossier de sortie des modeles (output_dir)"
-              className="flex-1 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-accent/60 transition-colors"
+              placeholder="Ex: C:\xMDL\TV\MonTerritoire"
+              className="flex-1 rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
             />
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  // @ts-expect-error -- showDirectoryPicker not in all TS types
+                  const handle = await window.showDirectoryPicker({ mode: "read" });
+                  setModelDir(handle.name);
+                  toast.info(`Dossier : ${handle.name} — saisissez le chemin complet si necessaire`);
+                } catch { /* cancelled */ }
+              }}
+              className="px-3 py-2 rounded-lg text-sm bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20 transition-colors flex items-center gap-1.5 shrink-0"
+            >
+              <FolderOpen size={14} />
+              Parcourir
+            </button>
             <NeonButton
               variant="secondary"
               onClick={() => loadModels(modelDir)}
-              disabled={!modelDir || loadingModels}
+              disabled={!modelDir.trim() || loadingModels}
               className="text-xs whitespace-nowrap"
             >
               {loadingModels ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
-                "Charger"
+                "Charger les modeles"
               )}
             </NeonButton>
           </div>
 
           {/* Model dropdown */}
-          {models.length > 0 && (
-            <div className="relative">
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="w-full appearance-none rounded-xl border border-border bg-surface px-4 py-2.5 pr-10 text-sm text-foreground focus:outline-none focus:border-accent/60 transition-colors cursor-pointer"
+          <AnimatePresence>
+            {models.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-2"
               >
-                {models.map((m) => (
-                  <option key={m.name} value={m.name}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                size={16}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
-              />
-            </div>
-          )}
-
-          {models.length > 0 && (
-            <p className="text-xs text-muted">
-              {models.length} modele(s) disponible(s) dans le dossier
-            </p>
-          )}
+                <div className="relative">
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="w-full appearance-none rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2.5 pr-10 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 cursor-pointer"
+                  >
+                    {models.map((m) => (
+                      <option key={m.name} value={m.name}>
+                        {m.name} {m.has_weights ? "✓" : "⚠ pas de poids"}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+                  />
+                </div>
+                <p className="text-xs text-slate-400">
+                  {models.length} modele(s) disponible(s)
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </GlowCard>
 
@@ -316,7 +372,7 @@ export default function EvaluationPage() {
           disabled={running || !validationFile || !selectedModel}
           className="px-10 py-4 text-base"
         >
-          {running ? "Evaluation en cours..." : "Lancer l'evaluation"}
+          {running ? "Evaluation en cours..." : "3. Lancer l'evaluation"}
         </NeonButton>
       </div>
 
@@ -332,7 +388,7 @@ export default function EvaluationPage() {
             <div className="flex items-center gap-2">
               <BarChart3 size={18} className="text-accent" />
               <h3 className="text-sm font-semibold text-foreground">
-                Metriques d'evaluation &mdash;{" "}
+                Metriques &mdash;{" "}
                 <span className="text-accent">{selectedModel}</span>
               </h3>
             </div>
@@ -379,16 +435,10 @@ export default function EvaluationPage() {
                   value={metrics.geh_mean.toFixed(3)}
                 />
                 {metrics.hd_rmse !== null && (
-                  <StatCard
-                    label="RMSE fort trafic"
-                    value={metrics.hd_rmse.toFixed(2)}
-                  />
+                  <StatCard label="RMSE HD" value={metrics.hd_rmse.toFixed(2)} />
                 )}
                 {metrics.ld_rmse !== null && (
-                  <StatCard
-                    label="RMSE faible trafic"
-                    value={metrics.ld_rmse.toFixed(2)}
-                  />
+                  <StatCard label="RMSE LD" value={metrics.ld_rmse.toFixed(2)} />
                 )}
               </div>
             )}
@@ -403,19 +453,16 @@ export default function EvaluationPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="space-y-4"
           >
-            <GlowCard glowColor="violet" className="p-0 overflow-hidden">
-              <div className="flex items-center justify-between p-4 border-b border-border">
+            <GlowCard glowColor="violet" className="!p-0 overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
                 <div className="flex items-center gap-2">
                   <FileCheck size={18} className="text-violet-400" />
                   <h3 className="text-sm font-semibold text-foreground">
-                    Rapport d'evaluation
+                    Rapport d&apos;evaluation
                   </h3>
                 </div>
-                <span className="text-xs text-muted">
-                  Modele : {selectedModel}
-                </span>
+                <span className="text-xs text-muted">{selectedModel}</span>
               </div>
               <iframe
                 ref={iframeRef}
