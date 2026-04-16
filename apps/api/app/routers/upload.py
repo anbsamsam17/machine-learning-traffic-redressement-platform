@@ -19,6 +19,24 @@ from ..session import session_manager
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
+# Maximum decompressed size (1 GB) — zip bomb protection
+_MAX_DECOMPRESSED_BYTES = 1 * 1024 * 1024 * 1024
+
+
+def _check_zip_bomb(content: bytes) -> None:
+    """Raise HTTPException if total uncompressed size exceeds 1 GB."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            total_uncompressed = sum(info.file_size for info in zf.infolist())
+            if total_uncompressed > _MAX_DECOMPRESSED_BYTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Archive suspecte: taille decompressee "
+                           f"({total_uncompressed // (1024*1024)} MB) depasse la limite de 1 GB.",
+                )
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Archive ZIP invalide.")
+
 
 # ---------------------------------------------------------------------------
 # Response models
@@ -86,7 +104,8 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
         )
 
     if suffix == ".zip":
-        # ZIP containing shapefile components
+        # ZIP containing shapefile components — check for zip bomb first
+        _check_zip_bomb(content)
         with tempfile.TemporaryDirectory() as tmpdir:
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 zf.extractall(tmpdir)
@@ -207,6 +226,9 @@ async def upload_model(
     content = await file.read()
     if not (file.filename or "").lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Un fichier .zip est attendu.")
+
+    # Zip bomb protection for model uploads
+    _check_zip_bomb(content)
 
     try:
         model_files: dict[str, bytes] = {}

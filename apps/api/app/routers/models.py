@@ -11,6 +11,8 @@ from fastapi import APIRouter, Query
 
 from pydantic import BaseModel
 
+from ..security import validate_path
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
 
@@ -31,6 +33,8 @@ class ModelsListResponse(BaseModel):
 @router.get("/list", response_model=ModelsListResponse)
 async def list_models(dir: str = Query(..., description="Dossier contenant les modeles entraines")) -> ModelsListResponse:
     """List all model sub-directories that contain NNarchitecture.json."""
+    # Validate the directory is within the allowed workspace
+    validate_path(dir)
     base = Path(dir)
     if not base.exists() or not base.is_dir():
         return ModelsListResponse(models=[])
