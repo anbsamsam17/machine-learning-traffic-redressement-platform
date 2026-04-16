@@ -275,6 +275,8 @@ def _training_worker(task: TrainingTask) -> None:
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
     os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+    os.environ.setdefault("TF_XLA_FLAGS", "--tf_xla_enable_xla_devices=false")
+    os.environ.setdefault("TF_DISABLE_SEGMENT_REDUCTION_OP_DETERMINISM_EXCEPTIONS", "1")
 
     try:
         import tensorflow as tf
@@ -285,6 +287,10 @@ def _training_worker(task: TrainingTask) -> None:
 
         tf.config.threading.set_intra_op_parallelism_threads(4)
         tf.config.threading.set_inter_op_parallelism_threads(2)
+        try:
+            tf.config.optimizer.set_jit(False)  # Disable XLA JIT — prevents 5-10 min freeze
+        except Exception:
+            pass  # May fail if already configured
 
         task.status = "running"
         cfg = task.config
@@ -430,7 +436,13 @@ def _training_worker(task: TrainingTask) -> None:
         results_list: list[dict] = []
         model_counter = 0
 
-        for fmask, group_combos in groups.items():
+        for fmask_idx, (fmask, group_combos) in enumerate(groups.items()):
+            # Clear TF session between feature set groups to prevent memory bloat
+            if fmask_idx > 0:
+                try:
+                    tf.keras.backend.clear_session()
+                except Exception:
+                    pass
             if task.cancelled:
                 task.status = "cancelled"
                 return
@@ -457,9 +469,11 @@ def _training_worker(task: TrainingTask) -> None:
             else:
                 X_eval, y_eval = x_all_norm, y_all_norm
 
-            # Use all data for both train and val when test_size == 0
-            X_val_fit = x_valid_norm if x_valid_norm is not None else x_all_norm
-            y_val_fit = y_valid_norm if y_valid_norm is not None else y_all_norm
+            # Only use validation_data if we have a real split (like original Streamlit)
+            # When test_size == 0, do NOT pass validation_data — avoids doubling compute per epoch
+            X_val_fit = x_valid_norm  # None if no split
+            y_val_fit = y_valid_norm  # None if no split
+            has_validation = X_val_fit is not None and y_val_fit is not None
 
             input_dim = len(feature_cols)
 
@@ -536,13 +550,15 @@ def _training_worker(task: TrainingTask) -> None:
                             "epoch": epoch + 1,
                             "total_epochs": max_epochs,
                             "loss": float(logs.get("loss", 0)),
-                            "val_loss": float(logs.get("val_loss", 0)),
+                            "val_loss": float(logs.get("val_loss", logs.get("loss", 0))),
                             "elapsed": time.time() - task.started_at,
                         })
 
+                # Monitor val_loss if we have validation, otherwise monitor loss
+                monitor_metric = "val_loss" if has_validation else "loss"
                 callbacks_list = [
                     tf.keras.callbacks.EarlyStopping(
-                        monitor="val_loss",
+                        monitor=monitor_metric,
                         patience=patience,
                         restore_best_weights=True,
                         start_from_epoch=min_ep,
@@ -550,15 +566,18 @@ def _training_worker(task: TrainingTask) -> None:
                     GridProgressCallback(),
                 ]
 
-                # Train
-                history = model.fit(
-                    x_train_norm, y_train_norm,
-                    validation_data=(X_val_fit, y_val_fit),
-                    epochs=max_epochs,
-                    batch_size=min(combo["batch_size"], len(x_train_norm)),
-                    verbose=0,
-                    callbacks=callbacks_list,
-                )
+                # Train — only pass validation_data if we have a real split
+                fit_kwargs: dict = {
+                    "x": x_train_norm,
+                    "y": y_train_norm,
+                    "epochs": max_epochs,
+                    "batch_size": min(combo["batch_size"], len(x_train_norm)),
+                    "verbose": 0,
+                    "callbacks": callbacks_list,
+                }
+                if has_validation:
+                    fit_kwargs["validation_data"] = (X_val_fit, y_val_fit)
+                history = model.fit(**fit_kwargs)
 
                 if task.cancelled:
                     task.status = "cancelled"
