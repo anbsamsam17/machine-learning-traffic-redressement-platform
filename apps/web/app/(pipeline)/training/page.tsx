@@ -28,7 +28,9 @@ import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
 import { StatCard } from "@/components/ui/stat-card";
+import { SuccessBanner } from "@/components/ui/success-banner";
 import { useAppStore } from "@/lib/store";
+import { playSuccessDing, spawnConfetti } from "@/lib/success-effects";
 
 interface LossPoint {
   epoch: number;
@@ -61,8 +63,11 @@ export default function TrainingPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string>("");
+  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const [successCardPulse, setSuccessCardPulse] = useState(false);
 
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const statsContainerRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -177,7 +182,20 @@ export default function TrainingPage() {
           if (outputDir) {
             addLog(`Modeles sauvegardes dans : ${outputDir}`, "success");
           }
-          toast.success("Entrainement termine !");
+
+          // Rich success toast with summary
+          const lossStr = data.best_val_loss != null ? data.best_val_loss.toFixed(6) : (bestLoss?.toFixed(6) ?? "N/A");
+          toast.success(
+            `Entrainement termine — ${data.total_models ?? totalModels} modele(s), meilleure loss: ${lossStr}${outputDir ? ` — ${outputDir}` : ""}`
+          );
+
+          // Success effects: ding + card pulse + banner + confetti
+          playSuccessDing();
+          setShowSuccessBanner(true);
+          setSuccessCardPulse(true);
+          setTimeout(() => setSuccessCardPulse(false), 2500);
+          spawnConfetti(statsContainerRef.current, 32);
+
           if (pollingRef.current) clearInterval(pollingRef.current);
         }
 
@@ -326,13 +344,20 @@ export default function TrainingPage() {
 
   return (
     <div className="space-y-6">
+      {/* Success banner */}
+      <SuccessBanner
+        message={`Entrainement termine — ${totalModels} modele(s)${bestLoss != null ? `, meilleure loss: ${bestLoss.toFixed(6)}` : ""}${outputDir ? ` — ${outputDir}` : ""}`}
+        visible={showSuccessBanner}
+        onClose={() => setShowSuccessBanner(false)}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="space-y-2">
           <GradientText as="h2" className="text-2xl">
             Entrainement {mode === "pl" ? "PL" : "TV"}
           </GradientText>
-          <p className="text-sm text-muted">
+          <p className="text-sm text-slate-300">
             Entrainement grid search des modeles{" "}
             {mode === "pl" ? "Poids Lourds" : "Tous Vehicules"}. Suivez la
             progression en temps reel.
@@ -390,7 +415,7 @@ export default function TrainingPage() {
                   value={localOutputDir}
                   onChange={(e) => setLocalOutputDir(e.target.value)}
                   placeholder={`Ex: C:\\xMDL\\${mode === "pl" ? "PL" : "TV"}\\MonTerritoire`}
-                  className="flex-1 px-3 py-2 rounded-lg text-sm bg-slate-900/80 border border-white/[0.08] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition-colors"
+                  className="flex-1 px-3 py-2 rounded-lg text-sm bg-slate-900/80 border border-white/[0.08] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition-colors"
                 />
                 <button
                   type="button"
@@ -426,22 +451,25 @@ export default function TrainingPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div ref={statsContainerRef} className="relative grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard
           label="Modele en cours"
           value={`${currentModel + 1} / ${totalModels}`}
           icon={<Cpu size={18} />}
+          className={successCardPulse ? "animate-success-pulse" : ""}
         />
         <StatCard
           label="Meilleure val_loss"
           value={bestLoss !== null ? bestLoss.toFixed(6) : "--"}
           icon={<Activity size={18} />}
           trend={bestLoss !== null ? "down" : undefined}
+          className={successCardPulse ? "animate-success-pulse" : ""}
         />
         <StatCard
           label="Temps ecoule"
           value={`${Math.floor(elapsed / 60)}m ${elapsed % 60}s`}
           icon={<Clock size={18} />}
+          className={successCardPulse ? "animate-success-pulse" : ""}
         />
       </div>
 
@@ -461,7 +489,10 @@ export default function TrainingPage() {
               initial={{ width: 0 }}
               animate={{ width: `${overallProgress}%` }}
               transition={{ duration: 0.5, ease: "easeOut" }}
-              className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-violet-500"
+              className={status === "completed"
+                ? "h-full rounded-full success-bar-shine"
+                : "h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-violet-500"
+              }
             />
           </div>
 
@@ -554,19 +585,19 @@ export default function TrainingPage() {
           <p className="text-xs text-slate-400 font-medium">
             Journal d&apos;entrainement
           </p>
-          <span className="text-[10px] text-slate-600 ml-auto">
+          <span className="text-[10px] text-slate-500 ml-auto">
             {logs.length} entrees
           </span>
         </div>
         <div className="bg-slate-950/80 rounded-lg border border-white/[0.04] p-3 max-h-[300px] overflow-y-auto font-mono text-[11px] space-y-0.5">
           {logs.length === 0 ? (
-            <p className="text-slate-600 text-center py-4">
+            <p className="text-slate-500 text-center py-4">
               Les logs apparaitront ici une fois l&apos;entrainement lance.
             </p>
           ) : (
             logs.map((log, i) => (
               <div key={i} className="flex gap-2">
-                <span className="text-slate-600 shrink-0">[{log.time}]</span>
+                <span className="text-slate-500 shrink-0">[{log.time}]</span>
                 <span className={logTypeColors[log.type] ?? "text-slate-400"}>
                   {log.message}
                 </span>

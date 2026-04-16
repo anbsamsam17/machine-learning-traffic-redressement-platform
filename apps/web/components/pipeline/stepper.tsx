@@ -27,7 +27,7 @@ export function Stepper({ currentStep, onStepClick }: StepperProps) {
                 disabled={isFuture}
                 className={cn(
                   "flex items-center gap-2 group transition-all",
-                  isFuture && "opacity-40 cursor-not-allowed",
+                  isFuture && "opacity-50 cursor-not-allowed",
                   !isFuture && "cursor-pointer"
                 )}
               >
@@ -42,11 +42,11 @@ export function Stepper({ currentStep, onStepClick }: StepperProps) {
                   className={cn(
                     "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors flex-shrink-0",
                     isCompleted &&
-                      "bg-accent border-accent text-white",
+                      "bg-indigo-500 border-indigo-500 text-white",
                     isActive &&
-                      "bg-accent/20 border-accent text-accent",
+                      "bg-indigo-500/20 border-indigo-400 text-indigo-300",
                     isFuture &&
-                      "bg-surface-light border-border text-muted"
+                      "bg-slate-800/50 border-slate-600/50 text-slate-400"
                   )}
                 >
                   {isCompleted ? <Check size={14} /> : idx + 1}
@@ -54,9 +54,9 @@ export function Stepper({ currentStep, onStepClick }: StepperProps) {
                 <span
                   className={cn(
                     "text-xs font-medium hidden sm:block whitespace-nowrap",
-                    isActive && "text-accent",
-                    isCompleted && "text-foreground",
-                    isFuture && "text-muted"
+                    isActive && "text-indigo-300",
+                    isCompleted && "text-slate-200",
+                    isFuture && "text-slate-400"
                   )}
                 >
                   {step.label}
@@ -68,7 +68,7 @@ export function Stepper({ currentStep, onStepClick }: StepperProps) {
                   <div
                     className={cn(
                       "h-full transition-colors",
-                      idx < currentStep ? "bg-accent" : "bg-border"
+                      idx < currentStep ? "bg-indigo-500" : "bg-white/10"
                     )}
                   />
                 </div>

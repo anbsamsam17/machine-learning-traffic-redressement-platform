@@ -49,7 +49,7 @@ export default function ExtrapolationPage() {
         <GradientText as="h2" className="text-2xl">
           Analyse d&apos;extrapolation
         </GradientText>
-        <p className="text-sm text-muted">
+        <p className="text-sm text-slate-300">
           Evaluez la capacite du modele {mode === "pl" ? "PL" : "TV"} a
           extrapoler sur des donnees externes au jeu d&apos;entrainement.
         </p>
@@ -59,7 +59,7 @@ export default function ExtrapolationPage() {
       <GlowCard>
         <div className="flex items-center gap-2 mb-4">
           <Upload size={18} className="text-violet" />
-          <h3 className="text-sm font-semibold text-foreground">
+          <h3 className="text-sm font-semibold text-white">
             Fichier externe a evaluer
           </h3>
         </div>

@@ -20,18 +20,18 @@ export function StatCard({ label, value, icon, trend, className }: StatCardProps
       className={cn("glass-light p-4 flex items-center gap-4", className)}
     >
       {icon && (
-        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center text-accent">
+        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center text-indigo-400">
           {icon}
         </div>
       )}
       <div className="min-w-0">
-        <p className="text-xs text-muted truncate">{label}</p>
+        <p className="text-xs text-slate-300 truncate">{label}</p>
         <p
           className={cn(
             "text-xl font-bold mt-0.5",
             trend === "up" && "text-emerald-400",
             trend === "down" && "text-red-400",
-            !trend && "text-foreground"
+            !trend && "text-white"
           )}
         >
           {value}

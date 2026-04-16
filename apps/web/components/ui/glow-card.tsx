@@ -30,7 +30,7 @@ export function GlowCard({
       transition={{ type: "spring", stiffness: 300, damping: 20 }}
       onClick={onClick}
       className={cn(
-        "glass p-6 transition-shadow duration-300 cursor-default",
+        "glass p-6 transition-shadow duration-300 cursor-default text-white",
         glowMap[glowColor],
         onClick && "cursor-pointer",
         className

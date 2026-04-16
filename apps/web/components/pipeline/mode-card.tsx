@@ -15,19 +15,19 @@ interface ModeCardProps {
 
 const colorMap = {
   accent: {
-    border: "border-accent/20 hover:border-accent/50",
+    border: "border-indigo-400/20 hover:border-indigo-400/50",
     glow: "hover:shadow-[0_0_40px_rgba(99,102,241,0.25)]",
-    iconBg: "bg-accent/10 text-accent",
+    iconBg: "bg-indigo-500/15 text-indigo-400",
   },
   cyan: {
-    border: "border-cyan/20 hover:border-cyan/50",
+    border: "border-cyan-400/20 hover:border-cyan-400/50",
     glow: "hover:shadow-[0_0_40px_rgba(6,182,212,0.25)]",
-    iconBg: "bg-cyan/10 text-cyan",
+    iconBg: "bg-cyan-500/15 text-cyan-400",
   },
   violet: {
-    border: "border-violet/20 hover:border-violet/50",
+    border: "border-violet-400/20 hover:border-violet-400/50",
     glow: "hover:shadow-[0_0_40px_rgba(139,92,246,0.25)]",
-    iconBg: "bg-violet/10 text-violet",
+    iconBg: "bg-violet-500/15 text-violet-400",
   },
 };
 
@@ -62,8 +62,8 @@ export function ModeCard({
       >
         {icon}
       </div>
-      <h3 className="text-lg font-bold text-foreground mb-2">{title}</h3>
-      <p className="text-sm text-muted leading-relaxed">{description}</p>
+      <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
+      <p className="text-sm text-slate-300 leading-relaxed">{description}</p>
     </motion.button>
   );
 }

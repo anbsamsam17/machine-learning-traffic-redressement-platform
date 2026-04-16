@@ -42,9 +42,24 @@ export default function ConfigPage() {
       session_id: sessionId,
     });
 
-    toast.success("Configuration enregistree");
+    // Compute number of combinations for the toast summary
+    const len = (v: unknown) => (Array.isArray(v) ? v.length : 1);
+    const combos =
+      len(config.activations) *
+      len(config.learning_rates) *
+      len(config.min_nb_epochs_list) *
+      len(config.losses) *
+      len(config.dropouts) *
+      len(config.neurons_factors_list) *
+      len(config.batch_sizes);
+
+    toast.success(
+      `Configuration enregistree — ${combos.toLocaleString("fr-FR")} combinaison${combos > 1 ? "s" : ""} a entrainer`
+    );
+
+    // Slight delay for user to see the toast before navigating
     nextStep();
-    router.push("/training");
+    setTimeout(() => router.push("/training"), 600);
   }
 
   return (
@@ -53,7 +68,7 @@ export default function ConfigPage() {
         <GradientText as="h2" className="text-2xl">
           Configuration {mode === "pl" ? "PL" : "TV"}
         </GradientText>
-        <p className="text-sm text-muted">
+        <p className="text-sm text-slate-300">
           Definissez les colonnes d&apos;entree, les hyperparametres et la
           grille de recherche pour l&apos;entrainement{" "}
           <span className="font-semibold text-indigo-300">
