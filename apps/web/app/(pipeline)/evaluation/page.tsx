@@ -408,8 +408,8 @@ export default function EvaluationPage() {
       {/* 6. Rapport HTML */}
       <AnimatePresence>
         {reportHtml && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <GlowCard glowColor="violet" className="!p-0 overflow-hidden">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-none -mx-6">
+            <GlowCard glowColor="violet" className="!p-0 overflow-hidden max-w-none">
               <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
                 <div className="flex items-center gap-2">
                   <FileCheck size={18} className="text-violet-400" />
@@ -417,7 +417,7 @@ export default function EvaluationPage() {
                 </div>
                 <span className="text-xs text-muted">{selectedModel}</span>
               </div>
-              <iframe ref={iframeRef} srcDoc={reportHtml} className="w-full border-0 bg-white" style={{ height: "800px" }} title="Rapport" sandbox="allow-same-origin" />
+              <iframe ref={iframeRef} srcDoc={reportHtml} className="w-full border-0 bg-white" style={{ height: "1200px" }} title="Rapport" sandbox="allow-scripts allow-same-origin" />
             </GlowCard>
           </motion.div>
         )}
