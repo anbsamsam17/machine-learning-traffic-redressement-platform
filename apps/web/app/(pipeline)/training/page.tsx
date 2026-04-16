@@ -226,16 +226,25 @@ export default function TrainingPage() {
       addLog(`Max epochs (config) : ${storedConfig.max_epochs ?? "defaut backend"}`, "info");
       addLog("Import de TensorFlow et preparation des donnees...", "info");
 
+      // Build final payload — spread config then override session_id and output_dir
       const payload: Record<string, unknown> = {
         ...storedConfig,
         session_id: sessionId,
         output_dir: localOutputDir.trim(),
       };
 
+      // Debug: log actual payload keys to verify config is transmitted
+      console.log("[Training] Payload being sent:", JSON.stringify(payload, null, 2));
+
       // Log the number of combinations that will be trained
       const arr = (k: string) => Array.isArray(payload[k]) ? (payload[k] as unknown[]).length : 1;
       const totalCombos = arr("activations") * arr("learning_rates") * arr("min_nb_epochs_list") * arr("losses") * arr("dropouts") * arr("neurons_factors_list") * arr("batch_sizes");
       addLog(`Configuration : ${totalCombos} combinaisons (${arr("activations")} act × ${arr("learning_rates")} lr × ${arr("min_nb_epochs_list")} ep × ${arr("losses")} loss × ${arr("dropouts")} drop × ${arr("neurons_factors_list")} arch × ${arr("batch_sizes")} bs)`, "info");
+
+      if (totalCombos <= 1) {
+        addLog("ATTENTION : Seulement 1 combinaison detectee. Verifiez que la configuration a bien ete sauvegardee depuis l'etape precedente.", "error");
+        addLog(`Cles du payload: ${Object.keys(payload).join(", ")}`, "info");
+      }
 
       const res = await fetch("/api/training/start", {
         method: "POST",
