@@ -803,27 +803,68 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           <div>
             <label className="text-xs font-medium text-slate-400 mb-2 block">
               Colonnes obligatoires (toujours presentes dans chaque
-              combinaison)
+              combinaison) — cliquez sur × pour retirer, utilisez le menu pour
+              ajouter
             </label>
-            <div className="flex flex-wrap gap-1.5">
-              {inputCols.map((col) => {
-                const active = mandatoryCols.includes(col);
-                return (
-                  <Chip
-                    key={col}
-                    label={col}
-                    active={active}
-                    onClick={() => {
+            {/* Active mandatory cols with remove button */}
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {[...new Set(mandatoryCols)].map((col) => (
+                <span
+                  key={`mandatory-${col}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                >
+                  {col}
+                  <button
+                    type="button"
+                    onClick={() =>
                       setMandatoryCols((prev) =>
-                        active
-                          ? prev.filter((c) => c !== col)
-                          : [...prev, col]
-                      );
-                    }}
-                  />
-                );
-              })}
+                        prev.filter((c) => c !== col)
+                      )
+                    }
+                    className="ml-0.5 hover:text-red-400 transition-colors"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {mandatoryCols.length === 0 && (
+                <span className="text-xs text-slate-600 italic">
+                  Aucune colonne obligatoire
+                </span>
+              )}
             </div>
+            {/* Dropdown to add from input_cols */}
+            {(() => {
+              const available = inputCols.filter(
+                (c) => !mandatoryCols.includes(c)
+              );
+              if (available.length === 0) return null;
+              return (
+                <div className="relative inline-block">
+                  <select
+                    className="px-3 py-1.5 rounded-lg text-xs bg-slate-800/80 border border-white/[0.08] text-cyan-300 focus:outline-none focus:border-indigo-500/50 cursor-pointer appearance-none pr-7"
+                    value=""
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val) {
+                        setMandatoryCols((prev) =>
+                          prev.includes(val) ? prev : [...prev, val]
+                        );
+                      }
+                    }}
+                  >
+                    <option value="" disabled>
+                      + Ajouter une colonne obligatoire
+                    </option>
+                    {available.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
           </div>
 
           <NumberInput
