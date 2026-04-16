@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 export type AppMode = "tv" | "pl" | "carte" | "compteurs" | null;
 
@@ -41,32 +42,9 @@ interface AppState {
   reset: () => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
-  mode: null,
-  currentStep: 0,
-  sessionId: null,
-  taskId: null,
-  territory: null,
-  fileName: null,
-  outputDir: null,
-  trainingConfig: null,
-
-  setMode: (mode) => set({ mode }),
-  setTerritory: (territory) => set({ territory }),
-  setFileName: (name) => set({ fileName: name }),
-  setSessionId: (id) => set({ sessionId: id }),
-  setTaskId: (id) => set({ taskId: id }),
-  setOutputDir: (dir) => set({ outputDir: dir }),
-  setTrainingConfig: (config) => set({ trainingConfig: config }),
-  nextStep: () =>
-    set((s) => ({
-      currentStep: Math.min(s.currentStep + 1, PIPELINE_STEPS.length - 1),
-    })),
-  prevStep: () =>
-    set((s) => ({ currentStep: Math.max(s.currentStep - 1, 0) })),
-  goToStep: (step) => set({ currentStep: step }),
-  reset: () =>
-    set({
+export const useAppStore = create<AppState>()(
+  persist(
+    (set) => ({
       mode: null,
       currentStep: 0,
       sessionId: null,
@@ -75,5 +53,42 @@ export const useAppStore = create<AppState>((set) => ({
       fileName: null,
       outputDir: null,
       trainingConfig: null,
+
+      setMode: (mode) => set({ mode }),
+      setTerritory: (territory) => set({ territory }),
+      setFileName: (name) => set({ fileName: name }),
+      setSessionId: (id) => set({ sessionId: id }),
+      setTaskId: (id) => set({ taskId: id }),
+      setOutputDir: (dir) => set({ outputDir: dir }),
+      setTrainingConfig: (config) => set({ trainingConfig: config }),
+      nextStep: () =>
+        set((s) => ({
+          currentStep: Math.min(s.currentStep + 1, PIPELINE_STEPS.length - 1),
+        })),
+      prevStep: () =>
+        set((s) => ({ currentStep: Math.max(s.currentStep - 1, 0) })),
+      goToStep: (step) => set({ currentStep: step }),
+      reset: () =>
+        set({
+          mode: null,
+          currentStep: 0,
+          sessionId: null,
+          taskId: null,
+          territory: null,
+          fileName: null,
+          outputDir: null,
+          trainingConfig: null,
+        }),
     }),
-}));
+    {
+      name: "mdl-pipeline-store",
+      storage: createJSONStorage(() =>
+        typeof window !== "undefined" ? sessionStorage : {
+          getItem: () => null,
+          setItem: () => {},
+          removeItem: () => {},
+        }
+      ),
+    }
+  )
+);
