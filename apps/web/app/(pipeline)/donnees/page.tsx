@@ -40,7 +40,7 @@ const CRITICAL_COLS = [
 ];
 
 export default function DonneesPage() {
-  const { setFileName } = useAppStore();
+  const { mode, setFileName } = useAppStore();
   const [file, setFile] = useState<File | null>(null);
   const [sourceColumns, setSourceColumns] = useState<string[]>([]);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
@@ -67,40 +67,64 @@ export default function DonneesPage() {
       setIsAutoMapping(true);
 
       try {
-        // Upload file and get auto-mapping from backend
+        // Step 1: Upload file to get session_id
         const formData = new FormData();
         formData.append("file", f);
+        formData.append("mode", mode ?? "tv");
 
-        const response = await fetch("/api/mapping/auto", {
+        const uploadResponse = await fetch("/api/upload", {
           method: "POST",
           body: formData,
         });
 
-        if (!response.ok) {
-          throw new Error(`Auto-mapping failed: ${response.statusText}`);
+        if (!uploadResponse.ok) {
+          const err = await uploadResponse.json().catch(() => ({}));
+          throw new Error(err.detail ?? `Upload failed: ${uploadResponse.statusText}`);
         }
 
-        const data = await response.json();
-        const srcCols: string[] = data.sourceColumns ?? [];
+        const uploadData = await uploadResponse.json();
+        const sessionId = uploadData.session_id;
+
+        // Store session_id for later use
+        useAppStore.getState().setSessionId(sessionId);
+
+        // Step 2: Call auto-mapping with session_id
+        const mapResponse = await fetch("/api/mapping/auto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+
+        if (!mapResponse.ok) {
+          const err = await mapResponse.json().catch(() => ({}));
+          throw new Error(err.detail ?? `Auto-mapping failed: ${mapResponse.statusText}`);
+        }
+
+        const mapData = await mapResponse.json();
+        const srcCols: string[] = mapData.source_columns ?? [];
         setSourceColumns(srcCols);
 
         // Build mappings from backend response
-        // data.mapping = { targetCol: sourceCol | null, ... }
-        const backendMapping: Record<string, string | null> = data.mapping ?? {};
-        const autoMappings: ColumnMapping[] = TARGET_COLUMNS.map((target) => ({
-          target,
-          source: backendMapping[target] ?? null,
-          confidence: backendMapping[target]
-            ? (data.confidences?.[target] ?? 80)
-            : 0,
+        const backendMappings: Array<{target: string; source: string | null; confidence: string}> = mapData.mappings ?? [];
+        const confidenceToScore: Record<string, number> = {
+          exact: 100,
+          synonym: 85,
+          fuzzy: 70,
+          missing: 0,
+        };
+        const autoMappings: ColumnMapping[] = backendMappings.map((m) => ({
+          target: m.target,
+          source: m.source,
+          confidence: confidenceToScore[m.confidence] ?? 0,
         }));
         setMappings(autoMappings);
+        setPreviewRows(uploadData.preview ?? []);
         setStep("mapping");
-        toast.success("Fichier charge avec succes");
+        toast.success(`Fichier charge : ${uploadData.rows} lignes, ${srcCols.length} colonnes`);
 
         // Warn if critical columns are missing
         const missingCritical = CRITICAL_COLS.filter(
-          (col) => !backendMapping[col]
+          (col) => !backendMappings.find((m) => m.target === col && m.source !== null)
         );
         if (missingCritical.length > 0) {
           toast.warning(
@@ -155,29 +179,42 @@ export default function DonneesPage() {
         mappingPayload[m.target] = m.source;
       });
 
+      const currentSessionId = useAppStore.getState().sessionId;
+      if (!currentSessionId) {
+        toast.error("Pas de session active. Re-importez le fichier.");
+        return;
+      }
+
       const response = await fetch("/api/mapping/validate", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mapping: mappingPayload, fileName: file?.name }),
+        body: JSON.stringify({
+          session_id: currentSessionId,
+          mapping: mappingPayload,
+          territory: "default",
+        }),
       });
 
       if (!response.ok) {
-        throw new Error(`Validation failed: ${response.statusText}`);
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail ?? `Validation failed: ${response.statusText}`);
       }
 
       const data = await response.json();
 
-      // Use preview rows from backend if available
-      const rows = data.previewRows ?? Array.from({ length: 5 }, (_, i) => {
-        const row: Record<string, unknown> = {};
-        mapped.forEach((m) => {
-          row[m.target] = `val_${i}_${m.target.slice(0, 4)}`;
-        });
-        return row;
-      });
-      setPreviewRows(rows);
+      // Use preview rows from backend response
+      setPreviewRows(data.preview ?? []);
       setStep("preview");
-      toast.success("Mapping valide - Table d'apprentissage generee");
+
+      if (data.missing_critical?.length > 0) {
+        toast.warning(
+          `Colonnes critiques manquantes : ${data.missing_critical.join(", ")}`
+        );
+      }
+      if (data.warnings?.length > 0) {
+        data.warnings.forEach((w: string) => toast.warning(w));
+      }
+      toast.success(`Table d'apprentissage generee : ${data.rows} lignes, ${data.columns?.length} colonnes`);
     } catch (err) {
       console.error("Validation error:", err);
       toast.error(

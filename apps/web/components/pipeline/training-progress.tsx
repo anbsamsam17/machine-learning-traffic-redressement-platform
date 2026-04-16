@@ -36,12 +36,12 @@ interface LossPoint {
 }
 
 interface TrainingProgressProps {
-  sessionId: string;
+  taskId: string;
   onComplete?: () => void;
 }
 
 export function TrainingProgress({
-  sessionId,
+  taskId,
   onComplete,
 }: TrainingProgressProps) {
   const [, setEvents] = useState<TrainingEvent[]>([]);
@@ -57,11 +57,11 @@ export function TrainingProgress({
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!taskId) return;
 
     setStatus("running");
     const es = streamSSE(
-      `/api/training/stream/${sessionId}`,
+      `/api/training/stream/${taskId}`,
       (data) => {
         const event = data as unknown as TrainingEvent;
         setEvents((prev) => [...prev, event]);
@@ -107,7 +107,7 @@ export function TrainingProgress({
 
     esRef.current = es;
     return () => es.close();
-  }, [sessionId, onComplete]);
+  }, [taskId, onComplete]);
 
   const overallProgress =
     totalModels > 0
