@@ -60,11 +60,13 @@ export default function TrainingPage() {
   const [lossData, setLossData] = useState<LossPoint[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [modelName, setModelName] = useState<string>("");
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const prevModelIndexRef = useRef<number>(-1);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -130,6 +132,18 @@ export default function TrainingPage() {
         if (data.total_models !== undefined) setTotalModels(data.total_models);
         if (data.best_val_loss !== null && data.best_val_loss !== undefined) setBestLoss(data.best_val_loss);
 
+        // Track model name and detect model changes
+        const incomingModelIndex = data.current_model ?? 0;
+        const incomingModelName = data.current_model_name || `Modele ${incomingModelIndex + 1}`;
+        setModelName(incomingModelName);
+
+        if (prevModelIndexRef.current !== -1 && incomingModelIndex !== prevModelIndexRef.current) {
+          // Model changed — log it and reset loss curve
+          addLog(`[Nouveau modele] ${incomingModelName}`, "info");
+          setLossData([]);
+        }
+        prevModelIndexRef.current = incomingModelIndex;
+
         if (data.loss !== null && data.val_loss !== null && data.current_epoch > 0) {
           setLossData((prev) => {
             // Avoid duplicates
@@ -150,9 +164,8 @@ export default function TrainingPage() {
           }
 
           if (data.current_epoch % 50 === 0 || data.current_epoch === data.total_epochs) {
-            const modelLabel = data.current_model_name || `Modele ${(data.current_model ?? 0) + 1}`;
             addLog(
-              `[${modelLabel}] Epoch ${data.current_epoch}/${data.total_epochs} — loss: ${data.loss.toFixed(4)} | val_loss: ${data.val_loss.toFixed(4)}`,
+              `[${incomingModelName}] Epoch ${data.current_epoch}/${data.total_epochs} — loss: ${data.loss.toFixed(4)} | val_loss: ${data.val_loss.toFixed(4)}`,
               "epoch"
             );
           }
@@ -186,12 +199,19 @@ export default function TrainingPage() {
       toast.error("Pas de session active. Retournez aux etapes precedentes.");
       return;
     }
-    if (!localOutputDir.trim()) {
+    const dir = localOutputDir.trim();
+    if (!dir) {
       toast.error("Veuillez indiquer un dossier de sortie pour les modeles.");
       return;
     }
+    // Validate absolute path (Windows C:\ or D:\ or Unix /)
+    const isAbsolute = /^[A-Za-z]:[/\\]/.test(dir) || dir.startsWith("/");
+    if (!isAbsolute) {
+      toast.error("Le dossier de sortie doit etre un chemin absolu (ex: C:\\xMDL\\TV\\MonTerritoire)");
+      return;
+    }
     // Save output dir to store
-    setOutputDir(localOutputDir.trim());
+    setOutputDir(dir);
 
     setStatus("starting");
     setLossData([]);
