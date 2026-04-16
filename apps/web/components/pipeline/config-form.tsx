@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TagInput } from "@/components/ui/tag-input";
 import { NeonButton } from "@/components/ui/neon-button";
+import { toast } from "sonner";
 import type { AppMode } from "@/lib/store";
 
 // ─── Constants TV ───────────────────────────────────────────────────────────
@@ -450,13 +451,14 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     }
     featureSets = Math.max(featureSets, 1);
 
-    const nActivations = Math.max(activations.length, 1);
-    const nLr = Math.max(learningRates.length, 1);
-    const nEpochs = Math.max(minEpochs.length, 1);
-    const nLosses = Math.max(losses.length, 1);
-    const nDropouts = Math.max(dropouts.length, 1);
-    const nArchs = Math.max(selectedArchs.length, 1);
-    const nBatch = Math.max(batchSizes.length, 1);
+    // Use 1 when list is empty (matches handleSubmit default fallback behavior)
+    const nActivations = activations.length || 1;
+    const nLr = learningRates.filter((v) => !isNaN(parseFloat(v))).length || 1;
+    const nEpochs = minEpochs.filter((v) => !isNaN(parseInt(v, 10))).length || 1;
+    const nLosses = losses.length || 1;
+    const nDropouts = dropouts.filter((v) => !isNaN(parseFloat(v))).length || 1;
+    const nArchs = selectedArchs.length || 1;
+    const nBatch = batchSizes.filter((v) => !isNaN(parseInt(v, 10))).length || 1;
 
     return (
       featureSets *
@@ -500,6 +502,34 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       });
     }
 
+    // Parse lists and fallback to defaults if empty
+    const lrs = learningRates.map((v) => parseFloat(v)).filter((v) => !isNaN(v));
+    const parsedLosses = losses.length > 0 ? losses : ["mse"];
+    const eps = minEpochs.map((v) => parseInt(v, 10)).filter((v) => !isNaN(v));
+    const drps = dropouts.map((v) => parseFloat(v)).filter((v) => !isNaN(v));
+    const bss = batchSizes.map((v) => parseInt(v, 10)).filter((v) => !isNaN(v));
+    const archs = selectedArchs.map((k) => ARCH_MAP[k] ?? [1.0, 1.0]);
+    const parsedActivations = activations.length > 0 ? activations : ["elu"];
+
+    const finalLrs = lrs.length > 0 ? lrs : [0.01];
+    const finalEps = eps.length > 0 ? eps : [500];
+    const finalDrps = drps.length > 0 ? drps : [0.05];
+    const finalBss = bss.length > 0 ? bss : [256];
+    const finalArchs = archs.length > 0 ? archs : [[1.0, 1.0]];
+
+    const usedDefaults =
+      lrs.length === 0 ||
+      losses.length === 0 ||
+      eps.length === 0 ||
+      drps.length === 0 ||
+      bss.length === 0 ||
+      archs.length === 0 ||
+      activations.length === 0;
+
+    if (usedDefaults) {
+      toast.warning("Certains champs vides ont ete completes avec les valeurs par defaut");
+    }
+
     const config: TrainingConfig = {
       mode: "grid",
       model_type: isTv ? "TV" : "PL",
@@ -513,18 +543,16 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       mandatory_input_cols: mandatoryCols,
       min_input_count: minInputCount,
       feature_subset_grid: true,
-      activations,
-      learning_rates: learningRates.map((v) => parseFloat(v)).filter((v) => !isNaN(v)),
-      losses,
-      min_nb_epochs_list: minEpochs.map((v) => parseInt(v, 10)).filter((v) => !isNaN(v)),
+      activations: parsedActivations,
+      learning_rates: finalLrs,
+      losses: parsedLosses,
+      min_nb_epochs_list: finalEps,
       max_epochs: maxEpochs,
       test_size: testSize,
-      neurons_factors_list: selectedArchs.map(
-        (k) => ARCH_MAP[k] ?? [1.0, 1.0]
-      ),
+      neurons_factors_list: finalArchs,
       use_batch_norm: useBatchNorm,
-      dropouts: dropouts.map((v) => parseFloat(v)).filter((v) => !isNaN(v)),
-      batch_sizes: batchSizes.map((v) => parseInt(v, 10)).filter((v) => !isNaN(v)),
+      dropouts: finalDrps,
+      batch_sizes: finalBss,
       use_flag_comptage_weighting: useWeighting,
       flag_comptage_col: "flag_comptage",
       flag_priority_weight: flagWeight,

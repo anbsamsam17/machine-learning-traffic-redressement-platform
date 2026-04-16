@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent, type ClipboardEvent } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,16 +21,61 @@ export function TagInput({
 }: TagInputProps) {
   const [input, setInput] = useState("");
 
+  /** Parse a raw string into trimmed, non-empty, deduplicated tokens. */
+  function parseTokens(raw: string): string[] {
+    return raw
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+  }
+
+  /** Add new values, deduplicating against existing ones. */
+  function addValues(newTokens: string[]) {
+    const unique = newTokens.filter((t) => !values.includes(t));
+    // Also deduplicate within the batch itself
+    const deduped = [...new Set(unique)];
+    if (deduped.length > 0) {
+      onChange([...values, ...deduped]);
+    }
+  }
+
+  /** Commit whatever is currently in the input field. */
+  function commitInput() {
+    const tokens = parseTokens(input);
+    if (tokens.length > 0) {
+      addValues(tokens);
+    }
+    setInput("");
+  }
+
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && input.trim()) {
+    // Enter, Tab, or comma triggers commit
+    if ((e.key === "Enter" || e.key === "Tab" || e.key === ",") && input.trim()) {
       e.preventDefault();
-      if (!values.includes(input.trim())) {
-        onChange([...values, input.trim()]);
-      }
-      setInput("");
+      commitInput();
+      return;
     }
     if (e.key === "Backspace" && !input && values.length > 0) {
       onChange(values.slice(0, -1));
+    }
+  }
+
+  function handleBlur() {
+    if (input.trim()) {
+      commitInput();
+    }
+  }
+
+  function handlePaste(e: ClipboardEvent<HTMLInputElement>) {
+    const pasted = e.clipboardData.getData("text");
+    // Only intercept if the pasted text contains commas (multi-value paste)
+    if (pasted.includes(",")) {
+      e.preventDefault();
+      const tokens = parseTokens(pasted);
+      if (tokens.length > 0) {
+        addValues(tokens);
+      }
+      setInput("");
     }
   }
 
@@ -65,6 +110,8 @@ export function TagInput({
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        onPaste={handlePaste}
         placeholder={values.length === 0 ? placeholder : ""}
         className="flex-1 min-w-[80px] bg-transparent text-sm text-foreground placeholder:text-muted outline-none"
       />
