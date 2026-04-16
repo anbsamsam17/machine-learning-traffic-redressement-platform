@@ -33,7 +33,7 @@ class EvalRequest(BaseModel):
     model_name: str | None = None
     model_dir: str | None = None
     high_flow_threshold: float = DEFAULT_HIGH_FLOW_THRESHOLD
-    stats_scope: str = "global"  # "global" or "flag1"
+    filter_flag_comptage: bool = False  # if True, only evaluate on flag_comptage == 1 (permanent sensors)
 
 
 class MetricsResult(BaseModel):
@@ -452,12 +452,34 @@ async def upload_validation(
             detail=f"Impossible de lire le fichier : {exc}",
         )
 
-    # Column renames for compatibility
-    renames = {"TMJATV": "TMJAFCDTV", "TMJAPL": "TMJAFCDPL", "TxPen": "TxPenTVRef"}
+    # Column renames for compatibility (same aliases as training scripts)
+    renames = {
+        "TMJATV": "TMJAFCDTV",
+        "TMJFCDTV": "TMJAFCDTV",
+        "TMJAPL": "TMJAFCDPL",
+        "TMJFCDPL": "TMJAFCDPL",
+        "TMJAVL": "TMJAFCDVL",
+        "TxPen": "TxPenTVRef",
+        "TxPenPL": "TxPenPLRef",
+    }
     for old, new in renames.items():
         if old in df.columns and new not in df.columns:
             df[new] = df[old]
 
+    # Also try case-insensitive matching for columns the model expects
+    col_lower_map = {c.lower(): c for c in df.columns}
+    common_cols = [
+        "TMJAFCDTV", "TMJAFCDPL", "TMJABCTV", "TMJABCPL",
+        "car_average_speed_kmh", "car_average_distance_km",
+        "truck_average_speed_kmh", "truck_min_average_distance_km",
+        "car_count", "truck_count", "variabilite_FCD",
+        "TxPenTVRef", "TxPenPLRef", "flag_comptage",
+    ]
+    for target in common_cols:
+        if target not in df.columns and target.lower() in col_lower_map:
+            df[target] = df[col_lower_map[target.lower()]]
+
+    logger.info("Validation columns after renames: %s", list(df.columns)[:20])
     session_manager.store_data(session_id, "validation_df", df)
 
     logger.info(
@@ -557,11 +579,38 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    # Apply column renames on validation data too (same as upload)
+    val_renames = {
+        "TMJATV": "TMJAFCDTV", "TMJFCDTV": "TMJAFCDTV",
+        "TMJAPL": "TMJAFCDPL", "TMJFCDPL": "TMJAFCDPL",
+        "TxPen": "TxPenTVRef", "TxPenPL": "TxPenPLRef",
+    }
+    for old, new in val_renames.items():
+        if old in df.columns and new not in df.columns:
+            df[new] = df[old]
+
+    # Case-insensitive fallback for missing columns
+    col_lower = {c.lower(): c for c in df.columns}
+    for target in input_cols + [output_col]:
+        if target not in df.columns and target.lower() in col_lower:
+            df[target] = df[col_lower[target.lower()]]
+
+    # Filter by flag_comptage if requested (permanent sensors only)
+    if body.filter_flag_comptage:
+        if "flag_comptage" in df.columns:
+            before = len(df)
+            df = df[pd.to_numeric(df["flag_comptage"], errors="coerce") == 1]
+            logger.info("Filtre flag_comptage=1 : %d -> %d lignes", before, len(df))
+        else:
+            logger.warning("flag_comptage demande mais colonne absente — pas de filtre applique")
+
     missing = [c for c in input_cols + [output_col] if c not in df.columns]
     if missing:
+        # Log available columns for debugging
+        logger.error("Colonnes manquantes: %s. Colonnes disponibles: %s", missing, list(df.columns)[:30])
         raise HTTPException(
             status_code=400,
-            detail=f"Colonnes manquantes dans les donnees de validation : {missing}",
+            detail=f"Colonnes manquantes dans les donnees de validation : {missing}. Colonnes disponibles : {list(df.columns)[:20]}",
         )
 
     sub = df[input_cols + [output_col]].dropna()
@@ -641,15 +690,11 @@ async def get_report(session_id: str) -> ReportResponse:
 
 @router.get("/download-model")
 async def download_model(
-    session_id: str = Query(...),
     model_name: str = Query(...),
     model_dir: str = Query(...),
+    session_id: str = Query(None),
 ) -> StreamingResponse:
     """Download a model folder as a ZIP file."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
-
     model_path = Path(model_dir) / model_name
     if not model_path.exists() or not model_path.is_dir():
         raise HTTPException(status_code=404, detail=f"Dossier modele introuvable : {model_path}")

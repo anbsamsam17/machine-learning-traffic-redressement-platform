@@ -68,6 +68,7 @@ export default function EvaluationPage() {
   const [reportHtml, setReportHtml] = useState<string | null>(null);
   const [reportBlob, setReportBlob] = useState<Blob | null>(null);
   const [modelDir, setModelDir] = useState(outputDir ?? "");
+  const [filterFlagComptage, setFilterFlagComptage] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // --- Load models from directory (uses proxy /api/models/list) ---
@@ -173,6 +174,7 @@ export default function EvaluationPage() {
           session_id: sid,
           model_name: selectedModel,
           model_dir: modelDir.trim(),
+          filter_flag_comptage: filterFlagComptage,
         }),
       });
 
@@ -203,7 +205,7 @@ export default function EvaluationPage() {
       setRunning(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [validationFile, selectedModel, modelDir, sessionId]);
+  }, [validationFile, selectedModel, modelDir, sessionId, filterFlagComptage]);
 
   // --- Download helpers ---
   const downloadReport = useCallback(() => {
@@ -268,6 +270,22 @@ export default function EvaluationPage() {
           label="Deposez votre fichier de validation ici"
           description="GeoJSON ou CSV avec donnees de comptage (TMJABCTV, TMJAFCDTV, etc.)"
         />
+        {/* Filter flag_comptage */}
+        <label className="flex items-center gap-3 mt-4 cursor-pointer group">
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={filterFlagComptage}
+              onChange={(e) => setFilterFlagComptage(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-10 h-5 rounded-full bg-slate-700 peer-checked:bg-indigo-500 transition-colors" />
+            <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
+          </div>
+          <span className="text-sm text-slate-300 group-hover:text-slate-100 transition-colors">
+            Limiter aux capteurs permanents (flag_comptage = 1)
+          </span>
+        </label>
       </GlowCard>
 
       {/* --- Section 2: Selection du modele --- */}
