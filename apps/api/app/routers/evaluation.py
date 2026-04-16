@@ -420,10 +420,266 @@ def _make_folium_map_html(stats_df: pd.DataFrame, model_name: str) -> str:
     m.get_root().html.add_child(folium.Element(legend_html))
 
     map_full_html = m.get_root().render()
+    # Use base64 srcdoc to avoid quote-escaping issues that break the HTML
+    import base64
+    encoded = base64.b64encode(map_full_html.encode("utf-8")).decode("ascii")
     return (
-        f'<iframe srcdoc="{_html.escape(map_full_html)}" width="100%" height="600" '
-        f'style="border:none;border-radius:12px;display:block;"></iframe>'
+        f'<iframe id="folium-map-frame" width="100%" height="600" '
+        f'style="border:none;border-radius:12px;display:block;" '
+        f'sandbox="allow-scripts allow-same-origin"></iframe>\n'
+        f'<script>\n'
+        f'(function(){{\n'
+        f'  var iframe = document.getElementById("folium-map-frame");\n'
+        f'  var html = atob("{encoded}");\n'
+        f'  iframe.srcdoc = html;\n'
+        f'}})();\n'
+        f'</script>'
     )
+
+
+def _build_sensitivity_section_html(
+    df: pd.DataFrame,
+    model: Any,
+    mu_x: np.ndarray,
+    s_x: np.ndarray,
+    mu_y: np.ndarray,
+    s_y: np.ndarray,
+    input_cols: list[str],
+    num_points: int = 60,
+) -> str:
+    """Build sensitivity analysis HTML section.
+
+    For each input feature, varies it from min to max (num_points steps) while
+    fixing other features at Q1, Median, Q3 baselines. Predicts TxPen via the
+    model, denormalises, and computes TVr = TMJAFCDTV / TxPen * 100.
+
+    Returns a complete HTML string (CSS + section + JS) ready to embed in the report.
+    """
+    import plotly.graph_objects as go
+    import plotly.io as pio
+
+    n_inputs = len(input_cols)
+    # Expand mu_x/s_x if needed (for non-normalized trailing columns like year_mapped)
+    if len(mu_x) < n_inputs:
+        on_off_norm = np.ones(n_inputs, dtype=bool)
+        n_not_normed = n_inputs - len(mu_x)
+        on_off_norm[-n_not_normed:] = False
+        if int(on_off_norm.sum()) == len(mu_x):
+            full_mu = np.zeros(n_inputs, dtype=float)
+            full_s = np.ones(n_inputs, dtype=float)
+            full_mu[on_off_norm] = mu_x
+            full_s[on_off_norm] = s_x
+            mu_x = full_mu
+            s_x = full_s
+
+    # Cast input columns to numeric
+    df_num = df[input_cols].copy()
+    for c in input_cols:
+        df_num[c] = pd.to_numeric(df_num[c], errors="coerce")
+
+    # Compute Q1 / Median / Q3 baselines
+    q_baselines = {
+        "Q1":  df_num.quantile(0.25),
+        "Med": df_num.quantile(0.50),
+        "Q3":  df_num.quantile(0.75),
+    }
+
+    # Determine numerator column for TVr
+    _numerator_col: str | None = None
+    for _cand in ("TMJAFCDTV", "TMJATV"):
+        if _cand in input_cols:
+            _numerator_col = _cand
+            break
+
+    _COLORS = {"Q1": "#6eb5ff", "Med": "#0057b7", "Q3": "#003d80"}
+    _DASHES = {"Q1": "dot", "Med": "solid", "Q3": "dash"}
+
+    plots_dict: dict[str, str] = {}
+    rendered_cols: list[str] = []
+
+    s_x_safe = np.where(s_x == 0, 1.0, s_x)
+
+    for feat in input_cols:
+        col_series = df_num[feat].dropna()
+        if col_series.empty:
+            continue
+        vmin, vmax = float(col_series.min()), float(col_series.max())
+        if not (np.isfinite(vmin) and np.isfinite(vmax)):
+            continue
+        if vmax == vmin:
+            continue
+
+        x_vals = np.linspace(vmin, vmax, num_points, dtype=float)
+
+        fig = go.Figure()
+
+        for bl_label, q_vec in q_baselines.items():
+            # Build input matrix: all features at baseline
+            mat = np.tile(q_vec.values.astype(float), (num_points, 1))
+            df_x = pd.DataFrame(mat, columns=input_cols)
+            # Vary the current feature
+            df_x[feat] = x_vals
+
+            # Normalise -> predict -> denormalise
+            x_norm = ((df_x.values - mu_x) / s_x_safe).astype(np.float32)
+            y_norm = model.predict(x_norm, verbose=0)
+            txpen = y_norm.flatten().astype(float) * float(s_y) + float(mu_y)
+
+            # Compute TVr
+            with np.errstate(divide="ignore", invalid="ignore"):
+                if feat == _numerator_col:
+                    numerator = x_vals
+                elif _numerator_col is not None:
+                    numerator = np.full(num_points, float(q_vec[_numerator_col]), dtype=float)
+                else:
+                    numerator = np.ones(num_points, dtype=float)
+
+                tvr = np.where(txpen > 0, numerator / txpen * 100.0, np.nan)
+                tvr = np.where(np.isfinite(tvr), tvr, np.nan)
+
+            # Build hover text
+            other_feats = [c for c in input_cols if c != feat]
+            hover_lines = [
+                f"<b>{feat}</b> : %{{x:.2f}}<br>",
+                f"<b>TVr</b> : %{{y:.1f}}<br>",
+                f"<i>Autres features fig&#233;es &#224; {bl_label} :</i><br>",
+            ] + [
+                f"&nbsp;&nbsp;{c} = {q_vec[c]:.2f}<br>"
+                for c in other_feats
+            ]
+            hover_tmpl = "".join(hover_lines) + "<extra></extra>"
+
+            fig.add_trace(go.Scatter(
+                x=x_vals.tolist(),
+                y=tvr.tolist(),
+                mode="lines",
+                name=bl_label,
+                line=dict(color=_COLORS[bl_label], dash=_DASHES[bl_label], width=2),
+                hovertemplate=hover_tmpl,
+            ))
+
+        fig.update_layout(
+            title=f"TVr ~ {feat}",
+            xaxis_title=feat,
+            yaxis_title="TVr (v&#233;h/jour)",
+            template="plotly_white",
+            margin=dict(l=50, r=40, t=60, b=60),
+            hoverlabel=dict(bgcolor="white", font_size=12, font_family="Manrope,sans-serif"),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom", y=1.02,
+                xanchor="left", x=0,
+                title_text="Baseline",
+            ),
+        )
+
+        plots_dict[feat] = pio.to_html(fig, include_plotlyjs=False, full_html=False)
+        rendered_cols.append(feat)
+
+    # Build the HTML section
+    if not rendered_cols:
+        return (
+            '  <h2>Analyse de sensibilit&#233; &#8211; mod&#232;le</h2>\n'
+            '  <p class="hint">Mod&#232;le ou colonnes d&#8217;entr&#233;e non disponibles '
+            'pour l&#8217;analyse de sensibilit&#233;.</p>'
+        )
+
+    # Pills
+    pills_html = "\n        ".join(
+        f'<button class="sens-pill{" sens-pill--active" if i == 0 else ""}" '
+        f'data-feat="{feat}" role="button" tabindex="0" '
+        f'aria-pressed="{"true" if i == 0 else "false"}">{feat}</button>'
+        for i, feat in enumerate(rendered_cols)
+    )
+    # Plot divs
+    plot_divs_html = "\n".join(
+        f'<div id="sens-plot-{feat}" class="sens-plot-slot" '
+        f'style="display:{"block" if i == 0 else "none"};">'
+        f'{plots_dict[feat]}</div>'
+        for i, feat in enumerate(rendered_cols)
+    )
+
+    return f"""
+<style>
+.sens-block{{font-family:Manrope,"Segoe UI",Arial,sans-serif;color:#122033;margin-bottom:16px;}}
+.sens-panel{{background:linear-gradient(180deg,#fff,#fbfdff);border:1px solid #dfe7f2;border-radius:16px;padding:20px;box-shadow:0 10px 22px rgba(12,52,103,.07);}}
+.sens-header{{display:flex;align-items:flex-start;gap:12px;margin-bottom:6px;}}
+.sens-icon{{flex-shrink:0;width:38px;height:38px;background:linear-gradient(135deg,#0057b7,#1a80e8);border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(0,87,183,.22);}}
+.sens-icon svg{{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}}
+.sens-titles h2{{margin:0 0 3px;font-size:18px;font-weight:800;color:#0d1f35;}}
+.sens-desc{{color:#56637a;font-size:12.5px;line-height:1.5;margin:0;max-width:680px;}}
+.sens-divider{{border:none;border-top:1px solid #e8eef7;margin:14px 0;}}
+.sens-controls{{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;}}
+.sens-controls-label{{font-size:11.5px;font-weight:700;color:#56637a;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;}}
+.sens-pills{{display:flex;flex-wrap:wrap;gap:7px;}}
+.sens-pill{{cursor:pointer;padding:5px 14px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid #c8d8ef;background:#f0f5fc;color:#3d5a80;transition:background .16s,color .16s,border-color .16s,box-shadow .16s;user-select:none;line-height:1.4;white-space:nowrap;}}
+.sens-pill:hover{{background:#daeaf9;border-color:#7ab3e0;color:#0b3d7a;}}
+.sens-pill.sens-pill--active{{background:linear-gradient(135deg,#0057b7,#1a80e8);border-color:#0057b7;color:#fff;box-shadow:0 3px 10px rgba(0,87,183,.28);}}
+.sens-legend{{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;}}
+.sens-legend-item{{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#56637a;}}
+.sens-legend-dot{{width:10px;height:10px;border-radius:50%;flex-shrink:0;}}
+.sens-legend-dot--q1{{background:#93c4f0;}}.sens-legend-dot--med{{background:#0057b7;}}.sens-legend-dot--q3{{background:#003a7a;}}
+.sens-chart-wrap{{border-radius:10px;overflow:hidden;background:#f8fbff;border:1px solid #e8eef7;min-height:420px;}}
+.sens-plot-slot{{width:100%;}}
+.sens-plot-slot>div{{width:100%!important;}}
+@media(max-width:600px){{.sens-pills{{display:grid;grid-template-columns:1fr 1fr;}}.sens-pill{{text-align:center;}}}}
+</style>
+<section class="sens-block">
+  <div class="sens-panel">
+    <div class="sens-header">
+      <div class="sens-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><polyline points="3 17 8 12 13 15 21 7"/><line x1="3" y1="21" x2="21" y2="21"/><line x1="3" y1="3" x2="3" y2="21"/></svg>
+      </div>
+      <div class="sens-titles">
+        <h2>Analyse de sensibilit&#233;</h2>
+        <p class="sens-desc">Chaque courbe montre comment le <strong>TVr</strong> pr&#233;dit &#233;volue lorsqu&#8217;une feature varie, les autres fig&#233;es &#224; <strong>Q1</strong>, <strong>M&#233;diane</strong> et <strong>Q3</strong>. Cliquez sur une feature pour afficher son graphe.</p>
+      </div>
+    </div>
+    <hr class="sens-divider">
+    <div class="sens-controls">
+      <span class="sens-controls-label">Feature</span>
+      <div class="sens-pills" id="sensPills" role="group">
+        {pills_html}
+      </div>
+    </div>
+    <div class="sens-legend">
+      <div class="sens-legend-item"><span class="sens-legend-dot sens-legend-dot--q1"></span><span>Q1 &#8212; 25e percentile</span></div>
+      <div class="sens-legend-item"><span class="sens-legend-dot sens-legend-dot--med"></span><span>M&#233;diane &#8212; 50e percentile</span></div>
+      <div class="sens-legend-item"><span class="sens-legend-dot sens-legend-dot--q3"></span><span>Q3 &#8212; 75e percentile</span></div>
+    </div>
+    <div class="sens-chart-wrap">
+      {plot_divs_html}
+    </div>
+  </div>
+</section>
+<script>
+(function() {{
+  var pills = document.querySelectorAll("#sensPills .sens-pill");
+  pills.forEach(function(pill) {{
+    pill.addEventListener("click", function() {{
+      var feat = this.getAttribute("data-feat");
+      pills.forEach(function(p) {{
+        p.classList.remove("sens-pill--active");
+        p.setAttribute("aria-pressed", "false");
+      }});
+      this.classList.add("sens-pill--active");
+      this.setAttribute("aria-pressed", "true");
+      document.querySelectorAll(".sens-plot-slot").forEach(function(div) {{
+        div.style.display = "none";
+      }});
+      var target = document.getElementById("sens-plot-" + feat);
+      if (target) {{
+        target.style.display = "block";
+        var plotDiv = target.querySelector(".plotly-graph-div");
+        if (plotDiv && window.Plotly) {{ window.Plotly.Plots.resize(plotDiv); }}
+      }}
+    }});
+    pill.addEventListener("keydown", function(e) {{
+      if (e.key === "Enter" || e.key === " ") {{ e.preventDefault(); this.click(); }}
+    }});
+  }});
+}})();
+</script>"""
 
 
 def _generate_html_report(
@@ -433,6 +689,7 @@ def _generate_html_report(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     df: pd.DataFrame | None = None,
+    sensitivity_html: str | None = None,
 ) -> str:
     """Generate a self-contained HTML evaluation report matching the original Streamlit style.
 
@@ -450,6 +707,9 @@ def _generate_html_report(
         Full evaluation DataFrame with columns like TMJAFCDTV, TMJABCTV, TVr,
         Tolerance_IN_OUT, Erreur %, GEH, lat, lon, etc.  When provided, the
         report includes the barplot, outlier table and Folium map.
+    sensitivity_html : str | None
+        Pre-built sensitivity analysis HTML section. When provided, inserted
+        after the Folium map section.
     """
 
     # --- Build stats row (same structure as original rows[]) ---
@@ -724,6 +984,8 @@ def _generate_html_report(
   <div class="panel" style="padding:6px;overflow:hidden;">
     {map_html}
   </div>
+
+  {sensitivity_html if sensitivity_html else ""}
 
 </div>
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -1100,6 +1362,27 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
     if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
         report_df = _add_tolerance_columns(report_df)
 
+    # Build sensitivity analysis section
+    sensitivity_html = None
+    try:
+        if model is not None and input_cols:
+            mu_x_arr = np.array(x_mean, dtype=np.float64)
+            s_x_arr = np.array(x_std, dtype=np.float64)
+            mu_y_arr = np.array(y_mean, dtype=np.float64)
+            s_y_arr = np.array(y_std, dtype=np.float64)
+            sensitivity_html = _build_sensitivity_section_html(
+                df=report_df,
+                model=model,
+                mu_x=mu_x_arr,
+                s_x=s_x_arr,
+                mu_y=mu_y_arr,
+                s_y=s_y_arr,
+                input_cols=input_cols,
+            )
+    except Exception as exc:
+        logger.warning("Sensitivity analysis failed (non-blocking): %s", exc)
+        sensitivity_html = None
+
     # Generate HTML report
     report_html = _generate_html_report(
         metrics=metrics,
@@ -1108,6 +1391,7 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
         y_true=y_true,
         y_pred=y_pred,
         df=report_df,
+        sensitivity_html=sensitivity_html,
     )
 
     # Store in session
