@@ -33,7 +33,8 @@ class EvalRequest(BaseModel):
     model_name: str | None = None
     model_dir: str | None = None
     high_flow_threshold: float = DEFAULT_HIGH_FLOW_THRESHOLD
-    filter_flag_comptage: bool = False  # if True, only evaluate on flag_comptage == 1 (permanent sensors)
+    filter_flag_comptage: bool = False
+    column_mapping: dict[str, str] | None = None  # target -> source mapping from frontend
 
 
 class MetricsResult(BaseModel):
@@ -425,6 +426,7 @@ def _read_uploaded_df(session: Any) -> pd.DataFrame:
 async def upload_validation(
     file: UploadFile = File(...),
     session_id: str = Form(...),
+    column_mapping: str = Form(""),
 ) -> dict:
     """Upload a validation file (GeoJSON or CSV) and store it in the session."""
     session = session_manager.get_session(session_id)
@@ -479,7 +481,18 @@ async def upload_validation(
         if target not in df.columns and target.lower() in col_lower_map:
             df[target] = df[col_lower_map[target.lower()]]
 
-    logger.info("Validation columns after renames: %s", list(df.columns)[:20])
+    # Apply user-provided column mapping (target -> source)
+    if column_mapping:
+        try:
+            mapping_dict: dict[str, str] = json.loads(column_mapping)
+            for target_col, source_col in mapping_dict.items():
+                if source_col and source_col in df.columns and target_col not in df.columns:
+                    df[target_col] = df[source_col]
+                    logger.info("Mapping colonne: %s -> %s", source_col, target_col)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("column_mapping invalide, ignore: %s", column_mapping[:100])
+
+    logger.info("Validation columns after renames+mapping: %s", list(df.columns)[:30])
     session_manager.store_data(session_id, "validation_df", df)
 
     logger.info(
@@ -578,6 +591,12 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
         df = _read_uploaded_df(session)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    # Apply user-provided column mapping first (from frontend)
+    if body.column_mapping:
+        for target_col, source_col in body.column_mapping.items():
+            if source_col and source_col in df.columns and target_col not in df.columns:
+                df[target_col] = df[source_col]
 
     # Apply column renames on validation data too (same as upload)
     val_renames = {
