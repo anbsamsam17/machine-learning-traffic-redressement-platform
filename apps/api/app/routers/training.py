@@ -648,7 +648,7 @@ def _training_worker(task: TrainingTask) -> None:
                         "patience": patience,
                         "seed": seed,
                         "train_rows": int(len(x_train_norm)),
-                        "val_rows": int(len(X_val_fit)),
+                        "val_rows": int(len(X_val_fit)) if X_val_fit is not None else 0,
                     }, indent=2)
                     (model_dir / "training_config.json").write_text(
                         train_cfg, encoding="utf-8"
@@ -710,7 +710,12 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
     if session is None:
         raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
     if session.data.get("learning_df") is None:
-        raise HTTPException(status_code=400, detail="Pas de DataFrame d'apprentissage.")
+        raise HTTPException(
+            status_code=400,
+            detail="Pas de DataFrame d'apprentissage dans cette session. "
+                   "Retournez a l'etape Donnees, importez un fichier et validez le mapping. "
+                   "Si le backend a ete redémarre, les sessions en memoire sont perdues.",
+        )
 
     combos = _build_combinations(body.model_dump())
     total = len(combos)
