@@ -13,6 +13,7 @@ import {
   Loader2,
   FolderOpen,
   ChevronDown,
+  ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { GradientText } from "@/components/ui/gradient-text";
@@ -46,22 +47,17 @@ interface EvalMetrics {
   median_relative_error?: number | null;
 }
 
-interface EvalRunResponse {
-  session_id: string;
-  model_name: string;
-  metrics: EvalMetrics;
-  report_url: string;
-}
-
 /* ---------- Page ---------- */
 
 export default function EvaluationPage() {
   const { mode, sessionId, setSessionId, outputDir } = useAppStore();
 
-  // --- State ---
   const [validationFile, setValidationFile] = useState<File | null>(null);
+  const [fileColumns, setFileColumns] = useState<string[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [requiredCols, setRequiredCols] = useState<string[]>([]);
+  const [colMapping, setColMapping] = useState<Record<string, string>>({});
   const [loadingModels, setLoadingModels] = useState(false);
   const [running, setRunning] = useState(false);
   const [metrics, setMetrics] = useState<EvalMetrics | null>(null);
@@ -71,20 +67,40 @@ export default function EvaluationPage() {
   const [filterFlagComptage, setFilterFlagComptage] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // --- Load models from directory (uses proxy /api/models/list) ---
-  const loadModels = useCallback(async (dir: string) => {
-    if (!dir.trim()) {
-      toast.error("Veuillez saisir un dossier de modeles.");
-      return;
+  // --- Upload validation file and get columns ---
+  const handleValidationFile = useCallback(async (f: File) => {
+    setValidationFile(f);
+    setMetrics(null);
+    setReportHtml(null);
+
+    try {
+      // Upload to get a session + columns list
+      const form = new FormData();
+      form.append("file", f);
+      form.append("mode", mode === "pl" ? "PL" : "TV");
+
+      // Always create a fresh session via upload to get columns
+      const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
+      if (!uploadRes.ok) throw new Error("Upload echoue");
+      const data = await uploadRes.json();
+      const newSid: string = data.session_id;
+      setSessionId(newSid);
+      setFileColumns(data.columns ?? []);
+
+      toast.success(`Fichier charge : ${f.name}`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors du chargement du fichier.");
     }
+  }, [sessionId, setSessionId, mode]);
+
+  // --- Load models ---
+  const loadModels = useCallback(async (dir: string) => {
+    if (!dir.trim()) return;
     setLoadingModels(true);
     try {
-      const res = await fetch(
-        `/api/models/list?dir=${encodeURIComponent(dir.trim())}`
-      );
-      if (!res.ok) {
-        throw new Error(`Erreur ${res.status}`);
-      }
+      const res = await fetch(`/api/models/list?dir=${encodeURIComponent(dir.trim())}`);
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const data = await res.json();
       const modelList: ModelInfo[] = data.models ?? [];
       setModels(modelList);
@@ -94,15 +110,14 @@ export default function EvaluationPage() {
       } else {
         toast.warning("Aucun modele trouve dans ce dossier.");
       }
-    } catch (err) {
-      console.error(err);
-      toast.error("Impossible de lister les modeles. Verifiez le chemin.");
+    } catch {
+      toast.error("Impossible de lister les modeles.");
     } finally {
       setLoadingModels(false);
     }
   }, []);
 
-  // Auto-load on mount if outputDir is set
+  // Auto-load on mount
   useEffect(() => {
     if (outputDir) {
       setModelDir(outputDir);
@@ -110,38 +125,43 @@ export default function EvaluationPage() {
     }
   }, [outputDir, loadModels]);
 
-  // --- Ensure we have a session (create one if needed for standalone mode) ---
-  async function ensureSession(): Promise<string> {
-    if (sessionId) return sessionId;
+  // --- When model selection changes, update required columns + auto-map ---
+  useEffect(() => {
+    const model = models.find((m) => m.name === selectedModel);
+    if (!model?.training_config) {
+      setRequiredCols([]);
+      return;
+    }
+    const inputCols = (model.training_config.input_cols as string[]) ?? [];
+    const outputCol = (model.training_config.output_col as string) ?? "TxPenTVRef";
+    const needed = [...inputCols, outputCol];
+    setRequiredCols(needed);
 
-    // Create a lightweight session for standalone evaluation
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      body: (() => {
-        const fd = new FormData();
-        // Upload the validation file as the raw data to create a session
-        if (validationFile) fd.append("file", validationFile);
-        fd.append("mode", mode === "pl" ? "PL" : "TV");
-        return fd;
-      })(),
-    });
+    // Auto-map: try exact match, then case-insensitive
+    const mapping: Record<string, string> = {};
+    const fileLower: Record<string, string> = {};
+    fileColumns.forEach((c) => { fileLower[c.toLowerCase()] = c; });
 
-    if (!res.ok) throw new Error("Impossible de creer une session.");
-    const data = await res.json();
-    setSessionId(data.session_id);
-    return data.session_id;
-  }
+    for (const col of needed) {
+      if (fileColumns.includes(col)) {
+        mapping[col] = col;
+      } else if (fileLower[col.toLowerCase()]) {
+        mapping[col] = fileLower[col.toLowerCase()];
+      } else {
+        mapping[col] = ""; // not found — user must map
+      }
+    }
+    setColMapping(mapping);
+  }, [selectedModel, models, fileColumns]);
+
+  const unmappedCount = Object.values(colMapping).filter((v) => !v).length;
+  const allMapped = requiredCols.length > 0 && unmappedCount === 0;
 
   // --- Run evaluation ---
   const handleRun = useCallback(async () => {
-    if (!validationFile) {
-      toast.error("Veuillez selectionner un fichier de validation.");
-      return;
-    }
-    if (!selectedModel) {
-      toast.error("Veuillez selectionner un modele.");
-      return;
-    }
+    if (!validationFile) { toast.error("Selectionnez un fichier."); return; }
+    if (!selectedModel) { toast.error("Selectionnez un modele."); return; }
+    if (!allMapped) { toast.error("Mappez toutes les colonnes requises."); return; }
 
     setRunning(true);
     setMetrics(null);
@@ -149,24 +169,29 @@ export default function EvaluationPage() {
     setReportBlob(null);
 
     try {
-      // 1. Ensure session exists
-      const sid = await ensureSession();
+      let sid: string = sessionId ?? "";
+      if (!sid) {
+        const fd = new FormData();
+        fd.append("file", validationFile);
+        fd.append("mode", mode === "pl" ? "PL" : "TV");
+        const r = await fetch("/api/upload", { method: "POST", body: fd });
+        if (!r.ok) throw new Error("Impossible de creer la session");
+        sid = (await r.json()).session_id as string;
+        setSessionId(sid);
+      }
 
-      // 2. Upload validation file
+      // Upload validation with column mapping applied
       const form = new FormData();
       form.append("file", validationFile);
       form.append("session_id", sid);
-
-      const uploadRes = await fetch("/api/evaluation/upload-validation", {
-        method: "POST",
-        body: form,
-      });
+      form.append("column_mapping", JSON.stringify(colMapping));
+      const uploadRes = await fetch("/api/evaluation/upload-validation", { method: "POST", body: form });
       if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({ detail: "Upload echoue" }));
+        const err = await uploadRes.json().catch(() => ({}));
         throw new Error(err.detail ?? "Upload echoue");
       }
 
-      // 3. Run evaluation
+      // Run evaluation
       const evalRes = await fetch("/api/evaluation/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -175,39 +200,32 @@ export default function EvaluationPage() {
           model_name: selectedModel,
           model_dir: modelDir.trim(),
           filter_flag_comptage: filterFlagComptage,
+          column_mapping: colMapping,
         }),
       });
-
       if (!evalRes.ok) {
-        const err = await evalRes.json().catch(() => ({ detail: "Evaluation echouee" }));
+        const err = await evalRes.json().catch(() => ({}));
         throw new Error(err.detail ?? "Evaluation echouee");
       }
-
-      const evalData: EvalRunResponse = await evalRes.json();
+      const evalData = await evalRes.json();
       setMetrics(evalData.metrics);
 
-      // 4. Fetch report HTML
+      // Fetch report
       const reportRes = await fetch(`/api/evaluation/report/${sid}`);
       if (reportRes.ok) {
         const reportData = await reportRes.json();
         setReportHtml(reportData.report_html);
-        setReportBlob(
-          new Blob([reportData.report_html], { type: "text/html" })
-        );
+        setReportBlob(new Blob([reportData.report_html], { type: "text/html" }));
       }
 
       toast.success(`Evaluation terminee pour ${selectedModel}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Erreur: ${msg}`);
-      console.error(err);
+      toast.error(`Erreur: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setRunning(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [validationFile, selectedModel, modelDir, sessionId, filterFlagComptage]);
+  }, [validationFile, selectedModel, modelDir, sessionId, filterFlagComptage, colMapping, allMapped, mode, setSessionId]);
 
-  // --- Download helpers ---
   const downloadReport = useCallback(() => {
     if (!reportBlob) return;
     const url = URL.createObjectURL(reportBlob);
@@ -221,9 +239,7 @@ export default function EvaluationPage() {
   const downloadModelZip = useCallback(async () => {
     if (!selectedModel || !modelDir) return;
     try {
-      const res = await fetch(
-        `/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(modelDir.trim())}`
-      );
+      const res = await fetch(`/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(modelDir.trim())}`);
       if (!res.ok) throw new Error("Telechargement echoue");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -232,53 +248,36 @@ export default function EvaluationPage() {
       a.download = `${selectedModel}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Impossible de telecharger le modele.");
-    }
+    } catch { toast.error("Impossible de telecharger le modele."); }
   }, [selectedModel, modelDir]);
 
   return (
     <div className="space-y-6">
-      {/* --- Header --- */}
       <div className="space-y-2">
-        <GradientText as="h2" className="text-2xl">
-          Evaluation
-        </GradientText>
+        <GradientText as="h2" className="text-2xl">Evaluation</GradientText>
         <p className="text-sm text-muted">
-          Evaluez un modele {mode === "pl" ? "PL" : "TV"} sur un fichier de
-          validation. Cette etape peut etre lancee independamment des etapes
-          precedentes.
+          Evaluez un modele {mode === "pl" ? "PL" : "TV"} sur un fichier de validation.
+          Cette etape peut etre lancee independamment.
         </p>
       </div>
 
-      {/* --- Section 1: Fichier de validation --- */}
+      {/* 1. Fichier de validation */}
       <GlowCard>
         <div className="flex items-center gap-2 mb-4">
           <Upload size={18} className="text-accent" />
-          <h3 className="text-sm font-semibold text-foreground">
-            1. Fichier de validation
-          </h3>
+          <h3 className="text-sm font-semibold text-foreground">1. Fichier de validation</h3>
         </div>
         <DropZone
           file={validationFile}
-          onFile={setValidationFile}
-          onClear={() => setValidationFile(null)}
-          accept={{
-            "application/json": [".geojson", ".json"],
-            "text/csv": [".csv"],
-          }}
-          label="Deposez votre fichier de validation ici"
-          description="GeoJSON ou CSV avec donnees de comptage (TMJABCTV, TMJAFCDTV, etc.)"
+          onFile={handleValidationFile}
+          onClear={() => { setValidationFile(null); setFileColumns([]); setColMapping({}); }}
+          accept={{ "application/json": [".geojson", ".json"], "text/csv": [".csv"] }}
+          label="Deposez votre fichier de validation"
+          description="GeoJSON ou CSV avec donnees de comptage"
         />
-        {/* Filter flag_comptage */}
         <label className="flex items-center gap-3 mt-4 cursor-pointer group">
           <div className="relative">
-            <input
-              type="checkbox"
-              checked={filterFlagComptage}
-              onChange={(e) => setFilterFlagComptage(e.target.checked)}
-              className="sr-only peer"
-            />
+            <input type="checkbox" checked={filterFlagComptage} onChange={(e) => setFilterFlagComptage(e.target.checked)} className="sr-only peer" />
             <div className="w-10 h-5 rounded-full bg-slate-700 peer-checked:bg-indigo-500 transition-colors" />
             <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
           </div>
@@ -288,236 +287,152 @@ export default function EvaluationPage() {
         </label>
       </GlowCard>
 
-      {/* --- Section 2: Selection du modele --- */}
+      {/* 2. Selection du modele */}
       <GlowCard glowColor="cyan">
         <div className="flex items-center gap-2 mb-4">
           <FolderOpen size={18} className="text-cyan-400" />
-          <h3 className="text-sm font-semibold text-foreground">
-            2. Selection du modele
-          </h3>
+          <h3 className="text-sm font-semibold text-foreground">2. Selection du modele</h3>
         </div>
-
         <div className="space-y-3">
-          <p className="text-xs text-slate-400">
-            Indiquez le dossier contenant les modeles entraines, puis
-            selectionnez un modele dans la liste.
-          </p>
-
-          {/* Model directory input + browse + load */}
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={modelDir}
-              onChange={(e) => setModelDir(e.target.value)}
+            <input type="text" value={modelDir} onChange={(e) => setModelDir(e.target.value)}
               placeholder="Ex: C:\xMDL\TV\MonTerritoire"
               className="flex-1 rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
             />
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  // @ts-expect-error -- showDirectoryPicker not in all TS types
-                  const handle = await window.showDirectoryPicker({ mode: "read" });
-                  setModelDir(handle.name);
-                  toast.info(`Dossier : ${handle.name} — saisissez le chemin complet si necessaire`);
-                } catch { /* cancelled */ }
-              }}
-              className="px-3 py-2 rounded-lg text-sm bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20 transition-colors flex items-center gap-1.5 shrink-0"
-            >
-              <FolderOpen size={14} />
-              Parcourir
-            </button>
-            <NeonButton
-              variant="secondary"
-              onClick={() => loadModels(modelDir)}
-              disabled={!modelDir.trim() || loadingModels}
-              className="text-xs whitespace-nowrap"
-            >
-              {loadingModels ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                "Charger les modeles"
-              )}
+            <NeonButton variant="secondary" onClick={() => loadModels(modelDir)} disabled={!modelDir.trim() || loadingModels} className="text-xs whitespace-nowrap">
+              {loadingModels ? <Loader2 size={14} className="animate-spin" /> : "Charger"}
             </NeonButton>
           </div>
-
-          {/* Model dropdown */}
           <AnimatePresence>
             {models.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-2"
-              >
+              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
                 <div className="relative">
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full appearance-none rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2.5 pr-10 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 cursor-pointer"
-                  >
+                  <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}
+                    className="w-full appearance-none rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2.5 pr-10 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 cursor-pointer">
                     {models.map((m) => (
-                      <option key={m.name} value={m.name}>
-                        {m.name} {m.has_weights ? "✓" : "⚠ pas de poids"}
-                      </option>
+                      <option key={m.name} value={m.name}>{m.name} {m.has_weights ? "✓" : "⚠"}</option>
                     ))}
                   </select>
-                  <ChevronDown
-                    size={16}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
-                  />
+                  <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
-                <p className="text-xs text-slate-400">
-                  {models.length} modele(s) disponible(s)
-                </p>
+                <p className="text-xs text-slate-400">{models.length} modele(s)</p>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </GlowCard>
 
-      {/* --- Section 3: Lancer l'evaluation --- */}
-      <div className="flex justify-center">
-        <NeonButton
-          variant="primary"
-          icon={
-            running ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <Play size={18} />
-            )
-          }
-          onClick={handleRun}
-          disabled={running || !validationFile || !selectedModel}
-          className="px-10 py-4 text-base"
-        >
-          {running ? "Evaluation en cours..." : "3. Lancer l'evaluation"}
-        </NeonButton>
-      </div>
-
-      {/* --- Section 4: Metriques --- */}
+      {/* 3. Mapping colonnes */}
       <AnimatePresence>
-        {metrics && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-4"
-          >
-            <div className="flex items-center gap-2">
-              <BarChart3 size={18} className="text-accent" />
-              <h3 className="text-sm font-semibold text-foreground">
-                Metriques &mdash;{" "}
-                <span className="text-accent">{selectedModel}</span>
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-              <StatCard
-                label="MAE"
-                value={metrics.mae.toFixed(2)}
-                icon={<Activity size={18} />}
-              />
-              <StatCard
-                label="RMSE"
-                value={metrics.rmse.toFixed(2)}
-                icon={<Target size={18} />}
-              />
-              <StatCard
-                label="R²"
-                value={metrics.r_squared.toFixed(4)}
-                icon={<BarChart3 size={18} />}
-                trend={metrics.r_squared > 0.95 ? "up" : metrics.r_squared > 0.85 ? "neutral" : "down"}
-              />
-              <StatCard
-                label="GEH < 5%"
-                value={`${metrics.geh_pct_below_5.toFixed(1)}%`}
-                icon={<FileCheck size={18} />}
-                trend={metrics.geh_pct_below_5 > 85 ? "up" : metrics.geh_pct_below_5 > 70 ? "neutral" : "down"}
-              />
-              <StatCard
-                label="Echantillons"
-                value={metrics.n_samples.toString()}
-              />
-            </div>
-
-            {(metrics.mape !== null || metrics.hd_rmse !== null) && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {metrics.mape !== null && (
-                  <StatCard
-                    label="MAPE"
-                    value={`${metrics.mape.toFixed(1)}%`}
-                  />
-                )}
-                <StatCard
-                  label="GEH moyen"
-                  value={metrics.geh_mean.toFixed(3)}
-                />
-                {metrics.hd_rmse !== null && (
-                  <StatCard label="RMSE HD" value={metrics.hd_rmse.toFixed(2)} />
-                )}
-                {metrics.ld_rmse !== null && (
-                  <StatCard label="RMSE LD" value={metrics.ld_rmse.toFixed(2)} />
-                )}
+        {requiredCols.length > 0 && fileColumns.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+            <GlowCard glowColor="violet">
+              <div className="flex items-center gap-2 mb-4">
+                <ArrowRight size={18} className="text-violet-400" />
+                <h3 className="text-sm font-semibold text-foreground">
+                  3. Mapping des colonnes
+                  <span className={`ml-2 text-xs ${allMapped ? "text-emerald-400" : "text-amber-400"}`}>
+                    ({requiredCols.length - unmappedCount}/{requiredCols.length} mappees)
+                  </span>
+                </h3>
               </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* --- Section 5: Rapport HTML --- */}
-      <AnimatePresence>
-        {reportHtml && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-          >
-            <GlowCard glowColor="violet" className="!p-0 overflow-hidden">
-              <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
-                <div className="flex items-center gap-2">
-                  <FileCheck size={18} className="text-violet-400" />
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Rapport d&apos;evaluation
-                  </h3>
-                </div>
-                <span className="text-xs text-muted">{selectedModel}</span>
+              <p className="text-xs text-slate-400 mb-3">
+                Le modele necessite ces colonnes. Associez chacune a une colonne de votre fichier.
+              </p>
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+                {requiredCols.map((col) => (
+                  <div key={col} className="flex items-center gap-3">
+                    <span className={`text-xs font-mono w-[280px] shrink-0 truncate ${colMapping[col] ? "text-slate-200" : "text-red-400"}`}>
+                      {col}
+                    </span>
+                    <span className="text-slate-600 text-xs">→</span>
+                    <select
+                      value={colMapping[col] ?? ""}
+                      onChange={(e) => setColMapping((prev) => ({ ...prev, [col]: e.target.value }))}
+                      className={`flex-1 rounded-lg border px-2 py-1.5 text-xs bg-slate-900/80 focus:outline-none focus:border-indigo-500/50 cursor-pointer ${
+                        colMapping[col] ? "border-white/[0.08] text-slate-200" : "border-red-500/40 text-red-300"
+                      }`}
+                    >
+                      <option value="">-- Non mappe --</option>
+                      {fileColumns.map((fc) => (
+                        <option key={fc} value={fc}>{fc}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
               </div>
-              <iframe
-                ref={iframeRef}
-                srcDoc={reportHtml}
-                className="w-full border-0 bg-white"
-                style={{ height: "800px" }}
-                title="Rapport d'evaluation"
-                sandbox="allow-same-origin"
-              />
+              {unmappedCount > 0 && (
+                <p className="text-xs text-amber-400 mt-3">
+                  {unmappedCount} colonne(s) non mappee(s) — l&apos;evaluation ne pourra pas demarrer.
+                </p>
+              )}
             </GlowCard>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* --- Section 6: Telechargements --- */}
+      {/* 4. Lancer */}
+      <div className="flex justify-center">
+        <NeonButton variant="primary"
+          icon={running ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
+          onClick={handleRun}
+          disabled={running || !validationFile || !selectedModel || !allMapped}
+          className="px-10 py-4 text-base">
+          {running ? "Evaluation en cours..." : "4. Lancer l'evaluation"}
+        </NeonButton>
+      </div>
+
+      {/* 5. Metriques */}
+      <AnimatePresence>
+        {metrics && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+            <div className="flex items-center gap-2">
+              <BarChart3 size={18} className="text-accent" />
+              <h3 className="text-sm font-semibold text-foreground">
+                Metriques — <span className="text-accent">{selectedModel}</span>
+              </h3>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              <StatCard label="MAE" value={metrics.mae.toFixed(2)} icon={<Activity size={18} />} />
+              <StatCard label="RMSE" value={metrics.rmse.toFixed(2)} icon={<Target size={18} />} />
+              <StatCard label="R²" value={metrics.r_squared.toFixed(4)} icon={<BarChart3 size={18} />}
+                trend={metrics.r_squared > 0.95 ? "up" : metrics.r_squared > 0.85 ? "neutral" : "down"} />
+              <StatCard label="GEH < 5%" value={`${metrics.geh_pct_below_5.toFixed(1)}%`} icon={<FileCheck size={18} />}
+                trend={metrics.geh_pct_below_5 > 85 ? "up" : "down"} />
+              <StatCard label="Echantillons" value={metrics.n_samples.toString()} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 6. Rapport HTML */}
+      <AnimatePresence>
+        {reportHtml && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <GlowCard glowColor="violet" className="!p-0 overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
+                <div className="flex items-center gap-2">
+                  <FileCheck size={18} className="text-violet-400" />
+                  <h3 className="text-sm font-semibold text-foreground">Rapport d&apos;evaluation</h3>
+                </div>
+                <span className="text-xs text-muted">{selectedModel}</span>
+              </div>
+              <iframe ref={iframeRef} srcDoc={reportHtml} className="w-full border-0 bg-white" style={{ height: "800px" }} title="Rapport" sandbox="allow-same-origin" />
+            </GlowCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 7. Telechargements */}
       <AnimatePresence>
         {(reportBlob || metrics) && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="flex flex-wrap gap-3 justify-center"
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap gap-3 justify-center">
             {reportBlob && (
-              <NeonButton
-                variant="secondary"
-                icon={<Download size={16} />}
-                onClick={downloadReport}
-              >
+              <NeonButton variant="secondary" icon={<Download size={16} />} onClick={downloadReport}>
                 Telecharger le rapport HTML
               </NeonButton>
             )}
-            <NeonButton
-              variant="secondary"
-              icon={<Download size={16} />}
-              onClick={downloadModelZip}
-            >
+            <NeonButton variant="secondary" icon={<Download size={16} />} onClick={downloadModelZip}>
               Telecharger le modele (ZIP)
             </NeonButton>
           </motion.div>
