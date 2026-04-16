@@ -110,6 +110,7 @@ export interface TrainingConfig {
 
 interface ConfigFormProps {
   mode: AppMode;
+  availableColumns?: string[];  // all columns from the mapped learning table
   onSubmit: (config: TrainingConfig) => void;
 }
 
@@ -325,12 +326,12 @@ function SliderInput({
 // ═══════════════════════════════════════════════════════════════════════════
 // Main Form
 // ═══════════════════════════════════════════════════════════════════════════
-export function ConfigForm({ mode, onSubmit }: ConfigFormProps) {
+export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps) {
   const isTv = mode !== "pl";
 
   // ── Section 1 : Colonnes d'entree/sortie ────────────────────────────────
   const defaultCols = isTv ? DEFAULT_INPUT_COLS_TV : DEFAULT_INPUT_COLS_PL;
-  const extraCols = isTv ? EXTRA_INPUT_COLS_TV : EXTRA_INPUT_COLS_PL;
+  const fallbackExtras = isTv ? EXTRA_INPUT_COLS_TV : EXTRA_INPUT_COLS_PL;
 
   const [inputCols, setInputCols] = useState<string[]>([...defaultCols]);
   const [onOffNorm, setOnOffNorm] = useState<Record<string, boolean>>(
@@ -338,8 +339,12 @@ export function ConfigForm({ mode, onSubmit }: ConfigFormProps) {
   );
   const [outputCol] = useState(isTv ? "TxPenTVRef" : "TxPenPLRef");
 
-  // Track which extra cols have been added
-  const availableExtras = extraCols.filter((c) => !inputCols.includes(c));
+  // Available extras = all columns from the mapped table that are not already selected
+  // If availableColumns is provided (from the learning table), use those; otherwise fallback
+  const allCandidates = availableColumns && availableColumns.length > 0
+    ? availableColumns
+    : [...defaultCols, ...fallbackExtras];
+  const availableExtras = allCandidates.filter((c) => !inputCols.includes(c));
 
   const toggleInputCol = useCallback(
     (col: string) => {
@@ -613,7 +618,7 @@ export function ConfigForm({ mode, onSubmit }: ConfigFormProps) {
                       initial={{ opacity: 0, y: -4, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                      className="absolute z-20 top-full mt-1 left-0 min-w-[180px] py-1 rounded-lg border border-slate-700/60 bg-slate-900/95 backdrop-blur-lg shadow-xl"
+                      className="absolute z-20 top-full mt-1 left-0 min-w-[220px] max-h-[240px] overflow-y-auto py-1 rounded-lg border border-slate-700/60 bg-slate-900/95 backdrop-blur-lg shadow-xl"
                     >
                       {availableExtras.map((col) => (
                         <button

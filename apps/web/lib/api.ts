@@ -41,7 +41,9 @@ export function streamSSE(
   onMessage: (data: Record<string, unknown>) => void,
   onError?: (err: Event) => void
 ): EventSource {
-  const es = new EventSource(`${API_BASE}${path}`);
+  // Use relative path so Next.js proxy handles it (avoids CORS issues)
+  const url = typeof window !== "undefined" ? path : `${API_BASE}${path}`;
+  const es = new EventSource(url);
   es.onmessage = (event) => {
     try {
       const parsed = JSON.parse(event.data);
