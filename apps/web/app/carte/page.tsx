@@ -222,7 +222,8 @@ export default function CartePage() {
       setProgressText("Generation terminee !");
       setStats(res.stats);
       setDone(true);
-      toast.success(`Carte generee : ${res.geojson_feature_count} troncons`);
+      const _tvrMoy = res.stats.mean_tvr != null ? `, TVr moyen: ${Math.round(res.stats.mean_tvr).toLocaleString("fr-FR")} veh/j` : "";
+      toast.success(`Carte generee — ${res.geojson_feature_count.toLocaleString("fr-FR")} troncons${_tvrMoy}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erreur inconnue";
       toast.error(`Erreur generation : ${message}`);
@@ -304,7 +305,7 @@ export default function CartePage() {
           <GradientText as="h2" className="text-2xl">
             Generation de la Carte des Debits
           </GradientText>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-300">
             Appliquez les modeles TV et PL sur vos donnees FCD pour estimer les debits
             de trafic sur chaque troncon routier.
           </p>
@@ -316,7 +317,7 @@ export default function CartePage() {
         <GlowCard glowColor="accent">
           <div className="flex items-center gap-2 mb-5">
             <div className="w-7 h-7 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">1</div>
-            <h3 className="text-sm font-semibold text-foreground">Selection des modeles</h3>
+            <h3 className="text-sm font-semibold text-white">Selection des modeles</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -324,7 +325,7 @@ export default function CartePage() {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Car size={16} className="text-accent" />
-                <span className="text-xs font-medium text-foreground">Modele TV (Trafic Vehicules)</span>
+                <span className="text-xs font-medium text-slate-200">Modele TV (Trafic Vehicules)</span>
               </div>
               <div className="flex gap-2">
                 <input
@@ -332,7 +333,7 @@ export default function CartePage() {
                   value={modelTvDir}
                   onChange={(e) => handleTvDirChange(e.target.value)}
                   placeholder="Chemin vers le dossier du modele TV..."
-                  className="flex-1 h-9 rounded-lg border border-border bg-surface/80 px-3 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors"
+                  className="flex-1 h-9 rounded-lg border border-border bg-surface/80 px-3 text-xs text-slate-200 placeholder:text-slate-500 outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors"
                 />
                 <NeonButton
                   variant="secondary"
@@ -344,7 +345,7 @@ export default function CartePage() {
                   Valider
                 </NeonButton>
               </div>
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[10px] text-slate-400">
                 Dossier contenant NNarchitecture.json, NNweights.h5, NNnormCoefficients.json
               </p>
               <ValidityBadge valid={tvValid} missing={tvMissing} />
@@ -354,7 +355,7 @@ export default function CartePage() {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Truck size={16} className="text-violet" />
-                <span className="text-xs font-medium text-foreground">Modele PL (Poids Lourds)</span>
+                <span className="text-xs font-medium text-slate-200">Modele PL (Poids Lourds)</span>
               </div>
               <div className="flex gap-2">
                 <input
@@ -362,7 +363,7 @@ export default function CartePage() {
                   value={modelPlDir}
                   onChange={(e) => handlePlDirChange(e.target.value)}
                   placeholder="Chemin vers le dossier du modele PL..."
-                  className="flex-1 h-9 rounded-lg border border-border bg-surface/80 px-3 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors"
+                  className="flex-1 h-9 rounded-lg border border-border bg-surface/80 px-3 text-xs text-slate-200 placeholder:text-slate-500 outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors"
                 />
                 <NeonButton
                   variant="secondary"
@@ -374,7 +375,7 @@ export default function CartePage() {
                   Valider
                 </NeonButton>
               </div>
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[10px] text-slate-400">
                 Dossier contenant NNarchitecture.json, NNweights.h5, NNnormCoefficients.json
               </p>
               <ValidityBadge valid={plValid} missing={plMissing} />
@@ -388,7 +389,7 @@ export default function CartePage() {
         <GlowCard glowColor="cyan">
           <div className="flex items-center gap-2 mb-5">
             <div className="w-7 h-7 rounded-lg bg-cyan/20 flex items-center justify-center text-cyan text-xs font-bold">2</div>
-            <h3 className="text-sm font-semibold text-foreground">Donnees FCD</h3>
+            <h3 className="text-sm font-semibold text-white">Donnees FCD</h3>
           </div>
 
           <DropZone
@@ -412,7 +413,7 @@ export default function CartePage() {
           />
 
           {uploading && (
-            <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 mt-3 text-xs text-slate-400">
               <Loader2 size={14} className="animate-spin" />
               <span>Chargement et analyse du fichier...</span>
             </div>
@@ -435,10 +436,10 @@ export default function CartePage() {
               >
                 <div className="flex items-center gap-2">
                   <Layers size={16} className="text-cyan" />
-                  <span className="text-xs font-semibold text-foreground">
+                  <span className="text-xs font-semibold text-white">
                     Mapping des colonnes
                   </span>
-                  <span className="text-[10px] text-muted-foreground ml-2">
+                  <span className="text-[10px] text-slate-400 ml-2">
                     ({REQUIRED_COLUMNS.filter((c) => c.required && columnMapping[c.key]).length}/{REQUIRED_COLUMNS.filter((c) => c.required).length} obligatoires mappees)
                   </span>
                 </div>
@@ -468,26 +469,26 @@ export default function CartePage() {
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-mono text-foreground truncate">
+                          <span className="text-xs font-mono text-slate-200 truncate">
                             {col.key}
                           </span>
                           {!col.required && (
-                            <span className="text-[9px] text-muted-foreground bg-surface-light px-1.5 py-0.5 rounded">
+                            <span className="text-[9px] text-slate-400 bg-surface-light px-1.5 py-0.5 rounded">
                               optionnel
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">
                           {col.description}
                         </p>
                       </div>
-                      <span className="text-muted-foreground text-xs flex-shrink-0">&larr;</span>
+                      <span className="text-slate-500 text-xs flex-shrink-0">&larr;</span>
                       <select
                         value={columnMapping[col.key] ?? ""}
                         onChange={(e) =>
                           updateMapping(col.key, e.target.value || null)
                         }
-                        className={`text-xs bg-surface border rounded-lg px-2 py-1.5 text-foreground outline-none focus:border-accent/40 cursor-pointer w-44 truncate ${
+                        className={`text-xs bg-surface border rounded-lg px-2 py-1.5 text-slate-200 outline-none focus:border-accent/40 cursor-pointer w-44 truncate ${
                           !columnMapping[col.key] && col.required
                             ? "border-red-500/40"
                             : "border-border"
@@ -523,7 +524,7 @@ export default function CartePage() {
         <GlowCard glowColor="violet">
           <div className="flex items-center gap-2 mb-5">
             <div className="w-7 h-7 rounded-lg bg-violet/20 flex items-center justify-center text-violet text-xs font-bold">3</div>
-            <h3 className="text-sm font-semibold text-foreground">Filtres et parametres</h3>
+            <h3 className="text-sm font-semibold text-white">Filtres et parametres</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -531,7 +532,7 @@ export default function CartePage() {
             <div className="space-y-5">
               <div className="flex items-center gap-2 mb-3">
                 <Filter size={14} className="text-violet" />
-                <span className="text-xs font-medium text-foreground">Filtres sur les donnees</span>
+                <span className="text-xs font-medium text-slate-200">Filtres sur les donnees</span>
               </div>
 
               {/* Filter TVr */}
@@ -543,15 +544,15 @@ export default function CartePage() {
                   className="mt-0.5 w-4 h-4 rounded border-border bg-surface accent-accent cursor-pointer"
                 />
                 <div className="flex-1">
-                  <span className="text-xs font-medium text-foreground group-hover:text-accent transition-colors">
+                  <span className="text-xs font-medium text-slate-200 group-hover:text-accent transition-colors">
                     Filtrer les troncons par seuil TVr
                   </span>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                  <p className="text-[10px] text-slate-400 mt-0.5">
                     Exclure les troncons avec TVr en-dessous du seuil
                   </p>
                   {filterTvrEnabled && (
                     <div className="mt-2 flex items-center gap-2">
-                      <span className="text-[10px] text-muted-foreground">Seuil :</span>
+                      <span className="text-[10px] text-slate-400">Seuil :</span>
                       <input
                         type="number"
                         value={filterTvrValue}
@@ -559,9 +560,9 @@ export default function CartePage() {
                         min={0}
                         max={1000}
                         step={10}
-                        className="w-20 h-7 rounded-md border border-border bg-surface/80 px-2 text-xs text-foreground outline-none focus:border-accent/50"
+                        className="w-20 h-7 rounded-md border border-border bg-surface/80 px-2 text-xs text-slate-200 outline-none focus:border-accent/50"
                       />
-                      <span className="text-[10px] text-muted-foreground">veh/j</span>
+                      <span className="text-[10px] text-slate-400">veh/j</span>
                     </div>
                   )}
                 </div>
@@ -576,10 +577,10 @@ export default function CartePage() {
                   className="mt-0.5 w-4 h-4 rounded border-border bg-surface accent-accent cursor-pointer"
                 />
                 <div>
-                  <span className="text-xs font-medium text-foreground group-hover:text-accent transition-colors">
+                  <span className="text-xs font-medium text-slate-200 group-hover:text-accent transition-colors">
                     Exclure les troncons FC = 1
                   </span>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                  <p className="text-[10px] text-slate-400 mt-0.5">
                     Les autoroutes principales (Functional Class 1) seront exclues
                   </p>
                 </div>
@@ -590,9 +591,9 @@ export default function CartePage() {
             <div className="space-y-4">
               <div className="flex items-center gap-2 mb-3">
                 <SlidersHorizontal size={14} className="text-violet" />
-                <span className="text-xs font-medium text-foreground">Intervalles de confiance</span>
+                <span className="text-xs font-medium text-slate-200">Intervalles de confiance</span>
               </div>
-              <p className="text-[10px] text-muted-foreground -mt-2 mb-3">
+              <p className="text-[10px] text-slate-400 -mt-2 mb-3">
                 Pourcentage d&apos;erreur selon les tranches de debit TVr
               </p>
 
@@ -604,7 +605,7 @@ export default function CartePage() {
               ].map((item) => (
                 <div key={item.label} className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-foreground">{item.label}</span>
+                    <span className="text-[11px] text-slate-200">{item.label}</span>
                     <span className="text-xs font-mono text-accent font-semibold">{item.value}%</span>
                   </div>
                   <input
@@ -628,14 +629,14 @@ export default function CartePage() {
         <GlowCard>
           <div className="flex items-center gap-2 mb-5">
             <div className="w-7 h-7 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">4</div>
-            <h3 className="text-sm font-semibold text-foreground">Generation</h3>
+            <h3 className="text-sm font-semibold text-white">Generation</h3>
           </div>
 
           {/* Progress */}
           {(generating || done) && (
             <div className="mb-5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">{progressText}</span>
+                <span className="text-xs text-slate-400">{progressText}</span>
                 <span className="text-xs font-mono text-accent">{progress}%</span>
               </div>
               <div className="h-1.5 rounded-full bg-surface-light overflow-hidden">
@@ -666,7 +667,7 @@ export default function CartePage() {
           </div>
 
           {!canGenerate && !generating && !done && (
-            <p className="text-center text-[10px] text-muted-foreground mt-3">
+            <p className="text-center text-[10px] text-slate-400 mt-3">
               {tvValid !== true && "Modele TV non valide. "}
               {plValid !== true && "Modele PL non valide. "}
               {!sessionId && "Aucun fichier FCD charge. "}
@@ -690,7 +691,7 @@ export default function CartePage() {
                   <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
                     <Map size={28} />
                   </div>
-                  <p className="text-sm font-medium text-foreground">
+                  <p className="text-sm font-medium text-white">
                     Carte des debits generee avec succes
                   </p>
 

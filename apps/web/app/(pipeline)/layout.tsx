@@ -3,7 +3,6 @@
 import { useRouter, usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight } from "lucide-react";
-import { AuroraBg } from "@/components/backgrounds/aurora-bg";
 import { Stepper } from "@/components/pipeline/stepper";
 import { NeonButton } from "@/components/ui/neon-button";
 import { useAppStore, PIPELINE_STEPS } from "@/lib/store";
@@ -49,11 +48,9 @@ export default function PipelineLayout({
   }
 
   return (
-    <div className="relative min-h-screen flex flex-col">
-      <AuroraBg />
-
+    <div className="bg-pipeline relative min-h-screen flex flex-col">
       {/* Stepper */}
-      <div className="relative z-10 glass border-b border-border/50 rounded-none">
+      <div className="relative z-10 glass border-b border-white/[0.08] rounded-none">
         <div className="max-w-5xl mx-auto px-4 py-3">
           <Stepper currentStep={activeStep} onStepClick={handleStepClick} />
         </div>
@@ -72,7 +69,7 @@ export default function PipelineLayout({
       </main>
 
       {/* Footer nav */}
-      <footer className="relative z-10 glass border-t border-border/50 rounded-none">
+      <footer className="relative z-10 glass border-t border-white/[0.08] rounded-none">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <NeonButton
             variant="ghost"

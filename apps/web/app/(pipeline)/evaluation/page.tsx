@@ -22,6 +22,7 @@ import { NeonButton } from "@/components/ui/neon-button";
 import { StatCard } from "@/components/ui/stat-card";
 import { DropZone } from "@/components/upload/drop-zone";
 import { useAppStore } from "@/lib/store";
+import { spawnConfetti } from "@/lib/success-effects";
 
 /* ---------- Types ---------- */
 
@@ -65,7 +66,9 @@ export default function EvaluationPage() {
   const [reportBlob, setReportBlob] = useState<Blob | null>(null);
   const [modelDir, setModelDir] = useState(outputDir ?? "");
   const [filterFlagComptage, setFilterFlagComptage] = useState(false);
+  const [metricsFlash, setMetricsFlash] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const metricsContainerRef = useRef<HTMLDivElement>(null);
 
   // --- Upload validation file and get columns ---
   const handleValidationFile = useCallback(async (f: File) => {
@@ -218,7 +221,19 @@ export default function EvaluationPage() {
         setReportBlob(new Blob([reportData.report_html], { type: "text/html" }));
       }
 
-      toast.success(`Evaluation terminee pour ${selectedModel}`);
+      // Rich success toast with key metrics
+      const r2Str = evalData.metrics.r_squared.toFixed(4);
+      const gehStr = evalData.metrics.geh_pct_below_5.toFixed(1);
+      toast.success(
+        `Evaluation terminee — R² = ${r2Str}, GEH<5% = ${gehStr}% (${selectedModel})`
+      );
+
+      // Trigger count-up flash + confetti on metrics
+      setMetricsFlash(true);
+      setTimeout(() => setMetricsFlash(false), 2000);
+      setTimeout(() => {
+        spawnConfetti(metricsContainerRef.current, 20);
+      }, 100);
     } catch (err: unknown) {
       toast.error(`Erreur: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -255,7 +270,7 @@ export default function EvaluationPage() {
     <div className="space-y-6">
       <div className="space-y-2">
         <GradientText as="h2" className="text-2xl">Evaluation</GradientText>
-        <p className="text-sm text-muted">
+        <p className="text-sm text-slate-300">
           Evaluez un modele {mode === "pl" ? "PL" : "TV"} sur un fichier de validation.
           Cette etape peut etre lancee independamment.
         </p>
@@ -265,7 +280,7 @@ export default function EvaluationPage() {
       <GlowCard>
         <div className="flex items-center gap-2 mb-4">
           <Upload size={18} className="text-accent" />
-          <h3 className="text-sm font-semibold text-foreground">1. Fichier de validation</h3>
+          <h3 className="text-sm font-semibold text-white">1. Fichier de validation</h3>
         </div>
         <DropZone
           file={validationFile}
@@ -291,13 +306,13 @@ export default function EvaluationPage() {
       <GlowCard glowColor="cyan">
         <div className="flex items-center gap-2 mb-4">
           <FolderOpen size={18} className="text-cyan-400" />
-          <h3 className="text-sm font-semibold text-foreground">2. Selection du modele</h3>
+          <h3 className="text-sm font-semibold text-white">2. Selection du modele</h3>
         </div>
         <div className="space-y-3">
           <div className="flex gap-2">
             <input type="text" value={modelDir} onChange={(e) => setModelDir(e.target.value)}
               placeholder="Ex: C:\xMDL\TV\MonTerritoire"
-              className="flex-1 rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
+              className="flex-1 rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50 transition-colors"
             />
             <NeonButton variant="secondary" onClick={() => loadModels(modelDir)} disabled={!modelDir.trim() || loadingModels} className="text-xs whitespace-nowrap">
               {loadingModels ? <Loader2 size={14} className="animate-spin" /> : "Charger"}
@@ -329,7 +344,7 @@ export default function EvaluationPage() {
             <GlowCard glowColor="violet">
               <div className="flex items-center gap-2 mb-4">
                 <ArrowRight size={18} className="text-violet-400" />
-                <h3 className="text-sm font-semibold text-foreground">
+                <h3 className="text-sm font-semibold text-white">
                   3. Mapping des colonnes
                   <span className={`ml-2 text-xs ${allMapped ? "text-emerald-400" : "text-amber-400"}`}>
                     ({requiredCols.length - unmappedCount}/{requiredCols.length} mappees)
@@ -345,7 +360,7 @@ export default function EvaluationPage() {
                     <span className={`text-xs font-mono w-[280px] shrink-0 truncate ${colMapping[col] ? "text-slate-200" : "text-red-400"}`}>
                       {col}
                     </span>
-                    <span className="text-slate-600 text-xs">→</span>
+                    <span className="text-slate-500 text-xs">→</span>
                     <select
                       value={colMapping[col] ?? ""}
                       onChange={(e) => setColMapping((prev) => ({ ...prev, [col]: e.target.value }))}
@@ -385,21 +400,26 @@ export default function EvaluationPage() {
       {/* 5. Metriques */}
       <AnimatePresence>
         {metrics && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          <motion.div ref={metricsContainerRef} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative space-y-4">
             <div className="flex items-center gap-2">
               <BarChart3 size={18} className="text-accent" />
-              <h3 className="text-sm font-semibold text-foreground">
+              <h3 className="text-sm font-semibold text-white">
                 Metriques — <span className="text-accent">{selectedModel}</span>
               </h3>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-              <StatCard label="MAE" value={metrics.mae.toFixed(2)} icon={<Activity size={18} />} />
-              <StatCard label="RMSE" value={metrics.rmse.toFixed(2)} icon={<Target size={18} />} />
+              <StatCard label="MAE" value={metrics.mae.toFixed(2)} icon={<Activity size={18} />}
+                className={metricsFlash ? "animate-success-pulse" : ""} />
+              <StatCard label="RMSE" value={metrics.rmse.toFixed(2)} icon={<Target size={18} />}
+                className={metricsFlash ? "animate-success-pulse" : ""} />
               <StatCard label="R²" value={metrics.r_squared.toFixed(4)} icon={<BarChart3 size={18} />}
-                trend={metrics.r_squared > 0.95 ? "up" : metrics.r_squared > 0.85 ? "neutral" : "down"} />
+                trend={metrics.r_squared > 0.95 ? "up" : metrics.r_squared > 0.85 ? "neutral" : "down"}
+                className={metricsFlash ? "animate-success-pulse animate-count-flash" : ""} />
               <StatCard label="GEH < 5%" value={`${metrics.geh_pct_below_5.toFixed(1)}%`} icon={<FileCheck size={18} />}
-                trend={metrics.geh_pct_below_5 > 85 ? "up" : "down"} />
-              <StatCard label="Echantillons" value={metrics.n_samples.toString()} />
+                trend={metrics.geh_pct_below_5 > 85 ? "up" : "down"}
+                className={metricsFlash ? "animate-success-pulse animate-count-flash" : ""} />
+              <StatCard label="Echantillons" value={metrics.n_samples.toString()}
+                className={metricsFlash ? "animate-success-pulse" : ""} />
             </div>
           </motion.div>
         )}
@@ -413,9 +433,9 @@ export default function EvaluationPage() {
               <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
                 <div className="flex items-center gap-2">
                   <FileCheck size={18} className="text-violet-400" />
-                  <h3 className="text-sm font-semibold text-foreground">Rapport d&apos;evaluation</h3>
+                  <h3 className="text-sm font-semibold text-white">Rapport d&apos;evaluation</h3>
                 </div>
-                <span className="text-xs text-muted">{selectedModel}</span>
+                <span className="text-xs text-slate-400">{selectedModel}</span>
               </div>
               <iframe ref={iframeRef} srcDoc={reportHtml} className="w-full border-0 bg-white" style={{ height: "1200px" }} title="Rapport" sandbox="allow-scripts allow-same-origin" />
             </GlowCard>

@@ -391,7 +391,7 @@ export default function CompteursPage() {
           <GradientText as="h2" className="text-2xl">
             Generation du Fichier Compteurs
           </GradientText>
-          <p className="text-sm text-muted">
+          <p className="text-sm text-slate-300">
             Importez vos donnees de comptage, mappez les colonnes au format
             standard counting-loops.geojson, puis generez le fichier.
           </p>
@@ -424,7 +424,7 @@ export default function CompteursPage() {
           />
 
           {uploading && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-muted">
+            <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
               <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
               Lecture du fichier en cours...
             </div>

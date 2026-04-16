@@ -38,11 +38,13 @@ export default function RootLayout({
           <Toaster
             theme="dark"
             position="bottom-right"
+            duration={4000}
             toastOptions={{
               style: {
-                background: "#0a0a1a",
-                border: "1px solid rgba(99,102,241,0.2)",
-                color: "#e2e8f0",
+                background: "rgba(15, 20, 40, 0.95)",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                color: "#f8fafc",
+                backdropFilter: "blur(16px)",
               },
             }}
           />

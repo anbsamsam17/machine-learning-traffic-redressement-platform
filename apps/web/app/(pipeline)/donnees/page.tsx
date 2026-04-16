@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileSpreadsheet, Wand2, Table2, AlertTriangle } from "lucide-react";
+import { FileSpreadsheet, Wand2, Table2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { DropZone } from "@/components/upload/drop-zone";
 import {
@@ -13,7 +13,9 @@ import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
 import { GradientText } from "@/components/ui/gradient-text";
 import { StatCard } from "@/components/ui/stat-card";
+import { SuccessBanner } from "@/components/ui/success-banner";
 import { useAppStore } from "@/lib/store";
+import { spawnConfetti } from "@/lib/success-effects";
 
 // ── Real 36 target columns from column_mapper.py (35 + geometry) ──────────
 const TARGET_COLUMNS = [
@@ -47,6 +49,8 @@ export default function DonneesPage() {
   const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
   const [step, setStep] = useState<"upload" | "mapping" | "preview">("upload");
   const [isAutoMapping, setIsAutoMapping] = useState(false);
+  const [showStepComplete, setShowStepComplete] = useState(false);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
 
   const mappedCriticalCount = useMemo(() => {
     return mappings.filter(
@@ -156,6 +160,7 @@ export default function DonneesPage() {
     setMappings([]);
     setPreviewRows([]);
     setStep("upload");
+    setShowStepComplete(false);
   }
 
   async function handleValidateMapping() {
@@ -215,6 +220,12 @@ export default function DonneesPage() {
         data.warnings.forEach((w: string) => toast.warning(w));
       }
       toast.success(`Table d'apprentissage generee : ${data.rows} lignes, ${data.columns?.length} colonnes`);
+
+      // Success effects: confetti + badge
+      setShowStepComplete(true);
+      setTimeout(() => {
+        spawnConfetti(previewContainerRef.current, 28);
+      }, 200);
     } catch (err) {
       console.error("Validation error:", err);
       toast.error(
@@ -229,7 +240,7 @@ export default function DonneesPage() {
         <GradientText as="h2" className="text-2xl">
           Donnees
         </GradientText>
-        <p className="text-sm text-muted">
+        <p className="text-sm text-slate-300">
           Importez votre fichier de donnees brutes et configurez le mapping des
           colonnes vers les {TARGET_COLUMNS.length} colonnes standard.
         </p>
@@ -239,7 +250,7 @@ export default function DonneesPage() {
       <GlowCard>
         <div className="flex items-center gap-2 mb-4">
           <FileSpreadsheet size={18} className="text-accent" />
-          <h3 className="text-sm font-semibold text-foreground">
+          <h3 className="text-sm font-semibold text-white">
             Fichier source
           </h3>
           {isAutoMapping && (
@@ -263,7 +274,7 @@ export default function DonneesPage() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <Table2 size={18} className="text-cyan" />
-                  <h3 className="text-sm font-semibold text-foreground">
+                  <h3 className="text-sm font-semibold text-white">
                     Mapping des colonnes
                   </h3>
                 </div>
@@ -289,7 +300,7 @@ export default function DonneesPage() {
                     <span className="text-amber-400 font-semibold">
                       {unmappedCritical.length}/{CRITICAL_COLS.length} colonnes critiques non mappees
                     </span>
-                    <p className="text-muted mt-1">
+                    <p className="text-slate-400 mt-1">
                       {unmappedCritical.join(", ")}
                     </p>
                   </div>
@@ -308,20 +319,39 @@ export default function DonneesPage() {
         )}
       </AnimatePresence>
 
+      {/* Success banner */}
+      <SuccessBanner
+        message="Etape completee — Table d'apprentissage generee avec succes"
+        visible={showStepComplete}
+        onClose={() => setShowStepComplete(false)}
+      />
+
       {/* Preview */}
       <AnimatePresence>
         {step === "preview" && previewRows.length > 0 && (
           <motion.div
+            ref={previewContainerRef}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
+            className="relative"
           >
             <GlowCard glowColor="cyan">
               <div className="flex items-center gap-2 mb-4">
                 <Table2 size={18} className="text-emerald-400" />
-                <h3 className="text-sm font-semibold text-foreground">
+                <h3 className="text-sm font-semibold text-white">
                   Apercu de la table d&apos;apprentissage
                 </h3>
+                {showStepComplete && (
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.7 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold"
+                  >
+                    <CheckCircle2 size={12} />
+                    Etape completee
+                  </motion.span>
+                )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 <StatCard
@@ -353,7 +383,7 @@ export default function DonneesPage() {
                       {Object.keys(previewRows[0]).slice(0, 8).map((col) => (
                         <th
                           key={col}
-                          className="px-2 py-1.5 text-left text-muted font-medium"
+                          className="px-2 py-1.5 text-left text-slate-300 font-medium"
                         >
                           {col}
                           {CRITICAL_COLS.includes(col) && (
@@ -374,7 +404,7 @@ export default function DonneesPage() {
                           .map((val, j) => (
                             <td
                               key={j}
-                              className="px-2 py-1.5 text-foreground font-mono"
+                              className="px-2 py-1.5 text-white font-mono"
                             >
                               {String(val)}
                             </td>
@@ -384,7 +414,7 @@ export default function DonneesPage() {
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-muted mt-3">
+              <p className="text-xs text-slate-400 mt-3">
                 Affichage des 8 premieres colonnes sur{" "}
                 {Object.keys(previewRows[0]).length} colonnes totales.
               </p>
