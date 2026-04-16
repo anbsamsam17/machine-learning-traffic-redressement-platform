@@ -30,6 +30,19 @@ class Settings(BaseSettings):
     CUDA_VISIBLE_DEVICES: str = "-1"
     TF_CPP_MIN_LOG_LEVEL: str = "3"
 
+    # -- Workspace -------------------------------------------------------------
+    WORKSPACE_ROOT: str = "/tmp/mdl_workdir"
+
+    # -- Redis (optional) ------------------------------------------------------
+    REDIS_URL: str = ""
+
+    # -- Auth / JWT ------------------------------------------------------------
+    JWT_SECRET: str = "change-me-in-production-use-a-real-secret"
+
+    # -- Monitoring ------------------------------------------------------------
+    SENTRY_DSN: str = ""
+    LOG_LEVEL: str = "INFO"
+
     # -- Session ---------------------------------------------------------------
     SESSION_TTL_SECONDS: int = 7200  # 2 hours
 

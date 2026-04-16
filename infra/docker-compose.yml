@@ -1,4 +1,17 @@
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   web:
     build:
       context: ..
@@ -23,14 +36,40 @@ services:
       - TF_ENABLE_ONEDNN_OPTS=0
       - MDL_MAX_TRAINING_MINUTES=30
       - MDL_MAX_UPLOAD_MB=500
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - WORKSPACE_ROOT=/tmp/mdl_workdir
     volumes:
       - tmp_data:/tmp/mdl_workdir
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.worker
+    environment:
+      - CUDA_VISIBLE_DEVICES=-1
+      - TF_CPP_MIN_LOG_LEVEL=3
+      - TF_ENABLE_ONEDNN_OPTS=0
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - WORKSPACE_ROOT=/tmp/mdl_workdir
+    volumes:
+      - tmp_data:/tmp/mdl_workdir
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   nginx:
     image: nginx:alpine
@@ -45,3 +84,4 @@ services:
 
 volumes:
   tmp_data:
+  redis_data:

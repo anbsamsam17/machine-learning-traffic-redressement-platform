@@ -7,13 +7,26 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from .config import get_settings
+from .logging_config import RequestIDMiddleware, setup_logging
 from .session import session_manager
 
+# Setup structured JSON logging early
+setup_logging()
+
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Rate limiter (slowapi)
+# ---------------------------------------------------------------------------
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 # ---------------------------------------------------------------------------
 # Lifespan — periodic session cleanup
@@ -37,7 +50,28 @@ async def _cleanup_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle."""
-    settings = get_settings()  # triggers env-var setup
+    settings = get_settings()
+
+    # -- Sentry init (if DSN provided) -----------------------------------------
+    if settings.SENTRY_DSN:
+        try:
+            import sentry_sdk
+            from sentry_sdk.integrations.fastapi import FastApiIntegration
+            from sentry_sdk.integrations.starlette import StarletteIntegration
+
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                integrations=[
+                    StarletteIntegration(transaction_style="endpoint"),
+                    FastApiIntegration(transaction_style="endpoint"),
+                ],
+                traces_sample_rate=0.2,
+                send_default_pii=False,
+            )
+            logger.info("Sentry initialized with DSN ending ...%s", settings.SENTRY_DSN[-8:])
+        except Exception:
+            logger.warning("Failed to initialize Sentry", exc_info=True)
+
     logger.info(
         "MDL Redressement API starting (CORS=%s, max_upload=%dMB)",
         settings.CORS_ORIGINS,
@@ -63,15 +97,41 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# -- CORS -------------------------------------------------------------------
+# -- Rate limiter --------------------------------------------------------------
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# -- Request-ID middleware -----------------------------------------------------
+app.add_middleware(RequestIDMiddleware)
+
+# -- CORS (strict: only configured origins) ------------------------------------
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
+
+# -- Prometheus metrics --------------------------------------------------------
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        excluded_handlers=["/health", "/metrics"],
+    ).instrument(app).expose(app, include_in_schema=False, should_gzip=True)
+    logger.info("Prometheus metrics enabled at /metrics")
+except ImportError:
+    logger.info("prometheus-fastapi-instrumentator not installed — metrics disabled")
+
+# -- Auth router ---------------------------------------------------------------
+from .auth import router as auth_router  # noqa: E402
+
+app.include_router(auth_router)
 
 # -- Routers ----------------------------------------------------------------
 from .routers import (  # noqa: E402
