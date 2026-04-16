@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { AppHeader } from "@/components/layout/app-header";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -32,7 +33,8 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          {children}
+          <AppHeader />
+          <main className="flex-1">{children}</main>
           <Toaster
             theme="dark"
             position="bottom-right"

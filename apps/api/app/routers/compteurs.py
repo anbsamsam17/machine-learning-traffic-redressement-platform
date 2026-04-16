@@ -1,4 +1,4 @@
-"""Compteurs router — generate counting loops from model predictions."""
+"""Compteurs router — generate counting-loops.geojson from uploaded data + column mapping."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from ..session import session_manager
@@ -18,20 +19,43 @@ router = APIRouter(prefix="/api/compteurs", tags=["compteurs"])
 
 
 # ---------------------------------------------------------------------------
+# Target columns for counting-loops.geojson
+# ---------------------------------------------------------------------------
+
+TARGET_COLUMNS: list[str] = [
+    "Identifiant du Poste / Section",
+    "Annee",
+    "Nom de la Commune",
+    "RD",
+    "PRD",
+    "Type de capteur",
+    "TMJA Tous Vehicules (veh/jour)",
+    "TMJA Poids Lourds (veh/jour)",
+    "Sens de comptage",
+]
+
+
+# ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
 
-class CompteursRequest(BaseModel):
+class CompteursGenerateRequest(BaseModel):
     session_id: str
-    type_filter: list[str] | None = None  # e.g. ["per", "tou"]
-    min_txpen: float | None = None
-    max_txpen: float | None = None
+    column_mapping: dict[str, str]  # target_col -> source_col
+    missing_columns_action: dict[str, str] = {}  # col -> "default" | "remove"
+    missing_columns_default: dict[str, str] = {}  # col -> default value
+    filter_flag_comptage: bool = False
+    longitude_col: str | None = None
+    latitude_col: str | None = None
+    output_filename: str = "counting-loops"
 
 
 class CompteursStats(BaseModel):
-    total_loops: int
-    filtered_loops: int
-    territory: str
+    total_rows: int
+    output_features: int
+    columns: list[str]
+    type_distribution: dict[str, int] | None = None
+    year_distribution: dict[str, int] | None = None
 
 
 class CompteursResponse(BaseModel):
@@ -41,106 +65,214 @@ class CompteursResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Core logic (mirrors Streamlit create_counting_loops_geojson)
+# ---------------------------------------------------------------------------
+
+def _build_compteurs_geojson(
+    raw_df: pd.DataFrame,
+    column_mapping: dict[str, str],
+    missing_columns_action: dict[str, str],
+    missing_columns_default: dict[str, str],
+    filter_flag_comptage: bool,
+    longitude_col: str | None,
+    latitude_col: str | None,
+) -> tuple[dict[str, Any], CompteursStats]:
+    """Build a GeoJSON FeatureCollection for counting loops."""
+
+    df = raw_df.copy()
+
+    # ---- Optional filter: flag_comptage == 1 --------------------------------
+    if filter_flag_comptage and "flag_comptage" in df.columns:
+        flag = pd.to_numeric(df["flag_comptage"], errors="coerce")
+        df = df.loc[flag == 1].copy()
+
+    total_rows = len(df)
+
+    # ---- Build columns from mapping -----------------------------------------
+    gdf_data: dict[str, Any] = {}
+
+    for target_col, source_col in column_mapping.items():
+        if source_col and source_col in df.columns:
+            gdf_data[target_col] = df[source_col].values
+        # If source not found, skip — it'll be handled by missing_columns logic
+
+    # ---- Handle missing columns (default or remove) -------------------------
+    for col_name, action in missing_columns_action.items():
+        if col_name in gdf_data:
+            continue  # Already mapped, skip
+        if action == "default":
+            default_value = missing_columns_default.get(col_name, "")
+            gdf_data[col_name] = [default_value] * total_rows
+        # action == "remove" → don't include
+
+    # Always include "Sens de comptage" if it has a default value
+    if "Sens de comptage" not in gdf_data and "Sens de comptage" in missing_columns_default:
+        gdf_data["Sens de comptage"] = [missing_columns_default["Sens de comptage"]] * total_rows
+
+    result_df = pd.DataFrame(gdf_data)
+
+    # ---- Format numeric columns ---------------------------------------------
+    if "Annee" in result_df.columns:
+        result_df["Annee"] = pd.to_numeric(result_df["Annee"], errors="coerce")
+
+    if "PRD" in result_df.columns:
+        result_df["PRD"] = pd.to_numeric(result_df["PRD"], errors="coerce")
+
+    if "TMJA Tous Vehicules (veh/jour)" in result_df.columns:
+        result_df["TMJA Tous Vehicules (veh/jour)"] = (
+            pd.to_numeric(result_df["TMJA Tous Vehicules (veh/jour)"], errors="coerce")
+            .round(0)
+        )
+
+    if "TMJA Poids Lourds (veh/jour)" in result_df.columns:
+        result_df["TMJA Poids Lourds (veh/jour)"] = (
+            pd.to_numeric(result_df["TMJA Poids Lourds (veh/jour)"], errors="coerce")
+            .round(0)
+        )
+
+    # ---- Determine geometry -------------------------------------------------
+    has_geojson_geometry = "geometry" in df.columns or "__geometry_json" in df.columns
+    has_lonlat = longitude_col and latitude_col
+
+    features: list[dict[str, Any]] = []
+    for idx in range(len(result_df)):
+        props: dict[str, Any] = {}
+        for col in result_df.columns:
+            v = result_df.iloc[idx][col]
+            if isinstance(v, (np.integer,)):
+                v = int(v)
+            elif isinstance(v, (np.floating,)):
+                v = float(v)
+            if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
+                v = None
+            props[col] = v
+
+        # Resolve geometry
+        geom = None
+        if has_geojson_geometry:
+            raw_geom = df.iloc[idx].get("__geometry_json") or df.iloc[idx].get("geometry")
+            if isinstance(raw_geom, str):
+                try:
+                    geom = json.loads(raw_geom)
+                except Exception:
+                    geom = None
+            elif isinstance(raw_geom, dict):
+                geom = raw_geom
+        elif has_lonlat:
+            try:
+                lon = float(df.iloc[idx][longitude_col])
+                lat = float(df.iloc[idx][latitude_col])
+                if not (np.isnan(lon) or np.isnan(lat)):
+                    geom = {"type": "Point", "coordinates": [lon, lat]}
+            except (ValueError, TypeError, KeyError):
+                geom = None
+        # Also check for __lon/__lat columns from GeoJSON upload parsing
+        if geom is None and "__lon" in df.columns and "__lat" in df.columns:
+            try:
+                lon = float(df.iloc[idx]["__lon"])
+                lat = float(df.iloc[idx]["__lat"])
+                if not (np.isnan(lon) or np.isnan(lat)):
+                    geom = {"type": "Point", "coordinates": [lon, lat]}
+            except (ValueError, TypeError):
+                pass
+
+        features.append({"type": "Feature", "geometry": geom, "properties": props})
+
+    geojson: dict[str, Any] = {"type": "FeatureCollection", "features": features}
+
+    # ---- Build stats --------------------------------------------------------
+    type_dist: dict[str, int] | None = None
+    if "Type de capteur" in result_df.columns:
+        counts = result_df["Type de capteur"].value_counts()
+        type_dist = {str(k): int(v) for k, v in counts.items()}
+
+    year_dist: dict[str, int] | None = None
+    if "Annee" in result_df.columns:
+        year_vals = result_df["Annee"].dropna()
+        if len(year_vals) > 0:
+            counts = year_vals.astype(int).value_counts()
+            year_dist = {str(k): int(v) for k, v in counts.items()}
+
+    stats = CompteursStats(
+        total_rows=total_rows,
+        output_features=len(features),
+        columns=list(result_df.columns),
+        type_distribution=type_dist,
+        year_distribution=year_dist,
+    )
+
+    return geojson, stats
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @router.post("/generate", response_model=CompteursResponse)
-async def generate_compteurs(body: CompteursRequest) -> CompteursResponse:
-    """Generate counting loops (boucles de comptage) from the carte de debits or learning data."""
+async def generate_compteurs(body: CompteursGenerateRequest) -> CompteursResponse:
+    """Generate counting-loops GeoJSON from uploaded data and column mapping."""
     session = session_manager.get_session(body.session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
 
-    # Try to use carte data first, then learning df, then raw df
-    carte_geojson: dict | None = session.data.get("carte_geojson")
-    if carte_geojson is not None:
-        features = carte_geojson.get("features", [])
-        rows = []
-        for f in features:
-            props = dict(f.get("properties", {}))
-            props["geometry"] = f.get("geometry")
-            rows.append(props)
-        df = pd.DataFrame(rows)
-    else:
-        df = session.data.get("learning_df")
-        if df is None:
-            df = session.data.get("raw_df")
-        if df is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Aucune donnee disponible. Uploadez des donnees ou generez une carte d'abord.",
-            )
-        df = df.copy()
+    raw_df: pd.DataFrame | None = session.data.get("raw_df")
+    if raw_df is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucune donnee disponible. Uploadez un fichier d'abord.",
+        )
 
-    # Filter for counting loops: flag_comptage == 1 or Type in filter list
-    mask = pd.Series([True] * len(df), index=df.index)
+    try:
+        geojson, stats = _build_compteurs_geojson(
+            raw_df=raw_df,
+            column_mapping=body.column_mapping,
+            missing_columns_action=body.missing_columns_action,
+            missing_columns_default=body.missing_columns_default,
+            filter_flag_comptage=body.filter_flag_comptage,
+            longitude_col=body.longitude_col,
+            latitude_col=body.latitude_col,
+        )
+    except Exception as exc:
+        logger.exception("Compteurs generation failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la generation: {exc}")
 
-    if "flag_comptage" in df.columns:
-        flag = pd.to_numeric(df["flag_comptage"], errors="coerce")
-        mask = mask & (flag == 1)
-    elif "Type" in df.columns:
-        types = df["Type"].astype(str).str.strip().str.lower()
-        default_types = body.type_filter or ["per", "tou"]
-        mask = mask & types.isin([t.lower() for t in default_types])
-
-    # Optional TxPen filters
-    txpen_col = None
-    for col_name in ["predicted_TxPenTVRef", "predicted_TxPen", "TxPen", "TxPenTVRef"]:
-        if col_name in df.columns:
-            txpen_col = col_name
-            break
-
-    if txpen_col and body.min_txpen is not None:
-        vals = pd.to_numeric(df[txpen_col], errors="coerce")
-        mask = mask & (vals >= body.min_txpen)
-    if txpen_col and body.max_txpen is not None:
-        vals = pd.to_numeric(df[txpen_col], errors="coerce")
-        mask = mask & (vals <= body.max_txpen)
-
-    filtered = df.loc[mask].copy()
-
-    # Build GeoJSON for counting loops
-    features_out: list[dict] = []
-    for _, row in filtered.iterrows():
-        geom = row.get("geometry")
-        if isinstance(geom, str):
-            try:
-                geom = json.loads(geom)
-            except Exception:
-                geom = None
-        elif not isinstance(geom, dict):
-            geom = None
-
-        props: dict[str, Any] = {}
-        for k, v in row.items():
-            if k == "geometry":
-                continue
-            if isinstance(v, (np.integer, np.floating)):
-                v = v.item()
-            if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
-                v = None
-            props[k] = v
-
-        features_out.append({"type": "Feature", "geometry": geom, "properties": props})
-
-    compteurs_geojson = {"type": "FeatureCollection", "features": features_out}
-    territory = session.data.get("territory", "unknown")
-
-    session_manager.store_data(body.session_id, "compteurs_geojson", compteurs_geojson)
-
-    stats = CompteursStats(
-        total_loops=len(df),
-        filtered_loops=len(filtered),
-        territory=territory,
-    )
+    # Store in session for later export
+    session_manager.store_data(body.session_id, "compteurs_geojson", geojson)
+    session_manager.store_data(body.session_id, "compteurs_filename", body.output_filename)
 
     logger.info(
-        "Compteurs generated: session=%s total=%d filtered=%d",
-        body.session_id, len(df), len(filtered),
+        "Compteurs generated: session=%s total=%d features=%d",
+        body.session_id, stats.total_rows, stats.output_features,
     )
 
     return CompteursResponse(
         session_id=body.session_id,
         stats=stats,
-        geojson_feature_count=len(features_out),
+        geojson_feature_count=stats.output_features,
+    )
+
+
+@router.get("/download/{session_id}")
+async def download_compteurs(session_id: str) -> Response:
+    """Download the generated counting-loops GeoJSON."""
+    session = session_manager.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+
+    compteurs_geojson = session.data.get("compteurs_geojson")
+    if compteurs_geojson is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun fichier compteurs genere. Lancez /api/compteurs/generate d'abord.",
+        )
+
+    filename = session.data.get("compteurs_filename", "counting-loops")
+    content = json.dumps(compteurs_geojson, ensure_ascii=False, indent=2)
+
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="application/geo+json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}.geojson"',
+        },
     )
