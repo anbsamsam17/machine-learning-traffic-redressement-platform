@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/api-url";
 import { toast } from "sonner";
 import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
@@ -16,7 +17,7 @@ export default function ConfigPage() {
   // Fetch the columns from the learning table in the session
   useEffect(() => {
     if (!sessionId) return;
-    fetch("/api/mapping/auto", {
+    fetch(apiUrl("/api/mapping/auto"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sessionId }),

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { apiUrl } from "@/lib/api-url";
 import { FileSpreadsheet, Wand2, Table2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { DropZone } from "@/components/upload/drop-zone";
@@ -76,7 +77,7 @@ export default function DonneesPage() {
         formData.append("file", f);
         formData.append("mode", mode ?? "tv");
 
-        const uploadResponse = await fetch("/api/upload", {
+        const uploadResponse = await fetch(apiUrl("/api/upload"), {
           method: "POST",
           body: formData,
         });
@@ -93,7 +94,7 @@ export default function DonneesPage() {
         useAppStore.getState().setSessionId(sessionId);
 
         // Step 2: Call auto-mapping with session_id
-        const mapResponse = await fetch("/api/mapping/auto", {
+        const mapResponse = await fetch(apiUrl("/api/mapping/auto"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: sessionId }),
@@ -190,7 +191,7 @@ export default function DonneesPage() {
         return;
       }
 
-      const response = await fetch("/api/mapping/validate", {
+      const response = await fetch(apiUrl("/api/mapping/validate"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

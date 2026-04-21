@@ -27,6 +27,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { DropZone } from "@/components/upload/drop-zone";
 import { useAppStore } from "@/lib/store";
 import { fetchJSON, uploadFile } from "@/lib/api";
+import { apiUrl } from "@/lib/api-url";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,7 +84,7 @@ const REQUIRED_COLUMNS: ColumnDef[] = [
   { key: "DIR_TRAVEL", label: "Direction", description: "Direction de circulation (F/T/B)", required: false },
 ];
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// API_BASE removed — use apiUrl() instead
 
 // ---------------------------------------------------------------------------
 // Component
@@ -241,7 +242,7 @@ export default function CartePage() {
   // ---- Download ----
   const handleDownload = useCallback(() => {
     if (!sessionId) return;
-    window.open(`${API_BASE}/api/carte/download/${sessionId}`, "_blank");
+    window.open(apiUrl(`/api/carte/download/${sessionId}`), "_blank");
   }, [sessionId]);
 
   // ---- Debounced validation timer refs ----

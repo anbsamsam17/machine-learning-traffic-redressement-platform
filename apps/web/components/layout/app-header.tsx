@@ -7,8 +7,8 @@ import { Brain, Truck, Map, Activity, Menu, X, Home, LogOut, User } from "lucide
 import { useAppStore, type AppMode } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { getToken, removeToken, fetchWithAuth } from "@/lib/auth";
+import { apiUrl } from "@/lib/api-url";
 
-// Use relative paths — Next.js proxy routes /api/* to the backend
 
 const MODES = [
   { key: "tv" as AppMode, label: "Modele TV", icon: Brain, path: "/donnees", color: "text-violet-400" },
@@ -34,7 +34,7 @@ export function AppHeader() {
       setUserEmail(null);
       return;
     }
-    fetchWithAuth(`/api/auth/me`)
+    fetchWithAuth(apiUrl("/api/auth/me"))
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();

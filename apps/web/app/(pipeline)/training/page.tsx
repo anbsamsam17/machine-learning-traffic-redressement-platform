@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/api-url";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -95,7 +96,7 @@ export default function TrainingPage() {
   useEffect(() => {
     if (taskId && status === "idle") {
       // Check if task is still running
-      fetch(`/api/training/status/${taskId}`)
+      fetch(apiUrl(`/api/training/status/${taskId}`))
         .then((r) => r.json())
         .then((data) => {
           if (data.status === "running" || data.status === "pending") {
@@ -127,7 +128,7 @@ export default function TrainingPage() {
 
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/training/status/${tid}`);
+        const res = await fetch(apiUrl(`/api/training/status/${tid}`));
         if (!res.ok) return;
         const data = await res.json();
 
@@ -286,7 +287,7 @@ export default function TrainingPage() {
         addLog("Feature subset grid : DESACTIVE (un seul feature set)", "info");
       }
 
-      const res = await fetch("/api/training/start", {
+      const res = await fetch(apiUrl("/api/training/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -321,7 +322,7 @@ export default function TrainingPage() {
   async function handleCancel() {
     if (!taskId) return;
     try {
-      await fetch(`/api/training/cancel/${taskId}`, { method: "POST" });
+      await fetch(apiUrl(`/api/training/cancel/${taskId}`), { method: "POST" });
       addLog("Annulation demandee...", "info");
       toast.info("Annulation en cours");
     } catch {

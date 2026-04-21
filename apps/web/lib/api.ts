@@ -1,10 +1,11 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { getApiBase } from "./api-url";
 
 export async function fetchJSON<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const base = getApiBase();
+  const res = await fetch(`${base}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -20,12 +21,13 @@ export async function uploadFile(
   file: File,
   extraFields?: Record<string, string>
 ): Promise<unknown> {
+  const base = getApiBase();
   const form = new FormData();
   form.append("file", file);
   if (extraFields) {
     Object.entries(extraFields).forEach(([k, v]) => form.append(k, v));
   }
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${base}${path}`, {
     method: "POST",
     body: form,
   });
@@ -41,8 +43,8 @@ export function streamSSE(
   onMessage: (data: Record<string, unknown>) => void,
   onError?: (err: Event) => void
 ): EventSource {
-  // Use relative path so Next.js proxy handles it (avoids CORS issues)
-  const url = typeof window !== "undefined" ? path : `${API_BASE}${path}`;
+  const base = getApiBase();
+  const url = `${base}${path}`;
   const es = new EventSource(url);
   es.onmessage = (event) => {
     try {

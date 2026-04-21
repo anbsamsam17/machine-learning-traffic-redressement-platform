@@ -3,8 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-
-// Use relative path so Next.js proxy handles routing to backend
+import { apiUrl } from "@/lib/api-url";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -29,7 +28,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/auth/register`, {
+      const res = await fetch(apiUrl("/api/auth/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

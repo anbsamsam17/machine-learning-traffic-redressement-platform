@@ -4,8 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setToken } from "@/lib/auth";
-
-// Use relative path so Next.js proxy handles routing to backend
+import { apiUrl } from "@/lib/api-url";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,7 +18,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch(`/api/auth/login`, {
+      const res = await fetch(apiUrl("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
