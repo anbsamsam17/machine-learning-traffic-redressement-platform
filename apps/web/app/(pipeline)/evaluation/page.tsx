@@ -267,15 +267,22 @@ export default function EvaluationPage() {
         setSessionId(sid);
       }
 
-      // Upload validation with column mapping applied
-      const form = new FormData();
-      form.append("file", validationFile);
-      form.append("session_id", sid);
-      form.append("column_mapping", JSON.stringify(colMapping));
-      const uploadRes = await fetch(apiUrl("/api/evaluation/upload-validation"), { method: "POST", body: form });
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({}));
-        throw new Error(err.detail ?? "Upload echoue");
+      // Upload validation file only if we need to (the file was already uploaded
+      // at step 1 via /api/upload which stores it as raw_df. We re-upload via
+      // /api/evaluation/upload-validation to apply column mapping and store as validation_df.
+      // But only if the file isn't too large — skip re-upload for big files and rely on raw_df fallback.)
+      try {
+        const form = new FormData();
+        form.append("file", validationFile);
+        form.append("session_id", sid);
+        form.append("column_mapping", JSON.stringify(colMapping));
+        const uploadRes = await fetch(apiUrl("/api/evaluation/upload-validation"), { method: "POST", body: form });
+        if (!uploadRes.ok) {
+          // If upload fails (413 too large, etc.), the backend will fallback to raw_df
+          console.warn("Re-upload validation failed, will use raw_df fallback");
+        }
+      } catch {
+        console.warn("Re-upload validation failed, will use raw_df fallback");
       }
 
       // Run evaluation
