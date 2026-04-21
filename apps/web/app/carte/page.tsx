@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -9,7 +9,6 @@ import {
   Play,
   Download,
   Layers,
-  FolderOpen,
   CheckCircle2,
   XCircle,
   SlidersHorizontal,
@@ -41,7 +40,8 @@ interface UploadResponse {
   preview: Record<string, unknown>[];
 }
 
-interface ModelValidateResponse {
+interface CarteModelUploadResponse {
+  model_dir: string;
   valid: boolean;
   missing_files: string[];
   training_config: Record<string, unknown> | null;
@@ -84,8 +84,6 @@ const REQUIRED_COLUMNS: ColumnDef[] = [
   { key: "DIR_TRAVEL", label: "Direction", description: "Direction de circulation (F/T/B)", required: false },
 ];
 
-// API_BASE removed — use apiUrl() instead
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -94,7 +92,11 @@ export default function CartePage() {
   const router = useRouter();
   const { reset } = useAppStore();
 
-  // Section 1 — Model paths
+  // Section 1 — Model uploads
+  const [tvZipFile, setTvZipFile] = useState<File | null>(null);
+  const [plZipFile, setPlZipFile] = useState<File | null>(null);
+  const [tvUploading, setTvUploading] = useState(false);
+  const [plUploading, setPlUploading] = useState(false);
   const [modelTvDir, setModelTvDir] = useState("");
   const [modelPlDir, setModelPlDir] = useState("");
   const [tvValid, setTvValid] = useState<boolean | null>(null);
@@ -126,27 +128,61 @@ export default function CartePage() {
   const [done, setDone] = useState(false);
   const [stats, setStats] = useState<CarteStats | null>(null);
 
-  // ---- Model validation ----
-  const validateModel = useCallback(
-    async (dir: string, type: "tv" | "pl") => {
-      if (!dir.trim()) {
-        if (type === "tv") { setTvValid(null); setTvMissing([]); }
-        else { setPlValid(null); setPlMissing([]); }
-        return;
+  // ---- Model ZIP upload ----
+  const handleModelUpload = useCallback(
+    async (file: File, type: "tv" | "pl") => {
+      // We need a session_id for the upload endpoint; create a temporary one if needed
+      let sid = sessionId;
+      if (!sid) {
+        // Generate a simple session id for model storage
+        sid = `carte_${Date.now().toString(36)}`;
+        setSessionId(sid);
       }
+
+      const setUpl = type === "tv" ? setTvUploading : setPlUploading;
+      setUpl(true);
+
       try {
-        const res = await fetchJSON<ModelValidateResponse>("/api/carte/validate-model", {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("session_id", sid);
+        form.append("model_type", type);
+
+        const res = await fetch(apiUrl("/api/carte/upload-model"), {
           method: "POST",
-          body: JSON.stringify({ model_dir: dir }),
+          body: form,
         });
-        if (type === "tv") { setTvValid(res.valid); setTvMissing(res.missing_files); }
-        else { setPlValid(res.valid); setPlMissing(res.missing_files); }
-      } catch {
-        if (type === "tv") { setTvValid(false); setTvMissing(["(erreur de connexion)"]); }
-        else { setPlValid(false); setPlMissing(["(erreur de connexion)"]); }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail ?? "Upload echoue");
+        }
+        const data: CarteModelUploadResponse = await res.json();
+
+        if (type === "tv") {
+          setModelTvDir(data.model_dir);
+          setTvValid(data.valid);
+          setTvMissing(data.missing_files);
+        } else {
+          setModelPlDir(data.model_dir);
+          setPlValid(data.valid);
+          setPlMissing(data.missing_files);
+        }
+
+        if (data.valid) {
+          toast.success(`Modele ${type.toUpperCase()} valide et pret`);
+        } else {
+          toast.warning(`Modele ${type.toUpperCase()} incomplet : ${data.missing_files.join(", ")}`);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Erreur inconnue";
+        toast.error(`Erreur upload modele ${type.toUpperCase()} : ${message}`);
+        if (type === "tv") { setTvValid(false); setTvMissing(["(erreur upload)"]); }
+        else { setPlValid(false); setPlMissing(["(erreur upload)"]); }
+      } finally {
+        setUpl(false);
       }
     },
-    []
+    [sessionId]
   );
 
   // ---- FCD file upload ----
@@ -245,24 +281,6 @@ export default function CartePage() {
     window.open(apiUrl(`/api/carte/download/${sessionId}`), "_blank");
   }, [sessionId]);
 
-  // ---- Debounced validation timer refs ----
-  const tvTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const plTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  const handleTvDirChange = (val: string) => {
-    setModelTvDir(val);
-    setTvValid(null);
-    clearTimeout(tvTimerRef.current);
-    tvTimerRef.current = setTimeout(() => validateModel(val, "tv"), 500);
-  };
-
-  const handlePlDirChange = (val: string) => {
-    setModelPlDir(val);
-    setPlValid(null);
-    clearTimeout(plTimerRef.current);
-    plTimerRef.current = setTimeout(() => validateModel(val, "pl"), 500);
-  };
-
   // ---- Validity indicator ----
   function ValidityBadge({ valid, missing }: { valid: boolean | null; missing: string[] }) {
     if (valid === null) return null;
@@ -313,72 +331,62 @@ export default function CartePage() {
         </div>
 
         {/* ============================================================= */}
-        {/* SECTION 1 — Selection des modeles */}
+        {/* SECTION 1 — Selection des modeles (upload ZIP) */}
         {/* ============================================================= */}
         <GlowCard glowColor="accent">
           <div className="flex items-center gap-2 mb-5">
             <div className="w-7 h-7 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">1</div>
             <h3 className="text-sm font-semibold text-white">Selection des modeles</h3>
           </div>
+          <p className="text-xs text-slate-400 mb-5">
+            Uploadez un fichier .zip pour chaque modele. Le ZIP doit contenir
+            NNarchitecture.json, NNweights.weights.h5 (ou NNweights.h5) et NNnormCoefficients.json.
+          </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* TV */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Car size={16} className="text-accent" />
                 <span className="text-xs font-medium text-slate-200">Modele TV (Trafic Vehicules)</span>
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={modelTvDir}
-                  onChange={(e) => handleTvDirChange(e.target.value)}
-                  placeholder="Chemin vers le dossier du modele TV..."
-                  className="flex-1 h-9 rounded-lg border border-border bg-surface/80 px-3 text-xs text-slate-200 placeholder:text-slate-500 outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors"
-                />
-                <NeonButton
-                  variant="secondary"
-                  className="h-9 px-3 text-xs"
-                  icon={<FolderOpen size={14} />}
-                  title="Parcourir"
-                  onClick={() => validateModel(modelTvDir, "tv")}
-                >
-                  Valider
-                </NeonButton>
-              </div>
-              <p className="text-[10px] text-slate-400">
-                Dossier contenant NNarchitecture.json, NNweights.h5, NNnormCoefficients.json
-              </p>
+              <DropZone
+                file={tvZipFile}
+                onFile={(f) => { setTvZipFile(f); handleModelUpload(f, "tv"); }}
+                onClear={() => { setTvZipFile(null); setTvValid(null); setTvMissing([]); setModelTvDir(""); }}
+                accept={{ "application/zip": [".zip"], "application/x-zip-compressed": [".zip"] }}
+                label="Deposez le ZIP du modele TV"
+                description=".zip contenant le dossier du modele"
+              />
+              {tvUploading && (
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Extraction et validation...</span>
+                </div>
+              )}
               <ValidityBadge valid={tvValid} missing={tvMissing} />
             </div>
 
             {/* PL */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Truck size={16} className="text-violet" />
                 <span className="text-xs font-medium text-slate-200">Modele PL (Poids Lourds)</span>
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={modelPlDir}
-                  onChange={(e) => handlePlDirChange(e.target.value)}
-                  placeholder="Chemin vers le dossier du modele PL..."
-                  className="flex-1 h-9 rounded-lg border border-border bg-surface/80 px-3 text-xs text-slate-200 placeholder:text-slate-500 outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors"
-                />
-                <NeonButton
-                  variant="secondary"
-                  className="h-9 px-3 text-xs"
-                  icon={<FolderOpen size={14} />}
-                  title="Parcourir"
-                  onClick={() => validateModel(modelPlDir, "pl")}
-                >
-                  Valider
-                </NeonButton>
-              </div>
-              <p className="text-[10px] text-slate-400">
-                Dossier contenant NNarchitecture.json, NNweights.h5, NNnormCoefficients.json
-              </p>
+              <DropZone
+                file={plZipFile}
+                onFile={(f) => { setPlZipFile(f); handleModelUpload(f, "pl"); }}
+                onClear={() => { setPlZipFile(null); setPlValid(null); setPlMissing([]); setModelPlDir(""); }}
+                accept={{ "application/zip": [".zip"], "application/x-zip-compressed": [".zip"] }}
+                label="Deposez le ZIP du modele PL"
+                description=".zip contenant le dossier du modele"
+              />
+              {plUploading && (
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Extraction et validation...</span>
+                </div>
+              )}
               <ValidityBadge valid={plValid} missing={plMissing} />
             </div>
           </div>

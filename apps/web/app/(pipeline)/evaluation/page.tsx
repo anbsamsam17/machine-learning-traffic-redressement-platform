@@ -15,6 +15,8 @@ import {
   FolderOpen,
   ChevronDown,
   ArrowRight,
+  Package,
+  Server,
 } from "lucide-react";
 import { toast } from "sonner";
 import { GradientText } from "@/components/ui/gradient-text";
@@ -49,6 +51,8 @@ interface EvalMetrics {
   median_relative_error?: number | null;
 }
 
+type ModelSource = "session" | "upload";
+
 /* ---------- Page ---------- */
 
 export default function EvaluationPage() {
@@ -65,11 +69,18 @@ export default function EvaluationPage() {
   const [metrics, setMetrics] = useState<EvalMetrics | null>(null);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
   const [reportBlob, setReportBlob] = useState<Blob | null>(null);
-  const [modelDir, setModelDir] = useState(outputDir ?? "");
+  const [resolvedModelDir, setResolvedModelDir] = useState(outputDir ?? "");
   const [filterFlagComptage, setFilterFlagComptage] = useState(false);
   const [metricsFlash, setMetricsFlash] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const metricsContainerRef = useRef<HTMLDivElement>(null);
+
+  // Model source tab
+  const [modelSource, setModelSource] = useState<ModelSource>(
+    outputDir || sessionId ? "session" : "upload"
+  );
+  const [modelZipFile, setModelZipFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   // --- Upload validation file and get columns ---
   const handleValidationFile = useCallback(async (f: File) => {
@@ -78,12 +89,10 @@ export default function EvaluationPage() {
     setReportHtml(null);
 
     try {
-      // Upload to get a session + columns list
       const form = new FormData();
       form.append("file", f);
       form.append("mode", mode === "pl" ? "PL" : "TV");
 
-      // Always create a fresh session via upload to get columns
       const uploadRes = await fetch(apiUrl("/api/upload"), { method: "POST", body: form });
       if (!uploadRes.ok) throw new Error("Upload echoue");
       const data = await uploadRes.json();
@@ -98,36 +107,76 @@ export default function EvaluationPage() {
     }
   }, [sessionId, setSessionId, mode]);
 
-  // --- Load models ---
-  const loadModels = useCallback(async (dir: string) => {
-    if (!dir.trim()) return;
+  // --- Load models from session ---
+  const loadModelsFromSession = useCallback(async () => {
+    const sid = sessionId;
+    if (!sid) return;
     setLoadingModels(true);
     try {
-      const res = await fetch(apiUrl(`/api/models/list?dir=${encodeURIComponent(dir.trim())}`));
+      const res = await fetch(apiUrl(`/api/models/list?session_id=${encodeURIComponent(sid)}`));
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const data = await res.json();
       const modelList: ModelInfo[] = data.models ?? [];
       setModels(modelList);
       if (modelList.length > 0) {
         setSelectedModel(modelList[0].name);
-        toast.success(`${modelList.length} modele(s) trouve(s)`);
+        // Use the path of first model's parent as resolved dir
+        const firstPath = modelList[0].path;
+        const parentDir = firstPath.substring(0, firstPath.lastIndexOf("/")) || firstPath.substring(0, firstPath.lastIndexOf("\\"));
+        setResolvedModelDir(parentDir);
+        toast.success(`${modelList.length} modele(s) de la session`);
       } else {
-        toast.warning("Aucun modele trouve dans ce dossier.");
+        toast.warning("Aucun modele trouve dans cette session.");
       }
     } catch {
-      toast.error("Impossible de lister les modeles.");
+      toast.error("Impossible de lister les modeles de la session.");
     } finally {
       setLoadingModels(false);
     }
-  }, []);
+  }, [sessionId]);
 
-  // Auto-load on mount
-  useEffect(() => {
-    if (outputDir) {
-      setModelDir(outputDir);
-      loadModels(outputDir);
+  // --- Upload model ZIP ---
+  const handleModelZipUpload = useCallback(async (f: File) => {
+    setModelZipFile(f);
+    if (!sessionId) {
+      toast.error("Pas de session active. Chargez d'abord un fichier de validation.");
+      return;
     }
-  }, [outputDir, loadModels]);
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", f);
+      form.append("session_id", sessionId);
+
+      const res = await fetch(apiUrl("/api/models/upload"), { method: "POST", body: form });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? "Upload echoue");
+      }
+      const data = await res.json();
+      const modelList: ModelInfo[] = data.models ?? [];
+      setModels(modelList);
+      setResolvedModelDir(data.extract_dir ?? "");
+
+      if (modelList.length > 0) {
+        setSelectedModel(modelList[0].name);
+        toast.success(`${modelList.length} modele(s) extraits du ZIP`);
+      } else {
+        toast.warning("Aucun modele valide trouve dans le ZIP.");
+      }
+    } catch (err: unknown) {
+      toast.error(`Erreur: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setUploading(false);
+    }
+  }, [sessionId]);
+
+  // Auto-load session models on mount
+  useEffect(() => {
+    if (sessionId && modelSource === "session") {
+      loadModelsFromSession();
+    }
+  }, [sessionId, modelSource, loadModelsFromSession]);
 
   // --- When model selection changes, update required columns + auto-map ---
   useEffect(() => {
@@ -152,7 +201,7 @@ export default function EvaluationPage() {
       } else if (fileLower[col.toLowerCase()]) {
         mapping[col] = fileLower[col.toLowerCase()];
       } else {
-        mapping[col] = ""; // not found — user must map
+        mapping[col] = "";
       }
     }
     setColMapping(mapping);
@@ -202,7 +251,7 @@ export default function EvaluationPage() {
         body: JSON.stringify({
           session_id: sid,
           model_name: selectedModel,
-          model_dir: modelDir.trim(),
+          model_dir: resolvedModelDir.trim(),
           filter_flag_comptage: filterFlagComptage,
           column_mapping: colMapping,
         }),
@@ -222,14 +271,12 @@ export default function EvaluationPage() {
         setReportBlob(new Blob([reportData.report_html], { type: "text/html" }));
       }
 
-      // Rich success toast with key metrics
       const r2Str = evalData.metrics.r_squared.toFixed(4);
       const gehStr = evalData.metrics.geh_pct_below_5.toFixed(1);
       toast.success(
         `Evaluation terminee — R² = ${r2Str}, GEH<5% = ${gehStr}% (${selectedModel})`
       );
 
-      // Trigger count-up flash + confetti on metrics
       setMetricsFlash(true);
       setTimeout(() => setMetricsFlash(false), 2000);
       setTimeout(() => {
@@ -240,7 +287,7 @@ export default function EvaluationPage() {
     } finally {
       setRunning(false);
     }
-  }, [validationFile, selectedModel, modelDir, sessionId, filterFlagComptage, colMapping, allMapped, mode, setSessionId]);
+  }, [validationFile, selectedModel, resolvedModelDir, sessionId, filterFlagComptage, colMapping, allMapped, mode, setSessionId]);
 
   const downloadReport = useCallback(() => {
     if (!reportBlob) return;
@@ -253,9 +300,9 @@ export default function EvaluationPage() {
   }, [reportBlob, selectedModel]);
 
   const downloadModelZip = useCallback(async () => {
-    if (!selectedModel || !modelDir) return;
+    if (!selectedModel || !resolvedModelDir) return;
     try {
-      const res = await fetch(apiUrl(`/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(modelDir.trim())}`));
+      const res = await fetch(apiUrl(`/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(resolvedModelDir.trim())}`));
       if (!res.ok) throw new Error("Telechargement echoue");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -265,7 +312,7 @@ export default function EvaluationPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch { toast.error("Impossible de telecharger le modele."); }
-  }, [selectedModel, modelDir]);
+  }, [selectedModel, resolvedModelDir]);
 
   return (
     <div className="space-y-6">
@@ -303,39 +350,119 @@ export default function EvaluationPage() {
         </label>
       </GlowCard>
 
-      {/* 2. Selection du modele */}
+      {/* 2. Selection du modele — tabs */}
       <GlowCard glowColor="cyan">
         <div className="flex items-center gap-2 mb-4">
           <FolderOpen size={18} className="text-cyan-400" />
           <h3 className="text-sm font-semibold text-white">2. Selection du modele</h3>
         </div>
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <input type="text" value={modelDir} onChange={(e) => setModelDir(e.target.value)}
-              placeholder="Ex: C:\xMDL\TV\MonTerritoire"
-              className="flex-1 rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50 transition-colors"
-            />
-            <NeonButton variant="secondary" onClick={() => loadModels(modelDir)} disabled={!modelDir.trim() || loadingModels} className="text-xs whitespace-nowrap">
-              {loadingModels ? <Loader2 size={14} className="animate-spin" /> : "Charger"}
-            </NeonButton>
-          </div>
-          <AnimatePresence>
-            {models.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
-                <div className="relative">
-                  <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full appearance-none rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2.5 pr-10 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 cursor-pointer">
-                    {models.map((m) => (
-                      <option key={m.name} value={m.name}>{m.name} {m.has_weights ? "✓" : "⚠"}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                </div>
-                <p className="text-xs text-slate-400">{models.length} modele(s)</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+
+        {/* Tab buttons */}
+        <div className="flex gap-1 p-1 rounded-xl bg-slate-900/60 border border-white/[0.06] mb-4">
+          <button
+            type="button"
+            onClick={() => setModelSource("session")}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium transition-all ${
+              modelSource === "session"
+                ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+            }`}
+          >
+            <Server size={14} />
+            Modeles de la session
+          </button>
+          <button
+            type="button"
+            onClick={() => setModelSource("upload")}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium transition-all ${
+              modelSource === "upload"
+                ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+            }`}
+          >
+            <Package size={14} />
+            Uploader un modele (ZIP)
+          </button>
         </div>
+
+        {/* Tab content: Session models */}
+        {modelSource === "session" && (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-400">
+              Les modeles entraines dans cette session sont charges automatiquement.
+            </p>
+            <NeonButton
+              variant="secondary"
+              onClick={loadModelsFromSession}
+              disabled={!sessionId || loadingModels}
+              className="text-xs"
+            >
+              {loadingModels ? <Loader2 size={14} className="animate-spin mr-1.5" /> : null}
+              Rafraichir les modeles
+            </NeonButton>
+            <AnimatePresence>
+              {models.length > 0 && (
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
+                  <div className="relative">
+                    <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}
+                      className="w-full appearance-none rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2.5 pr-10 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 cursor-pointer">
+                      {models.map((m) => (
+                        <option key={m.name} value={m.name}>{m.name} {m.has_weights ? "" : "(poids manquants)"}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-slate-400">{models.length} modele(s) disponible(s)</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            {!sessionId && (
+              <p className="text-xs text-amber-400">
+                Aucune session active. Lancez d&apos;abord un entrainement ou chargez un fichier de validation.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Tab content: Upload ZIP */}
+        {modelSource === "upload" && (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-400">
+              Uploadez un fichier .zip contenant un ou plusieurs dossiers de modeles.
+              Chaque dossier doit contenir NNarchitecture.json, NNweights.weights.h5 et NNnormCoefficients.json.
+            </p>
+            <DropZone
+              file={modelZipFile}
+              onFile={handleModelZipUpload}
+              onClear={() => { setModelZipFile(null); setModels([]); setSelectedModel(""); }}
+              accept={{ "application/zip": [".zip"], "application/x-zip-compressed": [".zip"] }}
+              label="Deposez votre fichier ZIP de modeles"
+              description=".zip contenant les dossiers de modeles"
+            />
+            {uploading && (
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <Loader2 size={14} className="animate-spin" />
+                <span>Extraction et validation en cours...</span>
+              </div>
+            )}
+            <AnimatePresence>
+              {models.length > 0 && modelSource === "upload" && (
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
+                  <div className="relative">
+                    <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}
+                      className="w-full appearance-none rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2.5 pr-10 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50 cursor-pointer">
+                      {models.map((m) => (
+                        <option key={m.name} value={m.name}>{m.name} {m.has_weights ? "" : "(poids manquants)"}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-emerald-400">{models.length} modele(s) extraits du ZIP</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </GlowCard>
 
       {/* 3. Mapping colonnes */}
@@ -361,7 +488,7 @@ export default function EvaluationPage() {
                     <span className={`text-xs font-mono w-[280px] shrink-0 truncate ${colMapping[col] ? "text-slate-200" : "text-red-400"}`}>
                       {col}
                     </span>
-                    <span className="text-slate-500 text-xs">→</span>
+                    <span className="text-slate-500 text-xs">&rarr;</span>
                     <select
                       value={colMapping[col] ?? ""}
                       onChange={(e) => setColMapping((prev) => ({ ...prev, [col]: e.target.value }))}

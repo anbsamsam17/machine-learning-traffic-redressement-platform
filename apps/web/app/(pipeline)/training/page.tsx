@@ -14,7 +14,6 @@ import {
   Cpu,
   ScrollText,
   ChevronRight,
-  FolderOpen,
 } from "lucide-react";
 import {
   LineChart,
@@ -219,18 +218,10 @@ export default function TrainingPage() {
       return;
     }
     const dir = localOutputDir.trim();
-    if (!dir) {
-      toast.error("Veuillez indiquer un dossier de sortie pour les modeles.");
-      return;
+    // If dir is provided, save it; otherwise models will be saved on the server workspace
+    if (dir) {
+      setOutputDir(dir);
     }
-    // Validate absolute path (Windows C:\ or D:\ or Unix /)
-    const isAbsolute = /^[A-Za-z]:[/\\]/.test(dir) || dir.startsWith("/");
-    if (!isAbsolute) {
-      toast.error("Le dossier de sortie doit etre un chemin absolu (ex: C:\\xMDL\\TV\\MonTerritoire)");
-      return;
-    }
-    // Save output dir to store
-    setOutputDir(dir);
 
     setStatus("starting");
     setLossData([]);
@@ -261,15 +252,17 @@ export default function TrainingPage() {
         return;
       }
 
-      addLog(`Dossier de sortie : ${localOutputDir.trim()}`, "info");
+      const dirValue = localOutputDir.trim();
+      addLog(`Dossier de sortie : ${dirValue || "(workspace serveur — automatique)"}`, "info");
       addLog(`Max epochs (config) : ${storedConfig.max_epochs ?? "defaut backend"}`, "info");
       addLog("Import de TensorFlow et preparation des donnees...", "info");
 
       // Build final payload — spread config then override session_id and output_dir
+      // If output_dir is empty, the backend will use WORKSPACE_ROOT/{session_id}/models/
       const payload: Record<string, unknown> = {
         ...storedConfig,
         session_id: sessionId,
-        output_dir: localOutputDir.trim(),
+        output_dir: dirValue || null,
       };
 
       // Debug: log actual payload keys to verify config is transmitted
@@ -303,6 +296,10 @@ export default function TrainingPage() {
       setTaskId(newTaskId);
       if (data.total_combinations) {
         setTotalModels(data.total_combinations);
+      }
+      // Capture the resolved output_dir from the backend (may differ from user input)
+      if (data.output_dir) {
+        setOutputDir(data.output_dir);
       }
 
       addLog(`Tache creee : ${newTaskId} — ${data.total_combinations ?? "?"} combinaisons totales (feature_sets × hyperparametres)`, "success");
@@ -397,7 +394,7 @@ export default function TrainingPage() {
         </div>
       </div>
 
-      {/* Output dir - required before launching */}
+      {/* Output dir - optional (server workspace used by default) */}
       {status === "idle" && (
         <GlowCard>
           <div className="flex items-start gap-3">
@@ -406,41 +403,26 @@ export default function TrainingPage() {
             </div>
             <div className="flex-1 space-y-2">
               <label className="text-sm font-medium text-slate-200">
-                Dossier de sortie des modeles *
+                Dossier de sortie des modeles
+                <span className="text-xs text-slate-400 font-normal ml-2">(optionnel)</span>
               </label>
               <p className="text-xs text-slate-400">
-                Tous les modeles du grid search seront sauvegardes dans ce
-                dossier (un sous-dossier par combinaison).
+                Si laisse vide, les modeles seront sauvegardes automatiquement dans
+                le workspace du serveur (recommande en mode SaaS). En mode local,
+                vous pouvez specifier un chemin absolu.
               </p>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={localOutputDir}
                   onChange={(e) => setLocalOutputDir(e.target.value)}
-                  placeholder={`Ex: C:\\xMDL\\${mode === "pl" ? "PL" : "TV"}\\MonTerritoire`}
+                  placeholder="Laisser vide = sauvegarde automatique sur le serveur"
                   className="flex-1 px-3 py-2 rounded-lg text-sm bg-slate-900/80 border border-white/[0.08] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition-colors"
                 />
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      // @ts-expect-error -- showDirectoryPicker is not in all TS types yet
-                      const handle = await window.showDirectoryPicker({ mode: "readwrite" });
-                      setLocalOutputDir(handle.name);
-                      toast.info(`Dossier selectionne : ${handle.name} (chemin relatif — saisissez le chemin complet si necessaire)`);
-                    } catch {
-                      // User cancelled or API not supported
-                    }
-                  }}
-                  className="px-3 py-2 rounded-lg text-sm bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20 transition-colors flex items-center gap-1.5 shrink-0"
-                >
-                  <FolderOpen size={14} />
-                  Parcourir
-                </button>
               </div>
               {!localOutputDir && (
-                <p className="text-xs text-amber-400">
-                  Veuillez indiquer un dossier avant de lancer l&apos;entrainement.
+                <p className="text-xs text-emerald-400/70">
+                  Les modeles seront sauvegardes dans le workspace du serveur.
                 </p>
               )}
             </div>

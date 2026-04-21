@@ -98,6 +98,7 @@ class TrainingStartResponse(BaseModel):
     session_id: str
     status: str
     total_combinations: int
+    output_dir: str | None = None
 
 
 class TrainingStatusResponse(BaseModel):
@@ -717,14 +718,25 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
                    "Si le backend a ete redémarre, les sessions en memoire sont perdues.",
         )
 
-    combos = _build_combinations(body.model_dump())
+    # If output_dir is empty/absent, use WORKSPACE_ROOT/{session_id}/models/
+    config_dict = body.model_dump()
+    if not config_dict.get("output_dir"):
+        settings = get_settings()
+        default_output = str(Path(settings.WORKSPACE_ROOT) / body.session_id / "models")
+        config_dict["output_dir"] = default_output
+        logger.info("No output_dir provided — using workspace default: %s", default_output)
+
+    # Store the resolved output_dir in session for downstream steps (evaluation)
+    session.data["output_dir"] = config_dict["output_dir"]
+
+    combos = _build_combinations(config_dict)
     total = len(combos)
 
     task_id = uuid.uuid4().hex[:12]
     task = TrainingTask(
         task_id=task_id,
         session_id=body.session_id,
-        config=body.model_dump(),
+        config=config_dict,
     )
 
     with _tasks_lock:
@@ -735,7 +747,7 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
 
     logger.info(
         "Grid search started: task=%s session=%s combos=%d output_dir=%s max_epochs=%d",
-        task_id, body.session_id, total, body.output_dir, body.max_epochs,
+        task_id, body.session_id, total, config_dict.get("output_dir"), body.max_epochs,
     )
 
     return TrainingStartResponse(
@@ -743,6 +755,7 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
         session_id=body.session_id,
         status="pending",
         total_combinations=total,
+        output_dir=config_dict.get("output_dir"),
     )
 
 
