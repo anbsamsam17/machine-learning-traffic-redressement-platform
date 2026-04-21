@@ -140,6 +140,42 @@ class MemoryBackend(SessionBackend):
 # Redis backend
 # ---------------------------------------------------------------------------
 
+class _RedisDataProxy(dict):
+    """Dict-like proxy that lazily loads values from Redis on access.
+
+    This ensures ``session.data.get("raw_df")`` works transparently
+    with the Redis backend, just like it does with the MemoryBackend.
+    """
+
+    def __init__(self, backend: "RedisBackend", session_id: str) -> None:
+        super().__init__()
+        self._backend = backend
+        self._sid = session_id
+        self._cache: dict[str, Any] = {}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key in self._cache:
+            return self._cache[key]
+        try:
+            raw = self._backend._r.get(self._backend._data_key(self._sid, key))
+            if raw is not None:
+                val = self._backend._deserialize_value(raw)
+                self._cache[key] = val
+                return val
+        except Exception:
+            pass
+        return default
+
+    def __getitem__(self, key: str) -> Any:
+        val = self.get(key)
+        if val is None:
+            raise KeyError(key)
+        return val
+
+    def __contains__(self, key: object) -> bool:
+        return self.get(str(key)) is not None
+
+
 class RedisBackend(SessionBackend):
     """Redis-backed session store. DataFrames are serialised as Parquet bytes."""
 
@@ -203,6 +239,10 @@ class RedisBackend(SessionBackend):
         # Refresh TTL on access
         meta["last_accessed"] = session.last_accessed
         self._r.setex(key, self._ttl, json.dumps(meta).encode("utf-8"))
+
+        # Use a lazy-loading dict proxy so session.data.get("key") works
+        # without loading all DataFrames upfront (they can be huge)
+        session.data = _RedisDataProxy(self, session_id)
         return session
 
     def store_data(self, session_id: str, key: str, value: Any) -> None:

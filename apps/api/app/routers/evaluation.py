@@ -1053,13 +1053,20 @@ def _load_model_from_dir(model_path: Path) -> tuple[Any, dict]:
     return model, norm_data, training_config
 
 
-def _read_uploaded_df(session: Any) -> pd.DataFrame:
-    """Get validation DataFrame from session (try multiple keys)."""
+def _read_uploaded_df(session_id: str) -> pd.DataFrame:
+    """Get validation DataFrame from session (try multiple keys).
+
+    Works with both MemoryBackend (session.data) and RedisBackend (get_data).
+    """
     for key in ("validation_df", "learning_df", "raw_df"):
-        df = session.data.get(key)
-        if df is not None:
-            logger.info("Using '%s' as validation data (%d rows)", key, len(df))
-            return df.copy()
+        try:
+            df = session_manager.get_data(session_id, key)
+            if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+                logger.info("Using '%s' as validation data (%d rows)", key, len(df))
+                return df.copy()
+        except (KeyError, Exception) as e:
+            logger.debug("Key '%s' not found: %s", key, e)
+            continue
     raise ValueError("Aucune donnee de validation disponible dans la session.")
 
 
@@ -1213,9 +1220,9 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
             )
     else:
         # Legacy: load from session
-        model_json_str = session.data.get("trained_model_json")
-        weights_bytes = session.data.get("trained_weights")
-        session_norm = session.data.get("norm_params")
+        model_json_str = session_manager.get_data(body.session_id, "trained_model_json")
+        weights_bytes = session_manager.get_data(body.session_id, "trained_weights")
+        session_norm = session_manager.get_data(body.session_id, "norm_params")
 
         if not all([model_json_str, weights_bytes, session_norm]):
             raise HTTPException(
@@ -1241,7 +1248,7 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
 
     # --- Get evaluation data ---
     try:
-        df = _read_uploaded_df(session)
+        df = _read_uploaded_df(body.session_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -1421,17 +1428,17 @@ async def get_report(session_id: str) -> ReportResponse:
     if session is None:
         raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
 
-    report_html = session.data.get("eval_report_html")
+    report_html = session_manager.get_data(session_id, "eval_report_html")
     if report_html is None:
         # Fallback: generate a minimal report from stored metrics
-        metrics_dict = session.data.get("eval_metrics")
+        metrics_dict = session_manager.get_data(session_id, "eval_metrics")
         if metrics_dict is None:
             raise HTTPException(status_code=400, detail="Lancez l'evaluation d'abord (/api/evaluation/run).")
 
         metrics = MetricsResult(**metrics_dict)
-        model_name = session.data.get("eval_model_name", "modele")
-        y_true = np.array(session.data.get("eval_y_true", []))
-        y_pred = np.array(session.data.get("eval_y_pred", []))
+        model_name = session_manager.get_data(session_id, "eval_model_name", "modele")
+        y_true = np.array(session_manager.get_data(session_id, "eval_y_true", []))
+        y_pred = np.array(session_manager.get_data(session_id, "eval_y_pred", []))
 
         report_html = _generate_html_report(
             metrics=metrics,
