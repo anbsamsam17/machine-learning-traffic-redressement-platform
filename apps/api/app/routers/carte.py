@@ -7,10 +7,13 @@ Reproduces the full logic from the Streamlit page 8_Generation_Carte_Debits.py:
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import math
+import shutil
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +21,8 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
+
+from ..config import get_settings
 
 from ..session import session_manager
 
@@ -275,6 +280,74 @@ async def validate_model(body: ModelValidateRequest) -> ModelValidateResponse:
 
     valid, missing, config = _verify_model_structure(body.model_dir)
     return ModelValidateResponse(valid=valid, missing_files=missing, training_config=config)
+
+
+class CarteModelUploadResponse(BaseModel):
+    model_dir: str
+    valid: bool
+    missing_files: list[str]
+    training_config: dict[str, Any] | None = None
+
+
+@router.post("/upload-model", response_model=CarteModelUploadResponse)
+async def upload_carte_model(
+    file: UploadFile = File(..., description="Fichier ZIP contenant le dossier du modele"),
+    session_id: str = Form(..., description="Session ID"),
+    model_type: str = Form(..., description="Type de modele: tv ou pl"),
+) -> CarteModelUploadResponse:
+    """Upload a model ZIP for carte generation (TV or PL).
+
+    Extracts into WORKSPACE_ROOT/{session_id}/carte_models/{model_type}/ and validates.
+    """
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Le fichier doit etre un .zip")
+
+    if model_type.lower() not in ("tv", "pl"):
+        raise HTTPException(status_code=400, detail="model_type doit etre 'tv' ou 'pl'")
+
+    settings = get_settings()
+    dest_dir = Path(settings.WORKSPACE_ROOT) / session_id / "carte_models" / model_type.lower()
+    # Clean existing content
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir, ignore_errors=True)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    contents = await file.read()
+    buf = io.BytesIO(contents)
+    if not zipfile.is_zipfile(buf):
+        raise HTTPException(status_code=400, detail="Le fichier n'est pas un ZIP valide.")
+
+    buf.seek(0)
+    with zipfile.ZipFile(buf, "r") as zf:
+        for name in zf.namelist():
+            if ".." in name or name.startswith("/") or name.startswith("\\"):
+                raise HTTPException(status_code=400, detail=f"Chemin invalide dans le ZIP: {name}")
+        zf.extractall(dest_dir)
+
+    # Remove __MACOSX
+    macosx = dest_dir / "__MACOSX"
+    if macosx.exists():
+        shutil.rmtree(macosx, ignore_errors=True)
+
+    # Find the actual model directory — could be dest_dir itself, or a subfolder
+    model_dir = dest_dir
+    if not (model_dir / "NNarchitecture.json").exists():
+        # Check one level deeper
+        for child in model_dir.iterdir():
+            if child.is_dir() and (child / "NNarchitecture.json").exists():
+                model_dir = child
+                break
+
+    valid, missing, config = _verify_model_structure(str(model_dir))
+
+    logger.info("Carte model upload (%s): valid=%s, dir=%s", model_type, valid, model_dir)
+
+    return CarteModelUploadResponse(
+        model_dir=str(model_dir),
+        valid=valid,
+        missing_files=missing,
+        training_config=config,
+    )
 
 
 @router.post("/generate", response_model=CarteGenerateResponse)
