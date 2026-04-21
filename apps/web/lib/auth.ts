@@ -43,7 +43,9 @@ export async function fetchWithAuth(
 
   const res = await fetch(url, { ...options, headers });
 
-  if (res.status === 401) {
+  // Only auto-redirect on 401 for non-auth endpoints
+  // Auth endpoints (login/register/me) should handle their own errors
+  if (res.status === 401 && !url.includes("/api/auth/")) {
     removeToken();
     if (typeof window !== "undefined") {
       window.location.href = "/login";

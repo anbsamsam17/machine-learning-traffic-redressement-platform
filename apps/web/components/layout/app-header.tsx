@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Brain, Truck, Map, Activity, Menu, X, Home, LogOut, User } from "lucide-react";
 import { useAppStore, type AppMode } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { getToken, removeToken, fetchWithAuth } from "@/lib/auth";
+import { getToken, removeToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-url";
 
 
@@ -34,13 +34,16 @@ export function AppHeader() {
       setUserEmail(null);
       return;
     }
-    fetchWithAuth(apiUrl("/api/auth/me"))
+    // Fetch user info — don't auto-redirect on failure (soft check)
+    const headers: HeadersInit = { Authorization: `Bearer ${token}` };
+    fetch(apiUrl("/api/auth/me"), { headers })
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();
           setUserEmail(data.email);
         } else {
           setUserEmail(null);
+          // Don't remove token here — let the user stay logged in
         }
       })
       .catch(() => setUserEmail(null));
