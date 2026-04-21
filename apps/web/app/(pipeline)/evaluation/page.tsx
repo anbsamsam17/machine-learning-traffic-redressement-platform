@@ -79,8 +79,12 @@ export default function EvaluationPage() {
   const [modelSource, setModelSource] = useState<ModelSource>(
     outputDir || sessionId ? "session" : "upload"
   );
-  const [modelZipFile, setModelZipFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [folderName, setFolderName] = useState<string | null>(null);
+  const [folderFileCount, setFolderFileCount] = useState(0);
+
+  // Hidden folder input ref
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // --- Upload validation file and get columns ---
   const handleValidationFile = useCallback(async (f: File) => {
@@ -135,20 +139,40 @@ export default function EvaluationPage() {
     }
   }, [sessionId]);
 
-  // --- Upload model ZIP ---
-  const handleModelZipUpload = useCallback(async (f: File) => {
-    setModelZipFile(f);
+  // --- Upload model folder (webkitdirectory) ---
+  const handleFolderSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
     if (!sessionId) {
       toast.error("Pas de session active. Chargez d'abord un fichier de validation.");
       return;
     }
+
+    // Extract folder name from first file's webkitRelativePath
+    const firstPath = (fileList[0] as File & { webkitRelativePath?: string }).webkitRelativePath ?? fileList[0].name;
+    const rootFolder = firstPath.split("/")[0] || "dossier";
+    setFolderName(rootFolder);
+    setFolderFileCount(fileList.length);
     setUploading(true);
+    setModels([]);
+    setSelectedModel("");
+
     try {
       const form = new FormData();
-      form.append("file", f);
       form.append("session_id", sessionId);
 
-      const res = await fetch(apiUrl("/api/models/upload"), { method: "POST", body: form });
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i] as File & { webkitRelativePath?: string };
+        const relativePath = file.webkitRelativePath ?? file.name;
+        // Strip the root folder name so paths start at subfolder level
+        const parts = relativePath.split("/");
+        const strippedPath = parts.length > 1 ? parts.slice(1).join("/") : parts[0];
+        // Append as blob with the relative path as filename
+        form.append("files", file, strippedPath);
+      }
+
+      const res = await fetch(apiUrl("/api/models/upload-folder"), { method: "POST", body: form });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail ?? "Upload echoue");
@@ -160,9 +184,9 @@ export default function EvaluationPage() {
 
       if (modelList.length > 0) {
         setSelectedModel(modelList[0].name);
-        toast.success(`${modelList.length} modele(s) extraits du ZIP`);
+        toast.success(`${modelList.length} modele(s) trouves dans "${rootFolder}"`);
       } else {
-        toast.warning("Aucun modele valide trouve dans le ZIP.");
+        toast.warning("Aucun modele valide trouve dans le dossier.");
       }
     } catch (err: unknown) {
       toast.error(`Erreur: ${err instanceof Error ? err.message : String(err)}`);
@@ -170,6 +194,16 @@ export default function EvaluationPage() {
       setUploading(false);
     }
   }, [sessionId]);
+
+  const clearFolder = useCallback(() => {
+    setFolderName(null);
+    setFolderFileCount(0);
+    setModels([]);
+    setSelectedModel("");
+    if (folderInputRef.current) {
+      folderInputRef.current.value = "";
+    }
+  }, []);
 
   // Auto-load session models on mount
   useEffect(() => {
@@ -381,7 +415,7 @@ export default function EvaluationPage() {
             }`}
           >
             <Package size={14} />
-            Uploader un modele (ZIP)
+            Parcourir un dossier de modeles
           </button>
         </div>
 
@@ -424,25 +458,74 @@ export default function EvaluationPage() {
           </div>
         )}
 
-        {/* Tab content: Upload ZIP */}
+        {/* Tab content: Upload folder */}
         {modelSource === "upload" && (
           <div className="space-y-3">
             <p className="text-xs text-slate-400">
-              Uploadez un fichier .zip contenant un ou plusieurs dossiers de modeles.
-              Chaque dossier doit contenir NNarchitecture.json, NNweights.weights.h5 et NNnormCoefficients.json.
+              Selectionnez un dossier contenant un ou plusieurs sous-dossiers de modeles.
+              Chaque sous-dossier doit contenir NNarchitecture.json, NNweights.weights.h5 et NNnormCoefficients.json.
             </p>
-            <DropZone
-              file={modelZipFile}
-              onFile={handleModelZipUpload}
-              onClear={() => { setModelZipFile(null); setModels([]); setSelectedModel(""); }}
-              accept={{ "application/zip": [".zip"], "application/x-zip-compressed": [".zip"] }}
-              label="Deposez votre fichier ZIP de modeles"
-              description=".zip contenant les dossiers de modeles"
+
+            {/* Hidden folder input */}
+            <input
+              ref={folderInputRef}
+              type="file"
+              // @ts-ignore webkitdirectory is non-standard but widely supported
+              webkitdirectory=""
+              directory=""
+              multiple
+              className="hidden"
+              onChange={handleFolderSelect}
             />
+
+            {!folderName ? (
+              <button
+                type="button"
+                onClick={() => folderInputRef.current?.click()}
+                disabled={!sessionId || uploading}
+                className="w-full relative flex flex-col items-center justify-center gap-4 p-10 rounded-2xl border-2 border-dashed border-white/[0.08] hover:border-indigo-500/40 bg-slate-900/30 hover:bg-indigo-500/5 transition-all duration-300 cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500/20 transition-colors">
+                  <FolderOpen size={26} />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-slate-200">Parcourir un dossier de modeles</p>
+                  <p className="text-xs text-slate-400 mt-1">Selectionnez le dossier contenant vos modeles entraines</p>
+                </div>
+              </button>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center gap-4 p-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5"
+              >
+                <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 flex-shrink-0">
+                  <FolderOpen size={22} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-200 truncate">{folderName}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{folderFileCount} fichier(s) uploade(s)</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearFolder}
+                  className="p-2 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors text-xs"
+                >
+                  Effacer
+                </button>
+              </motion.div>
+            )}
+
+            {!sessionId && (
+              <p className="text-xs text-amber-400">
+                Chargez d&apos;abord un fichier de validation pour activer l&apos;upload de modeles.
+              </p>
+            )}
+
             {uploading && (
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <Loader2 size={14} className="animate-spin" />
-                <span>Extraction et validation en cours...</span>
+                <span>Upload et detection des modeles en cours...</span>
               </div>
             )}
             <AnimatePresence>
@@ -457,7 +540,7 @@ export default function EvaluationPage() {
                     </select>
                     <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                   </div>
-                  <p className="text-xs text-emerald-400">{models.length} modele(s) extraits du ZIP</p>
+                  <p className="text-xs text-emerald-400">{models.length} modele(s) detectes dans le dossier</p>
                 </motion.div>
               )}
             </AnimatePresence>
