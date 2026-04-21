@@ -199,3 +199,78 @@ async def upload_models_zip(
         models=models,
         extract_dir=str(dest_dir),
     )
+
+
+@router.post("/upload-folder", response_model=ModelUploadResponse)
+async def upload_models_folder(
+    files: list[UploadFile] = File(..., description="Fichiers du dossier de modeles (via webkitdirectory)"),
+    session_id: str = Form(..., description="Session ID"),
+) -> ModelUploadResponse:
+    """Upload multiple files from a folder selection (webkitdirectory).
+
+    Each file's ``filename`` field contains its relative path within the selected
+    folder (e.g. ``elu_lr0.01_ep500/NNarchitecture.json``).  The endpoint
+    reconstructs the directory tree under WORKSPACE_ROOT/{session_id}/models/
+    and returns the list of valid models found.
+    """
+    dest_dir = _get_session_models_dir(session_id)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    for upload_file in files:
+        if not upload_file.filename:
+            continue
+        # The filename comes as relative path, e.g. "MyModels/sub/NNarchitecture.json"
+        # Normalise separators and strip leading slashes
+        rel = upload_file.filename.replace("\\", "/").lstrip("/")
+
+        # Security: reject path traversal
+        if ".." in rel:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Chemin invalide dans les fichiers: {rel}",
+            )
+
+        target = dest_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        contents = await upload_file.read()
+        target.write_bytes(contents)
+
+    logger.info("Folder upload: wrote %d files to %s", len(files), dest_dir)
+
+    # Remove macOS artefacts
+    macosx = dest_dir / "__MACOSX"
+    if macosx.exists():
+        shutil.rmtree(macosx, ignore_errors=True)
+
+    # Scan for models
+    models = _scan_models_in_dir(dest_dir)
+
+    # If no models at top level, check one level deeper (folder may have a wrapper)
+    if not models:
+        for child in dest_dir.iterdir():
+            if child.is_dir():
+                deeper = _scan_models_in_dir(child)
+                if deeper:
+                    models.extend(deeper)
+
+    # If still nothing, check two levels deep
+    if not models:
+        for child in dest_dir.iterdir():
+            if child.is_dir():
+                for grandchild in child.iterdir():
+                    if grandchild.is_dir():
+                        deeper = _scan_models_in_dir(grandchild)
+                        if deeper:
+                            models.extend(deeper)
+
+    if not models:
+        logger.warning("No valid models found in uploaded folder at %s", dest_dir)
+
+    logger.info("Folder upload complete: %d model(s) found for session %s", len(models), session_id)
+
+    return ModelUploadResponse(
+        session_id=session_id,
+        models=models,
+        extract_dir=str(dest_dir),
+    )

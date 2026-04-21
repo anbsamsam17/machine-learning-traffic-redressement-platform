@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -16,6 +16,8 @@ import {
   Truck,
   Car,
   Loader2,
+  FolderOpen,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AuroraBg } from "@/components/backgrounds/aurora-bg";
@@ -92,9 +94,9 @@ export default function CartePage() {
   const router = useRouter();
   const { reset } = useAppStore();
 
-  // Section 1 — Model uploads
-  const [tvZipFile, setTvZipFile] = useState<File | null>(null);
-  const [plZipFile, setPlZipFile] = useState<File | null>(null);
+  // Section 1 — Model uploads (folder-based)
+  const [tvFolderName, setTvFolderName] = useState<string | null>(null);
+  const [plFolderName, setPlFolderName] = useState<string | null>(null);
   const [tvUploading, setTvUploading] = useState(false);
   const [plUploading, setPlUploading] = useState(false);
   const [modelTvDir, setModelTvDir] = useState("");
@@ -103,6 +105,10 @@ export default function CartePage() {
   const [plValid, setPlValid] = useState<boolean | null>(null);
   const [tvMissing, setTvMissing] = useState<string[]>([]);
   const [plMissing, setPlMissing] = useState<string[]>([]);
+
+  // Hidden folder input refs
+  const tvFolderInputRef = useRef<HTMLInputElement>(null);
+  const plFolderInputRef = useRef<HTMLInputElement>(null);
 
   // Section 2 — FCD data
   const [fcdFile, setFcdFile] = useState<File | null>(null);
@@ -128,27 +134,46 @@ export default function CartePage() {
   const [done, setDone] = useState(false);
   const [stats, setStats] = useState<CarteStats | null>(null);
 
-  // ---- Model ZIP upload ----
-  const handleModelUpload = useCallback(
-    async (file: File, type: "tv" | "pl") => {
-      // We need a session_id for the upload endpoint; create a temporary one if needed
+  // ---- Model folder upload ----
+  const handleModelFolderSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>, type: "tv" | "pl") => {
+      const fileList = e.target.files;
+      if (!fileList || fileList.length === 0) return;
+
+      // Create session if needed
       let sid = sessionId;
       if (!sid) {
-        // Generate a simple session id for model storage
         sid = `carte_${Date.now().toString(36)}`;
         setSessionId(sid);
       }
 
-      const setUpl = type === "tv" ? setTvUploading : setPlUploading;
-      setUpl(true);
+      // Extract folder name
+      const firstPath = (fileList[0] as File & { webkitRelativePath?: string }).webkitRelativePath ?? fileList[0].name;
+      const rootFolder = firstPath.split("/")[0] || "dossier";
+
+      if (type === "tv") {
+        setTvFolderName(rootFolder);
+        setTvUploading(true);
+      } else {
+        setPlFolderName(rootFolder);
+        setPlUploading(true);
+      }
 
       try {
         const form = new FormData();
-        form.append("file", file);
         form.append("session_id", sid);
         form.append("model_type", type);
 
-        const res = await fetch(apiUrl("/api/carte/upload-model"), {
+        for (let i = 0; i < fileList.length; i++) {
+          const file = fileList[i] as File & { webkitRelativePath?: string };
+          const relativePath = file.webkitRelativePath ?? file.name;
+          // Strip the root folder name
+          const parts = relativePath.split("/");
+          const strippedPath = parts.length > 1 ? parts.slice(1).join("/") : parts[0];
+          form.append("files", file, strippedPath);
+        }
+
+        const res = await fetch(apiUrl("/api/carte/upload-model-folder"), {
           method: "POST",
           body: form,
         });
@@ -179,11 +204,28 @@ export default function CartePage() {
         if (type === "tv") { setTvValid(false); setTvMissing(["(erreur upload)"]); }
         else { setPlValid(false); setPlMissing(["(erreur upload)"]); }
       } finally {
-        setUpl(false);
+        if (type === "tv") setTvUploading(false);
+        else setPlUploading(false);
       }
     },
     [sessionId]
   );
+
+  const clearModelFolder = useCallback((type: "tv" | "pl") => {
+    if (type === "tv") {
+      setTvFolderName(null);
+      setTvValid(null);
+      setTvMissing([]);
+      setModelTvDir("");
+      if (tvFolderInputRef.current) tvFolderInputRef.current.value = "";
+    } else {
+      setPlFolderName(null);
+      setPlValid(null);
+      setPlMissing([]);
+      setModelPlDir("");
+      if (plFolderInputRef.current) plFolderInputRef.current.value = "";
+    }
+  }, []);
 
   // ---- FCD file upload ----
   const handleFcdUpload = useCallback(async (file: File) => {
@@ -297,6 +339,64 @@ export default function CartePage() {
     );
   }
 
+  // ---- Folder browse button component ----
+  function FolderBrowseButton({
+    folderName,
+    isUploading,
+    onClear,
+    onClick,
+    label,
+    description,
+  }: {
+    folderName: string | null;
+    isUploading: boolean;
+    onClear: () => void;
+    onClick: () => void;
+    label: string;
+    description: string;
+  }) {
+    if (folderName) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex items-center gap-3 p-3.5 rounded-xl border border-indigo-500/20 bg-indigo-500/5"
+        >
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 flex-shrink-0">
+            <FolderOpen size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-slate-200 truncate">{folderName}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClear}
+            className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
+          >
+            <X size={14} />
+          </button>
+        </motion.div>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={isUploading}
+        className="w-full flex flex-col items-center justify-center gap-3 p-8 rounded-2xl border-2 border-dashed border-white/[0.08] hover:border-indigo-500/40 bg-slate-900/30 hover:bg-indigo-500/5 transition-all duration-300 cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500/20 transition-colors">
+          <FolderOpen size={22} />
+        </div>
+        <div className="text-center">
+          <p className="text-xs font-medium text-slate-200">{label}</p>
+          <p className="text-[10px] text-slate-400 mt-1">{description}</p>
+        </div>
+      </button>
+    );
+  }
+
   // =========================================================================
   // RENDER
   // =========================================================================
@@ -331,7 +431,7 @@ export default function CartePage() {
         </div>
 
         {/* ============================================================= */}
-        {/* SECTION 1 — Selection des modeles (upload ZIP) */}
+        {/* SECTION 1 — Selection des modeles (folder browse) */}
         {/* ============================================================= */}
         <GlowCard glowColor="accent">
           <div className="flex items-center gap-2 mb-5">
@@ -339,9 +439,31 @@ export default function CartePage() {
             <h3 className="text-sm font-semibold text-white">Selection des modeles</h3>
           </div>
           <p className="text-xs text-slate-400 mb-5">
-            Uploadez un fichier .zip pour chaque modele. Le ZIP doit contenir
+            Parcourez un dossier de modele pour chaque type. Le dossier doit contenir
             NNarchitecture.json, NNweights.weights.h5 (ou NNweights.h5) et NNnormCoefficients.json.
           </p>
+
+          {/* Hidden folder inputs */}
+          <input
+            ref={tvFolderInputRef}
+            type="file"
+            // @ts-ignore webkitdirectory is non-standard but widely supported
+            webkitdirectory=""
+            directory=""
+            multiple
+            className="hidden"
+            onChange={(e) => handleModelFolderSelect(e, "tv")}
+          />
+          <input
+            ref={plFolderInputRef}
+            type="file"
+            // @ts-ignore webkitdirectory is non-standard but widely supported
+            webkitdirectory=""
+            directory=""
+            multiple
+            className="hidden"
+            onChange={(e) => handleModelFolderSelect(e, "pl")}
+          />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* TV */}
@@ -350,18 +472,18 @@ export default function CartePage() {
                 <Car size={16} className="text-accent" />
                 <span className="text-xs font-medium text-slate-200">Modele TV (Trafic Vehicules)</span>
               </div>
-              <DropZone
-                file={tvZipFile}
-                onFile={(f) => { setTvZipFile(f); handleModelUpload(f, "tv"); }}
-                onClear={() => { setTvZipFile(null); setTvValid(null); setTvMissing([]); setModelTvDir(""); }}
-                accept={{ "application/zip": [".zip"], "application/x-zip-compressed": [".zip"] }}
-                label="Deposez le ZIP du modele TV"
-                description=".zip contenant le dossier du modele"
+              <FolderBrowseButton
+                folderName={tvFolderName}
+                isUploading={tvUploading}
+                onClear={() => clearModelFolder("tv")}
+                onClick={() => tvFolderInputRef.current?.click()}
+                label="Parcourir le dossier du modele TV"
+                description="Selectionnez le dossier contenant le modele"
               />
               {tvUploading && (
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <Loader2 size={14} className="animate-spin" />
-                  <span>Extraction et validation...</span>
+                  <span>Upload et validation...</span>
                 </div>
               )}
               <ValidityBadge valid={tvValid} missing={tvMissing} />
@@ -373,18 +495,18 @@ export default function CartePage() {
                 <Truck size={16} className="text-violet" />
                 <span className="text-xs font-medium text-slate-200">Modele PL (Poids Lourds)</span>
               </div>
-              <DropZone
-                file={plZipFile}
-                onFile={(f) => { setPlZipFile(f); handleModelUpload(f, "pl"); }}
-                onClear={() => { setPlZipFile(null); setPlValid(null); setPlMissing([]); setModelPlDir(""); }}
-                accept={{ "application/zip": [".zip"], "application/x-zip-compressed": [".zip"] }}
-                label="Deposez le ZIP du modele PL"
-                description=".zip contenant le dossier du modele"
+              <FolderBrowseButton
+                folderName={plFolderName}
+                isUploading={plUploading}
+                onClear={() => clearModelFolder("pl")}
+                onClick={() => plFolderInputRef.current?.click()}
+                label="Parcourir le dossier du modele PL"
+                description="Selectionnez le dossier contenant le modele"
               />
               {plUploading && (
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <Loader2 size={14} className="animate-spin" />
-                  <span>Extraction et validation...</span>
+                  <span>Upload et validation...</span>
                 </div>
               )}
               <ValidityBadge valid={plValid} missing={plMissing} />

@@ -350,6 +350,78 @@ async def upload_carte_model(
     )
 
 
+@router.post("/upload-model-folder", response_model=CarteModelUploadResponse)
+async def upload_carte_model_folder(
+    files: list[UploadFile] = File(..., description="Fichiers du dossier de modele (via webkitdirectory)"),
+    session_id: str = Form(..., description="Session ID"),
+    model_type: str = Form(..., description="Type de modele: tv ou pl"),
+) -> CarteModelUploadResponse:
+    """Upload model files from a folder selection (webkitdirectory) for carte generation.
+
+    Each file's ``filename`` contains its relative path. The endpoint reconstructs
+    the tree under WORKSPACE_ROOT/{session_id}/carte_models/{model_type}/ and
+    validates the model structure.
+    """
+    if model_type.lower() not in ("tv", "pl"):
+        raise HTTPException(status_code=400, detail="model_type doit etre 'tv' ou 'pl'")
+
+    settings = get_settings()
+    dest_dir = Path(settings.WORKSPACE_ROOT) / session_id / "carte_models" / model_type.lower()
+    # Clean existing content
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir, ignore_errors=True)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    for upload_file in files:
+        if not upload_file.filename:
+            continue
+        rel = upload_file.filename.replace("\\", "/").lstrip("/")
+        if ".." in rel:
+            raise HTTPException(status_code=400, detail=f"Chemin invalide: {rel}")
+
+        target = dest_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        contents = await upload_file.read()
+        target.write_bytes(contents)
+
+    logger.info("Carte model folder upload (%s): wrote %d files to %s", model_type, len(files), dest_dir)
+
+    # Remove macOS artefacts
+    macosx = dest_dir / "__MACOSX"
+    if macosx.exists():
+        shutil.rmtree(macosx, ignore_errors=True)
+
+    # Find the actual model directory
+    model_dir = dest_dir
+    if not (model_dir / "NNarchitecture.json").exists():
+        # Check one level deeper
+        for child in model_dir.iterdir():
+            if child.is_dir() and (child / "NNarchitecture.json").exists():
+                model_dir = child
+                break
+        else:
+            # Check two levels deep
+            for child in dest_dir.iterdir():
+                if child.is_dir():
+                    for grandchild in child.iterdir():
+                        if grandchild.is_dir() and (grandchild / "NNarchitecture.json").exists():
+                            model_dir = grandchild
+                            break
+                    if (model_dir / "NNarchitecture.json").exists():
+                        break
+
+    valid, missing, config = _verify_model_structure(str(model_dir))
+
+    logger.info("Carte model folder upload (%s): valid=%s, dir=%s", model_type, valid, model_dir)
+
+    return CarteModelUploadResponse(
+        model_dir=str(model_dir),
+        valid=valid,
+        missing_files=missing,
+        training_config=config,
+    )
+
+
 @router.post("/generate", response_model=CarteGenerateResponse)
 async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
     """Apply TV + PL models on FCD data to produce a carte de debits GeoJSON."""
