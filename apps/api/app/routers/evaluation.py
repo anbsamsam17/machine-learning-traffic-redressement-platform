@@ -1054,13 +1054,13 @@ def _load_model_from_dir(model_path: Path) -> tuple[Any, dict]:
 
 
 def _read_uploaded_df(session: Any) -> pd.DataFrame:
-    """Get validation DataFrame from session."""
-    df = session.data.get("validation_df")
-    if df is None:
-        df = session.data.get("learning_df")
-    if df is None:
-        raise ValueError("Aucune donnee de validation disponible dans la session.")
-    return df.copy()
+    """Get validation DataFrame from session (try multiple keys)."""
+    for key in ("validation_df", "learning_df", "raw_df"):
+        df = session.data.get(key)
+        if df is not None:
+            logger.info("Using '%s' as validation data (%d rows)", key, len(df))
+            return df.copy()
+    raise ValueError("Aucune donnee de validation disponible dans la session.")
 
 
 # ---------------------------------------------------------------------------
