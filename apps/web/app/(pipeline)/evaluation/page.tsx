@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { apiUrl } from "@/lib/api-url";
 import {
   Download,
   Upload,
@@ -83,7 +84,7 @@ export default function EvaluationPage() {
       form.append("mode", mode === "pl" ? "PL" : "TV");
 
       // Always create a fresh session via upload to get columns
-      const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
+      const uploadRes = await fetch(apiUrl("/api/upload"), { method: "POST", body: form });
       if (!uploadRes.ok) throw new Error("Upload echoue");
       const data = await uploadRes.json();
       const newSid: string = data.session_id;
@@ -102,7 +103,7 @@ export default function EvaluationPage() {
     if (!dir.trim()) return;
     setLoadingModels(true);
     try {
-      const res = await fetch(`/api/models/list?dir=${encodeURIComponent(dir.trim())}`);
+      const res = await fetch(apiUrl(`/api/models/list?dir=${encodeURIComponent(dir.trim())}`));
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const data = await res.json();
       const modelList: ModelInfo[] = data.models ?? [];
@@ -177,7 +178,7 @@ export default function EvaluationPage() {
         const fd = new FormData();
         fd.append("file", validationFile);
         fd.append("mode", mode === "pl" ? "PL" : "TV");
-        const r = await fetch("/api/upload", { method: "POST", body: fd });
+        const r = await fetch(apiUrl("/api/upload"), { method: "POST", body: fd });
         if (!r.ok) throw new Error("Impossible de creer la session");
         sid = (await r.json()).session_id as string;
         setSessionId(sid);
@@ -188,14 +189,14 @@ export default function EvaluationPage() {
       form.append("file", validationFile);
       form.append("session_id", sid);
       form.append("column_mapping", JSON.stringify(colMapping));
-      const uploadRes = await fetch("/api/evaluation/upload-validation", { method: "POST", body: form });
+      const uploadRes = await fetch(apiUrl("/api/evaluation/upload-validation"), { method: "POST", body: form });
       if (!uploadRes.ok) {
         const err = await uploadRes.json().catch(() => ({}));
         throw new Error(err.detail ?? "Upload echoue");
       }
 
       // Run evaluation
-      const evalRes = await fetch("/api/evaluation/run", {
+      const evalRes = await fetch(apiUrl("/api/evaluation/run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -214,7 +215,7 @@ export default function EvaluationPage() {
       setMetrics(evalData.metrics);
 
       // Fetch report
-      const reportRes = await fetch(`/api/evaluation/report/${sid}`);
+      const reportRes = await fetch(apiUrl(`/api/evaluation/report/${sid}`));
       if (reportRes.ok) {
         const reportData = await reportRes.json();
         setReportHtml(reportData.report_html);
@@ -254,7 +255,7 @@ export default function EvaluationPage() {
   const downloadModelZip = useCallback(async () => {
     if (!selectedModel || !modelDir) return;
     try {
-      const res = await fetch(`/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(modelDir.trim())}`);
+      const res = await fetch(apiUrl(`/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(modelDir.trim())}`));
       if (!res.ok) throw new Error("Telechargement echoue");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

@@ -26,6 +26,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { DropZone } from "@/components/upload/drop-zone";
 import { useAppStore } from "@/lib/store";
 import { uploadFile, fetchJSON } from "@/lib/api";
+import { apiUrl } from "@/lib/api-url";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -355,10 +356,8 @@ export default function CompteursPage() {
 
   const handleDownload = useCallback(() => {
     if (!uploadResult) return;
-    const API_BASE =
-      process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
     window.open(
-      `${API_BASE}/api/compteurs/download/${uploadResult.session_id}`,
+      apiUrl(`/api/compteurs/download/${uploadResult.session_id}`),
       "_blank"
     );
   }, [uploadResult]);
