@@ -72,6 +72,57 @@ async def export_model(session_id: str, model_name: str) -> Response:
     )
 
 
+@router.get("/models-all/{session_id}")
+async def export_all_models(session_id: str) -> Response:
+    """Zip every trained model directory for this session and return it."""
+    session = session_manager.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+
+    output_dir = session.data.get("output_dir")
+    if not output_dir:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun entrainement effectue dans cette session.",
+        )
+
+    out_path = Path(output_dir)
+    if not out_path.exists() or not out_path.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dossier de sortie introuvable cote serveur: {out_path}",
+        )
+
+    buf = io.BytesIO()
+    file_count = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in out_path.rglob("*"):
+            if p.is_file():
+                zf.write(p, arcname=p.relative_to(out_path))
+                file_count += 1
+
+    if file_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Aucun fichier de modele a exporter.",
+        )
+
+    zip_bytes = buf.getvalue()
+    label = session.data.get("output_label") or session.data.get("territory") or "models"
+    # sanitize for filename
+    label = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(label))[:60] or "models"
+    logger.info(
+        "Bulk models export: session=%s files=%d size=%d bytes label=%s",
+        session_id, file_count, len(zip_bytes), label,
+    )
+
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{label}_models.zip"'},
+    )
+
+
 @router.get("/carte/{session_id}")
 async def export_carte(session_id: str) -> Response:
     """Export the generated carte de debits as GeoJSON."""

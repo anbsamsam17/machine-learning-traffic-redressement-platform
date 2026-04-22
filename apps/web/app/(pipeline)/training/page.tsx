@@ -403,28 +403,23 @@ export default function TrainingPage() {
             </div>
             <div className="flex-1 space-y-2">
               <label className="text-sm font-medium text-slate-200">
-                Dossier de sortie des modeles
+                Nom de la serie de modeles
                 <span className="text-xs text-slate-400 font-normal ml-2">(optionnel)</span>
               </label>
               <p className="text-xs text-slate-400">
-                Si laisse vide, les modeles seront sauvegardes automatiquement dans
-                le workspace du serveur (recommande en mode SaaS). En mode local,
-                vous pouvez specifier un chemin absolu.
+                Etiquette affichee et utilisee pour nommer le fichier zip de
+                telechargement. Les modeles sont entraines et conserves sur le
+                serveur ; un bouton de telechargement apparait a la fin.
               </p>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={localOutputDir}
                   onChange={(e) => setLocalOutputDir(e.target.value)}
-                  placeholder="Laisser vide = sauvegarde automatique sur le serveur"
+                  placeholder="ex. MDL_Bordeaux"
                   className="flex-1 px-3 py-2 rounded-lg text-sm bg-slate-900/80 border border-white/[0.08] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition-colors"
                 />
               </div>
-              {!localOutputDir && (
-                <p className="text-xs text-emerald-400/70">
-                  Les modeles seront sauvegardes dans le workspace du serveur.
-                </p>
-              )}
             </div>
           </div>
         </GlowCard>
@@ -487,16 +482,24 @@ export default function TrainingPage() {
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-center py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20"
+                className="text-center py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-2"
               >
                 <p className="text-sm font-medium text-emerald-400">
                   Entrainement termine
                 </p>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-400">
                   {currentEpoch} epochs en {Math.floor(elapsed / 60)}m{" "}
                   {elapsed % 60}s
-                  {outputDir && ` — modeles sauvegardes dans ${outputDir}`}
                 </p>
+                {sessionId && (
+                  <a
+                    href={apiUrl(`/api/export/models-all/${sessionId}`)}
+                    download
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition-colors"
+                  >
+                    Telecharger tous les modeles (.zip)
+                  </a>
+                )}
               </motion.div>
             )}
             {status === "failed" && (

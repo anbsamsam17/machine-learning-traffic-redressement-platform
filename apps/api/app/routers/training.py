@@ -718,13 +718,20 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
                    "Si le backend a ete redémarre, les sessions en memoire sont perdues.",
         )
 
-    # If output_dir is empty/absent, use WORKSPACE_ROOT/{session_id}/models/
+    # SaaS deployment: API runs in the cloud and cannot write to the user's
+    # local disk. Keep the user-supplied value only as a display label; always
+    # resolve the actual write path to the server-side workspace so models
+    # persist on the backend and can be downloaded via /api/export/models-all.
     config_dict = body.model_dump()
-    if not config_dict.get("output_dir"):
-        settings = get_settings()
-        default_output = str(Path(settings.WORKSPACE_ROOT) / body.session_id / "models")
-        config_dict["output_dir"] = default_output
-        logger.info("No output_dir provided — using workspace default: %s", default_output)
+    settings = get_settings()
+    user_label = config_dict.get("output_dir") or ""
+    server_output = str(Path(settings.WORKSPACE_ROOT) / body.session_id / "models")
+    config_dict["output_dir"] = server_output
+    config_dict["output_label"] = user_label
+    logger.info(
+        "Training output — user label=%r, server path=%s",
+        user_label, server_output,
+    )
 
     # Store the resolved output_dir in session for downstream steps (evaluation)
     session.data["output_dir"] = config_dict["output_dir"]
