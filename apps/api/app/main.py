@@ -104,16 +104,31 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # -- Catch-all exception handler: ensures CORS headers on unhandled errors -----
-# Starlette's CORSMiddleware adds headers in responses it sees, but unhandled
-# exceptions can produce a 500 response outside the middleware stack — the
-# browser then reports a misleading "CORS error". We log the exception and
-# return a JSONResponse that the CORSMiddleware will wrap correctly.
+# BaseHTTPMiddleware (RequestIDMiddleware) can swallow exceptions in a way
+# that bypasses the outer CORSMiddleware — responses reach the browser
+# without CORS headers, causing a misleading "CORS blocked" error.
+# We explicitly attach the CORS headers to the error response here.
+_settings_for_cors = get_settings()
+
+
+def _cors_headers_for(request: Request) -> dict[str, str]:
+    origin = request.headers.get("origin", "")
+    if origin and origin in _settings_for_cors.CORS_ORIGINS:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
+
+
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
         content={"detail": f"Erreur interne: {type(exc).__name__}: {exc}"},
+        headers=_cors_headers_for(request),
     )
 
 # -- Request-ID middleware -----------------------------------------------------
