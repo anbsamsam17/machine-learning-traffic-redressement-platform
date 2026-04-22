@@ -191,6 +191,6 @@ app.include_router(models.router)
 async def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "version": "2.0.0",
+        "version": "2.0.0-preview-fix-v2",
         "active_sessions": str(session_manager.active_count),
     }
