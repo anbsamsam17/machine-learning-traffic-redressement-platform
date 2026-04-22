@@ -135,33 +135,36 @@ def _build_learning_df(
     """Build the standardised 35-column DataFrame (in-memory, no disk save)."""
     cols: dict[str, pd.Series] = {}
     warnings: list[str] = []
+    n = len(raw_df)
 
-    for target, source in mapping.items():
+    # Ensure all 35+1 target columns exist, even if frontend sent a partial mapping
+    for target in TARGET_COLUMNS:
+        source = mapping.get(target)
         if source is not None and source in raw_df.columns:
             cols[target] = raw_df[source].reset_index(drop=True)
         else:
-            cols[target] = pd.Series([np.nan] * len(raw_df))
+            cols[target] = pd.Series([np.nan] * n)
             if source is None:
                 warnings.append(f"Colonne '{target}' non trouvee dans les donnees source.")
 
     df = pd.DataFrame(cols)
 
     # Derive TxPen if absent
-    if df["TxPen"].isna().all():
+    if "TxPen" in df.columns and df["TxPen"].isna().all():
         tmjatv = pd.to_numeric(df.get("TMJATV"), errors="coerce")
         tmjabctv = pd.to_numeric(df.get("TMJABCTV"), errors="coerce")
         mask = tmjabctv > 0
         df.loc[mask, "TxPen"] = (tmjatv[mask] / tmjabctv[mask] * 100.0).round(4)
 
     # Derive TxPenPL if absent
-    if df["TxPenPL"].isna().all():
+    if "TxPenPL" in df.columns and df["TxPenPL"].isna().all():
         tmjapl = pd.to_numeric(df.get("TMJAPL"), errors="coerce")
         tmjabcpl = pd.to_numeric(df.get("TMJABCPL"), errors="coerce")
         mask = tmjabcpl > 0
         df.loc[mask, "TxPenPL"] = (tmjapl[mask] / tmjabcpl[mask] * 100.0).round(4)
 
     # Derive flag_comptage if absent
-    if df["flag_comptage"].isna().all() and "Type" in df.columns:
+    if "flag_comptage" in df.columns and df["flag_comptage"].isna().all() and "Type" in df.columns:
         types = df["Type"].astype(str).str.strip().str.lower()
         df["flag_comptage"] = types.isin(["per", "tou"]).astype(int)
 
@@ -229,6 +232,12 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
     logger.info("validate_mapping: raw_df shape=%s", raw_df.shape)
     df, missing_critical, warnings = _build_learning_df(raw_df, body.mapping)
     logger.info("validate_mapping: learning_df built shape=%s missing=%s", df.shape, missing_critical)
+
+    # Coerce geometry dicts -> JSON strings so pyarrow doesn't choke on nested dict columns
+    if "geometry" in df.columns:
+        df["geometry"] = df["geometry"].apply(
+            lambda v: json.dumps(v) if isinstance(v, dict) else v
+        )
 
     session_manager.store_data(body.session_id, "learning_df", df)
     session_manager.store_data(body.session_id, "confirmed_mapping", body.mapping)

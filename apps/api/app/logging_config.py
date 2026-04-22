@@ -7,11 +7,8 @@ import logging
 import sys
 import uuid
 from datetime import datetime, timezone
-from typing import Callable
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .config import get_settings
 
@@ -78,12 +75,33 @@ def setup_logging() -> None:
 # Request-ID middleware
 # ---------------------------------------------------------------------------
 
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Inject a unique request_id into every request, available in logs."""
+class RequestIDMiddleware:
+    """Pure-ASGI middleware that injects a unique request_id.
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex[:16])
+    Implemented as pure ASGI (not BaseHTTPMiddleware) so that downstream
+    exceptions propagate cleanly to the outer CORSMiddleware / exception
+    handlers — BaseHTTPMiddleware is known to swallow exceptions in a way
+    that strips CORS headers from error responses.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        existing = headers.get(b"x-request-id", b"").decode() if headers else ""
+        request_id = existing or uuid.uuid4().hex[:16]
         _request_id_var.set(request_id)
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+
+        async def send_wrapper(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                response_headers = list(message.get("headers", []))
+                response_headers.append((b"x-request-id", request_id.encode()))
+                message["headers"] = response_headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
