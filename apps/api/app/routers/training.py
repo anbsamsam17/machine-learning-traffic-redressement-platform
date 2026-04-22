@@ -733,8 +733,10 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
         user_label, server_output,
     )
 
-    # Store the resolved output_dir in session for downstream steps (evaluation)
-    session.data["output_dir"] = config_dict["output_dir"]
+    # Store in session via the manager (session.data is a read proxy with the
+    # Redis backend — direct assignment only updates the local cache, not Redis)
+    session_manager.store_data(body.session_id, "output_dir", server_output)
+    session_manager.store_data(body.session_id, "output_label", user_label)
 
     combos = _build_combinations(config_dict)
     total = len(combos)
