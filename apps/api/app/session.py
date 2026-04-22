@@ -175,6 +175,34 @@ class _RedisDataProxy(dict):
     def __contains__(self, key: object) -> bool:
         return self.get(str(key)) is not None
 
+    # Write-through: persists to Redis so ``session.data["x"] = y`` behaves
+    # the same as ``session_manager.store_data(sid, "x", y)``. Previously a
+    # direct assignment only updated the in-memory cache and silently
+    # disappeared between requests (e.g. training output_dir bug).
+    def __setitem__(self, key: str, value: Any) -> None:
+        try:
+            data_key = self._backend._data_key(self._sid, key)
+            self._backend._r.setex(data_key, self._backend._ttl, self._backend._serialize_value(value))
+            self._cache[key] = value
+        except Exception:
+            logger.exception("Redis write-through failed for key %r; cache only", key)
+            self._cache[key] = value
+
+    def pop(self, key: str, *args: Any) -> Any:
+        try:
+            self._backend._r.delete(self._backend._data_key(self._sid, key))
+        except Exception:
+            pass
+        return self._cache.pop(key, *args)
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        other: dict[str, Any] = {}
+        if args:
+            other.update(args[0])
+        other.update(kwargs)
+        for k, v in other.items():
+            self[k] = v
+
 
 class RedisBackend(SessionBackend):
     """Redis-backed session store. DataFrames are serialised as Parquet bytes."""
