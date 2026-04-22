@@ -78,11 +78,57 @@ class UserRecord:
 
 
 class UserStore:
+    """User store — uses Redis if REDIS_URL is set, else in-memory.
+
+    Redis storage ensures users persist across API restarts and are shared
+    across multiple uvicorn workers.
+    """
+    _REDIS_PREFIX = "user:"
+    _REDIS_ID_PREFIX = "userid:"
+
     def __init__(self) -> None:
-        self._users: dict[str, UserRecord] = {}  # email -> UserRecord
+        self._users: dict[str, UserRecord] = {}  # email -> UserRecord (fallback)
         self._lock = Lock()
+        self._redis = None
+        redis_url = get_settings().REDIS_URL
+        if redis_url:
+            try:
+                import redis
+                self._redis = redis.from_url(redis_url, decode_responses=False)
+                self._redis.ping()
+                logger.info("UserStore using Redis backend")
+            except Exception as e:
+                logger.warning("Redis unavailable for UserStore, falling back to memory: %s", e)
+                self._redis = None
+
+    def _serialize(self, user: UserRecord) -> bytes:
+        import json as _json
+        return _json.dumps({
+            "user_id": user.user_id,
+            "email": user.email,
+            "hashed_password": user.hashed_password,
+            "created_at": user.created_at,
+        }).encode("utf-8")
+
+    def _deserialize(self, raw: bytes) -> UserRecord:
+        import json as _json
+        d = _json.loads(raw.decode("utf-8"))
+        user = UserRecord.__new__(UserRecord)
+        user.user_id = d["user_id"]
+        user.email = d["email"]
+        user.hashed_password = d["hashed_password"]
+        user.created_at = d["created_at"]
+        return user
 
     def register(self, email: str, password: str) -> UserRecord:
+        if self._redis is not None:
+            key = f"{self._REDIS_PREFIX}{email}"
+            if self._redis.exists(key):
+                raise ValueError("Un compte avec cet email existe deja")
+            user = UserRecord(email=email, hashed_password=hash_password(password))
+            self._redis.set(key, self._serialize(user))
+            self._redis.set(f"{self._REDIS_ID_PREFIX}{user.user_id}", email.encode("utf-8"))
+            return user
         with self._lock:
             if email in self._users:
                 raise ValueError("Un compte avec cet email existe deja")
@@ -91,8 +137,7 @@ class UserStore:
             return user
 
     def authenticate(self, email: str, password: str) -> UserRecord | None:
-        with self._lock:
-            user = self._users.get(email)
+        user = self.get_by_email(email)
         if user is None:
             return None
         if not verify_password(password, user.hashed_password):
@@ -100,10 +145,21 @@ class UserStore:
         return user
 
     def get_by_email(self, email: str) -> UserRecord | None:
+        if self._redis is not None:
+            raw = self._redis.get(f"{self._REDIS_PREFIX}{email}")
+            if raw is None:
+                return None
+            return self._deserialize(raw)
         with self._lock:
             return self._users.get(email)
 
     def get_by_id(self, user_id: str) -> UserRecord | None:
+        if self._redis is not None:
+            email_raw = self._redis.get(f"{self._REDIS_ID_PREFIX}{user_id}")
+            if email_raw is None:
+                return None
+            email = email_raw.decode("utf-8") if isinstance(email_raw, bytes) else email_raw
+            return self.get_by_email(email)
         with self._lock:
             for user in self._users.values():
                 if user.user_id == user_id:
