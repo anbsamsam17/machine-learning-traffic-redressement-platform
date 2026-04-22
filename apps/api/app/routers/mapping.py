@@ -233,10 +233,29 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
     df, missing_critical, warnings = _build_learning_df(raw_df, body.mapping)
     logger.info("validate_mapping: learning_df built shape=%s missing=%s", df.shape, missing_critical)
 
-    # Coerce geometry dicts -> JSON strings so pyarrow doesn't choke on nested dict columns
+    # Recursively convert numpy arrays/scalars to plain Python types.
+    # pyarrow Parquet round-trip turns list[list[float]] into nested ndarrays,
+    # which then break any downstream json.dumps call.
+    def _plain(v):
+        if v is None or isinstance(v, (str, bool, int)):
+            return v
+        if isinstance(v, float):
+            if v != v or v in (float("inf"), float("-inf")):
+                return None
+            return v
+        if isinstance(v, dict):
+            return {str(k): _plain(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [_plain(x) for x in v]
+        # numpy arrays, numpy scalars, pandas Timestamp, etc.
+        if hasattr(v, "tolist"):
+            return _plain(v.tolist())
+        return str(v)
+
+    # Coerce geometry -> JSON string so pyarrow doesn't produce nested ndarrays on round-trip
     if "geometry" in df.columns:
         df["geometry"] = df["geometry"].apply(
-            lambda v: json.dumps(v) if isinstance(v, dict) else v
+            lambda v: json.dumps(_plain(v)) if v is not None and not isinstance(v, str) else v
         )
 
     session_manager.store_data(body.session_id, "learning_df", df)
@@ -244,40 +263,16 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
     session_manager.store_data(body.session_id, "territory", body.territory)
     logger.info("validate_mapping: session data stored")
 
-    # Build a JSON-safe preview — coerce any non-JSON-native values to string
-    def _to_json_safe(v):
-        if v is None:
-            return ""
-        if isinstance(v, (str, bool, int)):
-            return v
-        if isinstance(v, float):
-            # NaN / inf aren't valid JSON
-            if v != v or v in (float("inf"), float("-inf")):
-                return ""
-            return v
-        if isinstance(v, dict):
-            try:
-                return json.dumps(v, default=str)
-            except Exception:
-                return str(v)
-        if isinstance(v, (list, tuple)):
-            try:
-                return json.dumps(list(v), default=str)
-            except Exception:
-                return str(v)
-        # numpy scalars / arrays / pandas types / everything else
-        if hasattr(v, "tolist"):
-            try:
-                return json.dumps(v.tolist(), default=str)
-            except Exception:
-                return str(v)
-        return str(v)
-
     preview_df = df.head(10).copy()
     preview = [
-        {col: _to_json_safe(row[col]) for col in preview_df.columns}
+        {col: _plain(row[col]) for col in preview_df.columns}
         for _, row in preview_df.iterrows()
     ]
+    # JSON can't represent NaN; replace with "" in preview
+    for row in preview:
+        for k, v in list(row.items()):
+            if v is None:
+                row[k] = ""
 
     logger.info(
         "Mapping validated: session=%s rows=%d missing_critical=%s",
