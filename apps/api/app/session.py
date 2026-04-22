@@ -201,12 +201,24 @@ class RedisBackend(SessionBackend):
     def _serialize_value(value: Any) -> bytes:
         if isinstance(value, pd.DataFrame):
             buf = io.BytesIO()
-            value.to_parquet(buf, engine="pyarrow")
-            return b"__DF__" + buf.getvalue()
+            try:
+                value.to_parquet(buf, engine="pyarrow")
+                return b"__DF__" + buf.getvalue()
+            except Exception as exc:
+                # Parquet can fail when columns hold mixed/dict values
+                # (e.g., geometry dicts). Fall back to pickle.
+                logger.warning("Parquet serialize failed (%s), falling back to pickle", exc)
+                import pickle
+                buf = io.BytesIO()
+                pickle.dump(value, buf)
+                return b"__DFPKL__" + buf.getvalue()
         return b"__JSON__" + json.dumps(value, default=str).encode("utf-8")
 
     @staticmethod
     def _deserialize_value(raw: bytes) -> Any:
+        if raw.startswith(b"__DFPKL__"):
+            import pickle
+            return pickle.loads(raw[9:])
         if raw.startswith(b"__DF__"):
             return pd.read_parquet(io.BytesIO(raw[6:]))
         if raw.startswith(b"__JSON__"):
