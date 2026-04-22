@@ -215,19 +215,25 @@ async def auto_map(body: AutoMapRequest) -> AutoMapResponse:
 @router.put("/validate", response_model=ValidateResponse)
 async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
     """Accept the user-confirmed mapping and build the learning DataFrame."""
+    logger.info("validate_mapping: start session=%s territory=%s", body.session_id, body.territory)
     session = session_manager.get_session(body.session_id)
     if session is None:
+        logger.warning("validate_mapping: session not found %s", body.session_id)
         raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
 
     raw_df: pd.DataFrame | None = session.data.get("raw_df")
     if raw_df is None:
+        logger.warning("validate_mapping: raw_df missing for session %s", body.session_id)
         raise HTTPException(status_code=400, detail="Aucun fichier uploade dans cette session.")
 
+    logger.info("validate_mapping: raw_df shape=%s", raw_df.shape)
     df, missing_critical, warnings = _build_learning_df(raw_df, body.mapping)
+    logger.info("validate_mapping: learning_df built shape=%s missing=%s", df.shape, missing_critical)
 
     session_manager.store_data(body.session_id, "learning_df", df)
     session_manager.store_data(body.session_id, "confirmed_mapping", body.mapping)
     session_manager.store_data(body.session_id, "territory", body.territory)
+    logger.info("validate_mapping: session data stored")
 
     # Build a JSON-safe preview
     preview_df = df.head(10).copy()

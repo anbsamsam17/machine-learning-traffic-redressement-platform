@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +21,17 @@ class Settings(BaseSettings):
 
     # -- CORS ------------------------------------------------------------------
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v):
+        """Accept JSON list or comma-separated string from env."""
+        if isinstance(v, str):
+            s = v.strip()
+            if s.startswith("["):
+                return json.loads(s)
+            return [x.strip() for x in s.split(",") if x.strip()]
+        return v
 
     # -- Upload limits ---------------------------------------------------------
     MAX_UPLOAD_MB: int = 500

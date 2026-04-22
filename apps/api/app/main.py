@@ -9,6 +9,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -100,6 +101,20 @@ app = FastAPI(
 # -- Rate limiter --------------------------------------------------------------
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# -- Catch-all exception handler: ensures CORS headers on unhandled errors -----
+# Starlette's CORSMiddleware adds headers in responses it sees, but unhandled
+# exceptions can produce a 500 response outside the middleware stack — the
+# browser then reports a misleading "CORS error". We log the exception and
+# return a JSONResponse that the CORSMiddleware will wrap correctly.
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Erreur interne: {type(exc).__name__}: {exc}"},
+    )
 
 # -- Request-ID middleware -----------------------------------------------------
 app.add_middleware(RequestIDMiddleware)
