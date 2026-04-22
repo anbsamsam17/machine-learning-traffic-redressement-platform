@@ -244,13 +244,40 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
     session_manager.store_data(body.session_id, "territory", body.territory)
     logger.info("validate_mapping: session data stored")
 
-    # Build a JSON-safe preview
+    # Build a JSON-safe preview — coerce any non-JSON-native values to string
+    def _to_json_safe(v):
+        if v is None:
+            return ""
+        if isinstance(v, (str, bool, int)):
+            return v
+        if isinstance(v, float):
+            # NaN / inf aren't valid JSON
+            if v != v or v in (float("inf"), float("-inf")):
+                return ""
+            return v
+        if isinstance(v, dict):
+            try:
+                return json.dumps(v, default=str)
+            except Exception:
+                return str(v)
+        if isinstance(v, (list, tuple)):
+            try:
+                return json.dumps(list(v), default=str)
+            except Exception:
+                return str(v)
+        # numpy scalars / arrays / pandas types / everything else
+        if hasattr(v, "tolist"):
+            try:
+                return json.dumps(v.tolist(), default=str)
+            except Exception:
+                return str(v)
+        return str(v)
+
     preview_df = df.head(10).copy()
-    for col in preview_df.columns:
-        preview_df[col] = preview_df[col].apply(
-            lambda v: json.dumps(v) if isinstance(v, dict) else v
-        )
-    preview = preview_df.fillna("").to_dict(orient="records")
+    preview = [
+        {col: _to_json_safe(row[col]) for col in preview_df.columns}
+        for _, row in preview_df.iterrows()
+    ]
 
     logger.info(
         "Mapping validated: session=%s rows=%d missing_critical=%s",
