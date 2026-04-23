@@ -286,12 +286,21 @@ def _training_worker(task: TrainingTask) -> None:
         from tensorflow.keras.optimizers import Adam
         from tensorflow.keras.losses import MeanSquaredError, Huber, MeanAbsoluteError
 
-        tf.config.threading.set_intra_op_parallelism_threads(4)
-        tf.config.threading.set_inter_op_parallelism_threads(2)
+        # These settings can only be applied before TF initializes. On the
+        # second training run (or any run after model_builder.py imported TF)
+        # they raise "cannot be modified after initialization" — ignore it.
+        try:
+            tf.config.threading.set_intra_op_parallelism_threads(4)
+        except Exception:
+            pass
+        try:
+            tf.config.threading.set_inter_op_parallelism_threads(2)
+        except Exception:
+            pass
         try:
             tf.config.optimizer.set_jit(False)  # Disable XLA JIT — prevents 5-10 min freeze
         except Exception:
-            pass  # May fail if already configured
+            pass
 
         task.status = "running"
         cfg = task.config

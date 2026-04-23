@@ -21,10 +21,18 @@ from tensorflow.keras import Sequential  # noqa: E402
 from tensorflow.keras.layers import Dense, Dropout  # noqa: E402
 from tensorflow.keras.optimizers import Adam  # noqa: E402
 
-# Limit TF threads
-tf.config.threading.set_intra_op_parallelism_threads(4)
-tf.config.threading.set_inter_op_parallelism_threads(2)
-tf.config.optimizer.set_jit(False)
+# Limit TF threads — must run before TF initializes. If TF was already
+# initialized (e.g. by a previous training run in the same worker), these
+# calls raise "cannot be modified after initialization" — ignore it.
+for _setter in (
+    lambda: tf.config.threading.set_intra_op_parallelism_threads(4),
+    lambda: tf.config.threading.set_inter_op_parallelism_threads(2),
+    lambda: tf.config.optimizer.set_jit(False),
+):
+    try:
+        _setter()
+    except Exception:
+        pass
 
 
 def build_model(
