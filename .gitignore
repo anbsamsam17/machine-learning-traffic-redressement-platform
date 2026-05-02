@@ -23,6 +23,8 @@ out/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.*.production
 
 # Data & Models (never versioned)
 xData/
@@ -46,6 +48,18 @@ results/
 # State runtime
 app/state/*.json
 app/state/*.jsonl
+
+# Training artefacts (never versioned — derived from data)
+apps/api/test/
+*.keras
+*.weights.h5
+NNarchitecture.json
+NNnormCoefficients.json
+training_config.json
+training_metrics.json
+
+# Migration scratch (local only)
+.git-mailmap
 
 # OS
 .DS_Store
