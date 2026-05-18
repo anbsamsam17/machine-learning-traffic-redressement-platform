@@ -19,6 +19,7 @@ import {
   Server,
 } from "lucide-react";
 import { toast } from "sonner";
+import { samNotify, samMood } from "@/lib/sam-fallback";
 import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
@@ -86,11 +87,20 @@ export default function EvaluationPage() {
   // Hidden folder input ref
   const folderInputRef = useRef<HTMLInputElement>(null);
 
+  // Ambient mood on mount — invite user to load a model
+  useEffect(() => {
+    samMood.set("based", "Charge un modele pour l'evaluation.");
+  }, []);
+
   // --- Upload validation file and get columns ---
   const handleValidationFile = useCallback(async (f: File) => {
     setValidationFile(f);
     setMetrics(null);
     setReportHtml(null);
+
+    const samToastId = "eval-validation-upload";
+    samNotify.analysing("Je verifie les donnees de validation...", { id: samToastId });
+    samMood.set("analysing", "Verification du fichier");
 
     try {
       const form = new FormData();
@@ -98,16 +108,24 @@ export default function EvaluationPage() {
       form.append("mode", mode === "pl" ? "PL" : "TV");
 
       const uploadRes = await fetch(apiUrl("/api/upload"), { method: "POST", body: form });
-      if (!uploadRes.ok) throw new Error("Upload echoue");
+      if (!uploadRes.ok) {
+        const e = await uploadRes.json().catch(() => ({}));
+        throw new Error(e.detail ?? "Upload echoue");
+      }
       const data = await uploadRes.json();
       const newSid: string = data.session_id;
       setSessionId(newSid);
       setFileColumns(data.columns ?? []);
 
+      samNotify.dismiss(samToastId);
+      samMood.set("based");
       toast.success(`Fichier charge : ${f.name}`);
     } catch (err) {
       console.error(err);
-      toast.error("Erreur lors du chargement du fichier.");
+      const message = err instanceof Error ? err.message : "Erreur inconnue";
+      samNotify.dismiss(samToastId);
+      samNotify.error(message, { title: "Validation file" });
+      samMood.set("error", message, 6000);
     }
   }, [sessionId, setSessionId, mode]);
 
@@ -255,6 +273,10 @@ export default function EvaluationPage() {
     setReportHtml(null);
     setReportBlob(null);
 
+    const samRunToastId = "eval-run";
+    samNotify.thinking("J'evalue le modele...", { id: samRunToastId });
+    samMood.set("analysing", "Calcul des metrics");
+
     try {
       let sid: string = sessionId ?? "";
       if (!sid) {
@@ -317,6 +339,9 @@ export default function EvaluationPage() {
       toast.success(
         `Evaluation terminee — R² = ${r2Str}, GEH<5% = ${gehStr}% (${selectedModel})`
       );
+      samNotify.dismiss(samRunToastId);
+      samNotify.success(`Eval terminee. GEH<5: ${gehStr}%`);
+      samMood.set("goodjob", "Eval ok", 5000);
 
       setMetricsFlash(true);
       setTimeout(() => setMetricsFlash(false), 2000);
@@ -324,7 +349,11 @@ export default function EvaluationPage() {
         spawnConfetti(metricsContainerRef.current, 20);
       }, 100);
     } catch (err: unknown) {
-      toast.error(`Erreur: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Erreur: ${message}`);
+      samNotify.dismiss(samRunToastId);
+      samNotify.error(message, { title: "Evaluation" });
+      samMood.set("error", message.slice(0, 80), 6000);
     } finally {
       setRunning(false);
     }
