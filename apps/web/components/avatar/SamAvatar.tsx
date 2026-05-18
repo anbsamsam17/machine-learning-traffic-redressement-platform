@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { SamBubble } from "./SamBubble";
 
 export type SamPlacement = "card" | "inline" | "fixed-corner";
-export type SamSize = "sm" | "md" | "lg";
+export type SamSize = "sm" | "md" | "lg" | "xl";
 
 export interface SamAvatarProps {
   /** Override the store-driven mood for this instance. */
@@ -33,7 +33,7 @@ export interface SamAvatarProps {
   /** Layout style — `card` is self-contained, `inline` slots into rows,
    *  `fixed-corner` mounts at `bottom-6 right-6` like an assistant widget. */
   placement?: SamPlacement;
-  /** Avatar size — sm=64px, md=96px, lg=128px. */
+  /** Avatar size — sm=80px, md=128px, lg=192px, xl=256px (hero). */
   size?: SamSize;
   /** Render the speech bubble next to / above the avatar. */
   showBubble?: boolean;
@@ -43,12 +43,30 @@ export interface SamAvatarProps {
   onDismiss?: () => void;
 }
 
-const SIZE_PX: Record<SamSize, number> = { sm: 64, md: 96, lg: 128 };
+/**
+ * Pixel dimensions per size. Cutout assets are detoured so Sam can now
+ * render larger without competing with a baked-in background.
+ */
+const SIZE_PX: Record<SamSize, number> = {
+  sm: 80,
+  md: 128,
+  lg: 192,
+  xl: 256,
+};
 
-const FRAME_CLASSES: Record<SamSize, string> = {
-  sm: "rounded-full p-[3px]",
-  md: "rounded-xl p-1",
-  lg: "rounded-2xl p-1",
+/**
+ * Subtle drop-shadow color per mood — a soft halo that hints at the
+ * current emotional context without enclosing Sam in a hard frame.
+ * Applied via CSS `filter: drop-shadow(...)` so it follows the silhouette
+ * (transparent PNG) rather than the bounding box.
+ */
+const MOOD_DROP_SHADOW: Record<SamMood, string> = {
+  based: "drop-shadow(0 6px 18px rgba(113, 113, 122, 0.28))",
+  welcome: "drop-shadow(0 6px 22px rgba(251, 191, 36, 0.32))",
+  analysing: "drop-shadow(0 6px 22px rgba(34, 211, 238, 0.32))",
+  thinking: "drop-shadow(0 6px 22px rgba(129, 140, 248, 0.32))",
+  goodjob: "drop-shadow(0 6px 22px rgba(52, 211, 153, 0.32))",
+  error: "drop-shadow(0 6px 22px rgba(248, 113, 113, 0.32))",
 };
 
 /**
@@ -58,7 +76,11 @@ const FRAME_CLASSES: Record<SamSize, string> = {
  * - Animates a soft crossfade when the mood changes (GSAP, respects
  *   prefers-reduced-motion).
  * - Plays an idle float loop while mounted.
- * - Plays a one-shot welcome entrance + ring pulse on every store version bump.
+ * - Plays a one-shot welcome entrance + soft pulse on every store version
+ *   bump.
+ * - Cutout assets are transparent (RGBA): no holographic frame, ring or
+ *   border — only a subtle mood-tinted drop-shadow keeps Sam grounded in
+ *   the layout.
  */
 export function SamAvatar({
   mood: moodProp,
@@ -120,7 +142,8 @@ export function SamAvatar({
     };
   }, [previousMood, mood]);
 
-  // Pulse the ring when the store version bumps (i.e. someone called setMood).
+  // Pulse the shadow when the store version bumps (i.e. someone called
+  // setMood). Visible without a hard ring thanks to the drop-shadow halo.
   React.useEffect(() => {
     if (moodProp) return; // Local-driven instance: no global pulse.
     if (storeVersion === 0) return; // Skip initial mount.
@@ -133,6 +156,7 @@ export function SamAvatar({
 
   const px = SIZE_PX[size];
   const alt = `Sam avatar (humeur: ${mood})`;
+  const dropShadow = MOOD_DROP_SHADOW[mood];
 
   const avatar = (
     <div
@@ -144,17 +168,11 @@ export function SamAvatar({
     >
       <div
         ref={frameRef}
-        className={cn(
-          "relative overflow-hidden border border-cyan-500/20 bg-zinc-950/40 ring-1 ring-cyan-500/10 shadow-[0_0_24px_-6px_rgba(6,182,212,0.35)]",
-          FRAME_CLASSES[size]
-        )}
-        style={{ width: px + 8, height: px + 8 }}
+        className="relative"
+        style={{ width: px, height: px, filter: dropShadow }}
       >
         <div
-          className={cn(
-            "relative overflow-hidden",
-            size === "sm" ? "rounded-full" : "rounded-lg"
-          )}
+          className="relative"
           style={{ width: px, height: px }}
         >
           {/* Previous mood (fading out) */}
@@ -170,7 +188,7 @@ export function SamAvatar({
                 width={px}
                 height={px}
                 priority={false}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-contain"
               />
             </div>
           ) : null}
@@ -183,7 +201,7 @@ export function SamAvatar({
               width={px}
               height={px}
               priority={placement !== "fixed-corner"}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
             />
           </div>
         </div>
@@ -196,7 +214,7 @@ export function SamAvatar({
       <SamBubble
         message={message}
         subtitle={subtitle}
-        size={size}
+        size={size === "xl" ? "lg" : size}
         side={placement === "fixed-corner" ? "top" : "right"}
       />
     ) : null;
@@ -205,7 +223,7 @@ export function SamAvatar({
     return (
       <div
         ref={rootRef}
-        className={cn("inline-flex items-center gap-2", className)}
+        className={cn("inline-flex items-center gap-3", className)}
       >
         {avatar}
         {bubble}
@@ -235,14 +253,12 @@ export function SamAvatar({
     );
   }
 
-  // card placement (default)
+  // card placement (default) — no opaque frame around Sam anymore; the
+  // optional bubble keeps its own surface so the message stays legible.
   return (
     <div
       ref={rootRef}
-      className={cn(
-        "inline-flex items-center gap-3 rounded-xl border border-zinc-800/60 bg-zinc-950/40 p-3 backdrop-blur-sm",
-        className
-      )}
+      className={cn("inline-flex items-center gap-4", className)}
     >
       {avatar}
       {bubble}
