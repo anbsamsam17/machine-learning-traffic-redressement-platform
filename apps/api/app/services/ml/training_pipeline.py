@@ -105,17 +105,27 @@ def _train_single(
         use_batch_norm=use_batch_norm,
     )
 
-    # Adaptive patience: proportional to epochs, min 30
-    patience = max(30, max_epochs // 10)
+    # EarlyStopping — patience=50 fixed (audit ML P0-3). start_from_epoch
+    # is capped at min(50, min_nb_epochs // 4) so divergent runs can still
+    # bail out before the soft `min_nb_epochs` floor.
+    patience = 50
+    start_from = min(50, max(1, combo.min_nb_epochs // 4))
 
     early_stop = keras.callbacks.EarlyStopping(
         monitor="val_loss",
         patience=patience,
         restore_best_weights=True,
-        start_from_epoch=combo.min_nb_epochs,
+        start_from_epoch=start_from,
+    )
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.5,
+        patience=20,
+        min_lr=1e-5,
+        verbose=0,
     )
 
-    callbacks_list: list = [early_stop]
+    callbacks_list: list = [early_stop, reduce_lr]
     if progress_callback is not None:
         callbacks_list.append(
             TrainingProgressCallback(
@@ -175,8 +185,11 @@ def _train_single(
         "loss": combo.loss,
         "neurons_factors": combo.neurons_factors,
         "use_batch_norm": use_batch_norm,
-        "start_from_epoch": combo.min_nb_epochs,
+        "start_from_epoch": start_from,
         "patience": patience,
+        "reduce_lr_factor": 0.5,
+        "reduce_lr_patience": 20,
+        "reduce_lr_min": 1e-5,
         "analysis_scope": analysis_scope,
         "seed": seed,
         "train_rows": int(len(x_train_norm)),
