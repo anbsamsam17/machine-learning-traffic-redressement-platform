@@ -86,22 +86,23 @@ export function TagInput({
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-1.5 p-2 glass-light rounded-lg min-h-[42px]",
+        "flex flex-wrap items-center gap-1.5 p-2 rounded-md bg-bg-elevated border border-border min-h-[40px] focus-within:border-border-strong focus-within:ring-2 focus-within:ring-accent",
         className
       )}
     >
       {values.map((v, i) => (
         <span
           key={`${v}-${i}`}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-accent/15 text-accent text-xs font-medium border border-accent/20"
+          className="inline-flex items-center gap-1 px-2 h-6 rounded bg-accent-subtle text-accent text-xs font-mono font-medium border border-accent/20"
         >
           {v}
           <button
             type="button"
             onClick={() => remove(i)}
-            className="hover:text-red-400 transition-colors"
+            className="hover:text-danger transition-colors"
+            aria-label={`Retirer ${v}`}
           >
-            <X size={12} />
+            <X size={10} aria-hidden="true" />
           </button>
         </span>
       ))}
@@ -113,7 +114,7 @@ export function TagInput({
         onBlur={handleBlur}
         onPaste={handlePaste}
         placeholder={values.length === 0 ? placeholder : ""}
-        className="flex-1 min-w-[80px] bg-transparent text-sm text-foreground placeholder:text-muted outline-none"
+        className="flex-1 min-w-[80px] bg-transparent text-sm text-text placeholder:text-text-subtle outline-none border-0 focus-visible:ring-0 px-1"
       />
     </div>
   );

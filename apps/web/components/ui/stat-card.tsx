@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
@@ -14,29 +13,33 @@ interface StatCardProps {
 
 export function StatCard({ label, value, icon, trend, className }: StatCardProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={cn("glass-light p-4 flex items-center gap-4", className)}
+    <div
+      className={cn(
+        "stat-card surface-elevated p-4 flex items-start gap-3 transition-colors",
+        className
+      )}
     >
       {icon && (
-        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center text-indigo-400">
+        <div className="shrink-0 w-8 h-8 rounded bg-accent-subtle flex items-center justify-center text-accent [&_svg]:size-4">
           {icon}
         </div>
       )}
-      <div className="min-w-0">
-        <p className="text-xs text-slate-300 truncate">{label}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] uppercase tracking-wide text-text-muted truncate">
+          {label}
+        </p>
         <p
           className={cn(
-            "text-xl font-bold mt-0.5",
-            trend === "up" && "text-emerald-400",
-            trend === "down" && "text-red-400",
-            !trend && "text-white"
+            "font-mono text-xl font-semibold mt-1 tabular-nums leading-none",
+            trend === "up" && "text-success",
+            trend === "down" && "text-danger",
+            !trend && "text-text"
           )}
+          aria-live="polite"
         >
           {value}
         </p>
       </div>
-    </motion.div>
+    </div>
   );
 }
