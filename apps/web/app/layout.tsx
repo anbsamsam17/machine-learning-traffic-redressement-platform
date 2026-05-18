@@ -5,6 +5,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { AppHeader } from "@/components/layout/app-header";
 import { SamWidget } from "@/components/avatar/SamWidget";
+import { SamPageBinder } from "@/components/avatar/SamPageBinder";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-bg text-text font-sans antialiased">
         <Providers>
           <AppHeader />
+          <SamPageBinder />
           <main className="flex-1">{children}</main>
           <Toaster
             position="bottom-right"
