@@ -3,7 +3,7 @@ import { HeroSection } from "@/components/login/HeroSection";
 import { FeaturesPills } from "@/components/login/FeaturesPills";
 import { StatsBand } from "@/components/login/StatsBand";
 import { LoginForm } from "@/components/login/LoginForm";
-import { TrafficFlowBg } from "@/components/login/animations/TrafficFlowBg";
+import { LoginBg } from "@/components/login/animations/LoginBg";
 import { SignalLights } from "@/components/login/animations/SignalLights";
 import { NetworkGraph } from "@/components/login/animations/NetworkGraph";
 import { PageEnter } from "@/components/login/animations/PageEnter";
@@ -22,7 +22,7 @@ export default function LoginPage() {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-0"
       >
-        <TrafficFlowBg />
+        <LoginBg />
       </div>
 
       {/* Subtle radial atmospherics — no glow on UI, just air */}
