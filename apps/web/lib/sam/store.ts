@@ -3,19 +3,23 @@
 /**
  * Global Sam mood store.
  *
- * Any page / async handler can mutate Sam's mood without prop-drilling:
+ * Three concerns are separated:
  *
- *     samMood.set("thinking", "On lance le training...");
- *     samMood.set("error", "Upload echoue.", 5000); // auto-reset
- *     useSamStore.getState().setMood("welcome", { message: "Salut", autoResetMs: 4000 });
+ *   1. `mood` + `message`: persistent ambient state for `<SamWidget />`
+ *      (driven by `<SamPageBinder />` from PAGE_MESSAGES).
  *
- * `<SamWidget />` (mounted globally in app/layout.tsx) and `<SamAvatar />`
- * (without an explicit `mood` prop) subscribe to this store.
+ *   2. `setMoodOnly(mood, autoResetMs?)`: a transient face change without
+ *      touching the bubble message. Used by `samNotify` so Sam's face
+ *      reflects the event (analysing / thinking / goodjob / error) while
+ *      the bubble message is owned by the page-binder.
  *
- * Two APIs are exposed:
- *  - `useSamStore` zustand hook + `setMood({...})` options-object setter.
- *  - `samMood.set(mood, message?, autoResetMs?)` positional facade for
- *    non-React callsites (sonner toasts, fetch handlers, error catchers).
+ *   3. `activeToastCount`: incremented by `samNotify` while a toast is on
+ *      screen; the widget bubble suppresses itself when the count > 0 so
+ *      we never render two Sam messages simultaneously.
+ *
+ *      ┌── ambient bubble (page context) ──┐
+ *      ╳ toast appears ─→ count++ ─→ bubble hidden
+ *      ╳ toast dismissed ─→ count-- ─→ bubble re-appears
  */
 
 import { create } from "zustand";
@@ -23,24 +27,15 @@ import { create } from "zustand";
 import type { SamMood } from "./moods";
 
 interface SamState {
-  /** Currently displayed mood. */
   mood: SamMood;
-  /** Optional message override (falls back to SAM_DEFAULT_MESSAGES). */
   message: string | null;
-  /** Optional subtitle override (falls back to SAM_DEFAULT_SUBTITLES). */
   subtitle?: string;
-  /** Visibility flag for fixed-corner widget (auto-hidden on /login + /register). */
   visible: boolean;
-  /** Monotonic counter incremented on every setMood — for pulse anims. */
   version: number;
-  /** Timestamp of the last `set` call — used to guard auto-reset timers. */
   _lastSetAt: number;
+  /** Counter of active toasts on screen. Widget bubble is suppressed when > 0. */
+  activeToastCount: number;
 
-  /**
-   * Set mood (options-object form). If `autoResetMs` is provided, the store
-   * reverts to "based" after that delay (unless another set/setMood happened
-   * in the meantime).
-   */
   setMood: (
     mood: SamMood,
     options?: { message?: string | null; subtitle?: string; autoResetMs?: number }
@@ -49,16 +44,21 @@ interface SamState {
   /** Positional setter — kept for the `samMood.set(...)` facade. */
   set: (mood: SamMood, message?: string | null, autoResetMs?: number) => void;
 
-  /** Clear only the bubble message — leave mood/visibility intact. */
+  /**
+   * Mood-only update: change Sam's face without touching the bubble message.
+   * Used by samNotify to swap the avatar to the event mood (error / goodjob /
+   * thinking / analysing) while the ambient bubble keeps its page-binder text.
+   */
+  setMoodOnly: (mood: SamMood, autoResetMs?: number) => void;
+
   clearMessage: () => void;
-
-  /** Reset to default (mood=based, message=null). */
   reset: () => void;
-
-  /** Show/hide the corner-mounted Sam widget. */
   setVisible: (visible: boolean) => void;
   show: () => void;
   hide: () => void;
+
+  pushToast: () => void;
+  popToast: () => void;
 }
 
 export const useSamStore = create<SamState>((set, get) => ({
@@ -68,6 +68,7 @@ export const useSamStore = create<SamState>((set, get) => ({
   visible: true,
   version: 0,
   _lastSetAt: 0,
+  activeToastCount: 0,
 
   setMood: (mood, options) => {
     const stamp = Date.now();
@@ -96,6 +97,26 @@ export const useSamStore = create<SamState>((set, get) => ({
   set: (mood, message, autoResetMs) =>
     get().setMood(mood, { message: message ?? null, autoResetMs }),
 
+  setMoodOnly: (mood, autoResetMs) => {
+    const stamp = Date.now();
+    set((s) => ({
+      mood,
+      version: s.version + 1,
+      _lastSetAt: stamp,
+    }));
+
+    if (autoResetMs && autoResetMs > 0 && typeof window !== "undefined") {
+      window.setTimeout(() => {
+        if (get()._lastSetAt === stamp) {
+          set((s) => ({
+            mood: "based",
+            version: s.version + 1,
+          }));
+        }
+      }, autoResetMs);
+    }
+  },
+
   clearMessage: () => set({ message: null }),
 
   reset: () => {
@@ -110,6 +131,10 @@ export const useSamStore = create<SamState>((set, get) => ({
   setVisible: (visible) => set({ visible }),
   show: () => set({ visible: true }),
   hide: () => set({ visible: false }),
+
+  pushToast: () => set((s) => ({ activeToastCount: s.activeToastCount + 1 })),
+  popToast: () =>
+    set((s) => ({ activeToastCount: Math.max(0, s.activeToastCount - 1) })),
 }));
 
 /**
@@ -119,6 +144,8 @@ export const useSamStore = create<SamState>((set, get) => ({
 export const samMood = {
   set: (mood: SamMood, message?: string | null, autoResetMs?: number) =>
     useSamStore.getState().setMood(mood, { message: message ?? null, autoResetMs }),
+  setMoodOnly: (mood: SamMood, autoResetMs?: number) =>
+    useSamStore.getState().setMoodOnly(mood, autoResetMs),
   reset: () => useSamStore.getState().reset(),
   clearMessage: () => useSamStore.getState().clearMessage(),
   show: () => useSamStore.getState().show(),

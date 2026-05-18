@@ -115,13 +115,11 @@ export default function ExtrapolationPage() {
       setSessionId(newSid);
       setFileColumns(data.columns ?? []);
 
-      samNotify.dismiss(samToastId);
-      toast.success(`Fichier charge : ${f.name}`);
+      samNotify.success(`Fichier charge : ${f.name}`, { id: samToastId });
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Erreur inconnue";
-      samNotify.dismiss(samToastId);
-      samNotify.error(message, { title: "Extrapolation file" });
+      samNotify.error(message, { id: samToastId, title: "Extrapolation file" });
     }
   }, [sessionId, setSessionId, mode]);
 
@@ -334,8 +332,7 @@ export default function ExtrapolationPage() {
       toast.success(
         `Extrapolation terminee — R² = ${r2Str}, GEH<5% = ${gehStr}% (${selectedModel})`
       );
-      samNotify.dismiss(samRunToastId);
-      samNotify.success(`Eval terminee. GEH<5: ${gehStr}%`);
+      samNotify.success(`Eval terminee. GEH<5: ${gehStr}%`, { id: samRunToastId });
 
       setMetricsFlash(true);
       setTimeout(() => setMetricsFlash(false), 2000);
@@ -345,8 +342,7 @@ export default function ExtrapolationPage() {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(`Erreur: ${message}`);
-      samNotify.dismiss(samRunToastId);
-      samNotify.error(message, { title: "Extrapolation" });
+      samNotify.error(message, { id: samRunToastId, title: "Extrapolation" });
     } finally {
       setRunning(false);
     }

@@ -6,19 +6,28 @@ import {
   SAM_MOOD_TOKENS,
   type SamMood,
 } from "@/lib/sam/moods";
+import { useSamStore } from "@/lib/sam/store";
 import { SamToastContent } from "@/components/avatar/SamToast";
 
 /**
  * Public Sam notification API — thin wrapper on top of `sonner`.
  *
- * Each method builds a custom toast that renders <SamToastContent /> (Sam
- * avatar + speech bubble, mood-tinted border) and optionally syncs the global
- * <SamWidget /> mood through `samMood.set(...)`.
+ * Each method:
+ *   1. fires a custom sonner toast that renders <SamToastContent /> (mood-
+ *      tinted bubble preceded by "Sam :"),
+ *   2. swaps Sam's *face* on the floating <SamWidget /> for the duration of
+ *      the toast (mood-only — the ambient bubble message from SamPageBinder
+ *      is preserved),
+ *   3. increments an `activeToastCount` in the store so SamWidget can
+ *      suppress its bubble while a toast is on screen — guarantee: at most
+ *      one Sam message visible at any time. Bubble re-appears once all
+ *      toasts have dismissed or auto-closed.
  *
  * Usage:
  *   import { samNotify } from "@/lib/sam/notify";
- *   samNotify.analysing("Training en cours...", { title: "Sam" });
+ *   samNotify.analysing("Training en cours...");
  *   samNotify.success("Modele entraine !");
+ *   samNotify.error("Echec : Not authenticated");
  */
 
 export interface SamNotifyOptions {
@@ -32,16 +41,6 @@ export interface SamNotifyOptions {
   id?: string | number;
 }
 
-/**
- * Architecture decision (retour 6/7): samNotify creates ONLY the toast. It does
- * NOT mutate the SamWidget bubble. The widget bubble is reserved for the
- * ambient page mood set by `<SamPageBinder />` from PAGE_MESSAGES — that way
- * we never render the same Sam message twice on screen at once.
- *
- * If a page needs Sam's face to change in the widget for a long-running event
- * (e.g. training spinner), call `samMood.set(mood)` explicitly — but skip the
- * `message` argument so the bubble stays at the ambient text.
- */
 function fireToast(
   mood: SamMood,
   message: string,
@@ -49,6 +48,27 @@ function fireToast(
 ): string | number {
   const tokens = SAM_MOOD_TOKENS[mood];
   const duration = opts.autoCloseMs ?? tokens.defaultDurationMs;
+  const store = useSamStore.getState();
+
+  // 1) Swap Sam's face for the toast's lifetime. Mood-only — bubble message
+  //    is preserved (ambient from SamPageBinder). When the toast finishes,
+  //    the auto-reset returns the mood to "based".
+  const moodAutoReset =
+    duration > 0 && mood !== "based" ? duration + 100 : undefined;
+  if (mood !== "based") {
+    store.setMoodOnly(mood, moodAutoReset);
+  }
+
+  // 2) Suppress widget bubble while this toast is on screen.
+  store.pushToast();
+  const popOnce = (() => {
+    let popped = false;
+    return () => {
+      if (popped) return;
+      popped = true;
+      useSamStore.getState().popToast();
+    };
+  })();
 
   return toast.custom(
     (t) =>
@@ -62,12 +82,14 @@ function fireToast(
     {
       id: opts.id,
       duration: duration === 0 ? Infinity : duration,
-      // SamToastContent draws its own surface (bubble + avatar). Disable
-      // sonner's default wrapper styling so it doesn't double-render.
+      // SamToastContent draws its own surface (bubble). Disable sonner's
+      // default wrapper styling so it doesn't double-render a card.
       unstyled: true,
       classNames: {
         toast: "bg-transparent border-none shadow-none p-0",
       },
+      onAutoClose: popOnce,
+      onDismiss: popOnce,
     },
   );
 }

@@ -147,9 +147,10 @@ export default function DonneesPage() {
               )
             : 0;
 
-        samNotify.dismiss(samToastId);
+        // Atomic replace (same id) — no flicker, no overlap with the analysing toast.
         samNotify.info(
-          `Mapping auto detecte avec confiance ${avgConfidence}%. Verifie et confirme.`
+          `Mapping auto detecte avec confiance ${avgConfidence}%. Verifie et confirme.`,
+          { id: samToastId },
         );
         toast.success(`Fichier charge : ${uploadData.rows} lignes, ${srcCols.length} colonnes`);
 
@@ -165,8 +166,8 @@ export default function DonneesPage() {
       } catch (err) {
         console.error("Auto-mapping error:", err);
         const message = err instanceof Error ? err.message : "Erreur inconnue";
-        samNotify.dismiss(samToastId);
-        samNotify.error(`Echec: ${message}`, { title: "Erreur" });
+        // Atomic replace (same id) — no flicker, no overlap with the analysing toast.
+        samNotify.error(`Echec: ${message}`, { id: samToastId, title: "Erreur" });
         // Fallback: set empty mappings so user can map manually
         setSourceColumns([]);
         const fallbackMappings: ColumnMapping[] = TARGET_COLUMNS.map(

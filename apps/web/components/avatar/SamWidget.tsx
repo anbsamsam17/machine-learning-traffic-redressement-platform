@@ -54,6 +54,7 @@ export function SamWidget() {
   const mood = useSamStore((s) => s.mood);
   const message = useSamStore((s) => s.message);
   const visible = useSamStore((s) => s.visible);
+  const activeToastCount = useSamStore((s) => s.activeToastCount);
 
   const prefersReducedMotion = useReducedMotion();
   const [showBubble, setShowBubble] = React.useState(false);
@@ -62,8 +63,11 @@ export function SamWidget() {
   const tokens = SAM_MOOD_TOKENS[mood];
 
   // Show bubble whenever a message arrives, auto-hide for non-persistent moods.
+  // CRITICAL: bubble is suppressed entirely while any samNotify toast is on
+  // screen (activeToastCount > 0) — guarantees no overlap between toast text
+  // and widget text. Bubble re-appears once toasts have dismissed.
   React.useEffect(() => {
-    if (!message) {
+    if (!message || activeToastCount > 0) {
       setShowBubble(false);
       return;
     }
@@ -71,7 +75,7 @@ export function SamWidget() {
     if (PERSISTENT_MOODS.has(mood)) return;
     const t = window.setTimeout(() => setShowBubble(false), 4000);
     return () => window.clearTimeout(t);
-  }, [message, mood]);
+  }, [message, mood, activeToastCount]);
 
   // Hide on auth pages.
   const onAuthPage = pathname === "/login" || pathname === "/register";

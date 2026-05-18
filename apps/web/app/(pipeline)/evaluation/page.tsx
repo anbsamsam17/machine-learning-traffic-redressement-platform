@@ -115,13 +115,11 @@ export default function EvaluationPage() {
       setSessionId(newSid);
       setFileColumns(data.columns ?? []);
 
-      samNotify.dismiss(samToastId);
-      toast.success(`Fichier charge : ${f.name}`);
+      samNotify.success(`Fichier charge : ${f.name}`, { id: samToastId });
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Erreur inconnue";
-      samNotify.dismiss(samToastId);
-      samNotify.error(message, { title: "Validation file" });
+      samNotify.error(message, { id: samToastId, title: "Validation file" });
     }
   }, [sessionId, setSessionId, mode]);
 
@@ -334,8 +332,7 @@ export default function EvaluationPage() {
       toast.success(
         `Evaluation terminee — R² = ${r2Str}, GEH<5% = ${gehStr}% (${selectedModel})`
       );
-      samNotify.dismiss(samRunToastId);
-      samNotify.success(`Eval terminee. GEH<5: ${gehStr}%`);
+      samNotify.success(`Eval terminee. GEH<5: ${gehStr}%`, { id: samRunToastId });
 
       setMetricsFlash(true);
       setTimeout(() => setMetricsFlash(false), 2000);
@@ -345,8 +342,7 @@ export default function EvaluationPage() {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(`Erreur: ${message}`);
-      samNotify.dismiss(samRunToastId);
-      samNotify.error(message, { title: "Evaluation" });
+      samNotify.error(message, { id: samRunToastId, title: "Evaluation" });
     } finally {
       setRunning(false);
     }
