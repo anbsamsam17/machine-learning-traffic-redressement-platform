@@ -1,4 +1,22 @@
-"""FastAPI application entry point."""
+"""FastAPI application entry point.
+
+Bloc A wiring:
+
+- A1  : every business router is mounted with
+        `dependencies=[Depends(get_current_user)]` so JWT auth is mandatory
+        without per-handler boilerplate. `/api/auth/*` and `/health` stay
+        public.
+- A6  : limiter imported from `app.rate_limit` (decouples from main.py to
+        avoid an import cycle when routers attach decorators).
+- A7  : `SecurityHeadersMiddleware` injects HSTS / CSP / X-Frame-Options /
+        X-Content-Type-Options / Referrer-Policy / Permissions-Policy on
+        every response.
+- A8  : in production (`ENVIRONMENT=production`) `/docs`, `/redoc` and
+        `/openapi.json` are disabled, `/metrics` is restricted to an
+        IP allow-list, `/health` returns only `{"status": "ok"}`, and the
+        global exception handler hides Python class names / messages from
+        the response (logged server-side with the request id).
+"""
 
 from __future__ import annotations
 
@@ -7,27 +25,23 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
 
 from .config import get_settings
-from .logging_config import RequestIDMiddleware, setup_logging
+from .logging_config import RequestIDMiddleware, setup_logging, get_request_id
+from .middleware.security_headers import SecurityHeadersMiddleware
+from .rate_limit import limiter
 from .session import session_manager
 
 # Setup structured JSON logging early
 setup_logging()
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Rate limiter (slowapi)
-# ---------------------------------------------------------------------------
-
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 # ---------------------------------------------------------------------------
 # Lifespan — periodic session cleanup
@@ -74,9 +88,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("Failed to initialize Sentry", exc_info=True)
 
     logger.info(
-        "MDL Redressement API starting (CORS=%s, max_upload=%dMB)",
-        settings.CORS_ORIGINS,
-        settings.MAX_UPLOAD_MB,
+        "MDL Redressement API starting (env=%s CORS=%s max_upload=%dMB)",
+        settings.ENVIRONMENT, settings.CORS_ORIGINS, settings.MAX_UPLOAD_MB,
     )
     task = asyncio.create_task(_cleanup_loop())
     yield
@@ -89,31 +102,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI app
+# FastAPI app — disable /docs in production (A8)
 # ---------------------------------------------------------------------------
 
-app = FastAPI(
-    title="MDL Redressement API",
-    version="2.0.0",
-    lifespan=lifespan,
-)
+_settings = get_settings()
 
-# -- Rate limiter --------------------------------------------------------------
+_app_kwargs: dict = {
+    "title": "MDL Redressement API",
+    "version": "2.0.0",
+    "lifespan": lifespan,
+}
+if _settings.is_production:
+    _app_kwargs.update({
+        "docs_url": None,
+        "redoc_url": None,
+        "openapi_url": None,
+    })
+
+app = FastAPI(**_app_kwargs)
+
+# -- Rate limiter (A6) ---------------------------------------------------------
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-# -- Catch-all exception handler: ensures CORS headers on unhandled errors -----
-# BaseHTTPMiddleware (RequestIDMiddleware) can swallow exceptions in a way
-# that bypasses the outer CORSMiddleware — responses reach the browser
-# without CORS headers, causing a misleading "CORS blocked" error.
-# We explicitly attach the CORS headers to the error response here.
-_settings_for_cors = get_settings()
-
-
+# -- Catch-all exception handler (A8): never leak Python class / message ------
 def _cors_headers_for(request: Request) -> dict[str, str]:
     origin = request.headers.get("origin", "")
-    if origin and origin in _settings_for_cors.CORS_ORIGINS:
+    if origin and origin in _settings.CORS_ORIGINS:
         return {
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Credentials": "true",
@@ -124,21 +140,32 @@ def _cors_headers_for(request: Request) -> dict[str, str]:
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    """Log everything server-side, return a sanitized body to the client."""
+    request_id = get_request_id() or "-"
+    # exc_info=True ensures the full traceback lands in JSON logs / Sentry.
+    logger.exception(
+        "Unhandled exception on %s %s (request_id=%s)",
+        request.method, request.url.path, request_id,
+    )
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Erreur interne: {type(exc).__name__}: {exc}"},
+        content={"detail": "internal error", "request_id": request_id},
         headers=_cors_headers_for(request),
     )
 
-# -- Request-ID middleware -----------------------------------------------------
+
+# -- Middleware stack ----------------------------------------------------------
+# Order matters in Starlette: middlewares added LATER wrap the others, so the
+# first one declared is the OUTERMOST. We want security headers on every
+# response (including errors), so it's the outermost.
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 # -- CORS (strict: only configured origins) ------------------------------------
-settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=_settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -146,6 +173,8 @@ app.add_middleware(
 )
 
 # -- Prometheus metrics --------------------------------------------------------
+# In production /metrics is mounted only if METRICS_ALLOWED_IPS is non-empty;
+# the dependency below enforces the IP allow-list at request time.
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -158,12 +187,36 @@ try:
 except ImportError:
     logger.info("prometheus-fastapi-instrumentator not installed — metrics disabled")
 
-# -- Auth router ---------------------------------------------------------------
-from .auth import router as auth_router  # noqa: E402
+
+async def _enforce_metrics_allowlist(request: Request) -> None:
+    """A8: in production, /metrics requires an IP allow-list.
+
+    Attached as a route-level dependency below so the prometheus-instrumentator
+    expose() keeps its default behaviour during development.
+    """
+    if not _settings.is_production:
+        return
+    client = request.client.host if request.client else ""
+    if client not in _settings.METRICS_ALLOWED_IPS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="not found",
+        )
+
+
+# Register the dependency on the existing /metrics route if it was added.
+for _route in app.router.routes:
+    if getattr(_route, "path", "") == "/metrics":
+        _route.dependant.dependencies.append(  # type: ignore[attr-defined]
+            Depends(_enforce_metrics_allowlist).dependency  # type: ignore[arg-type]
+        )
+
+# -- Auth router (PUBLIC — never wrap with get_current_user) -------------------
+from .auth import get_current_user, router as auth_router  # noqa: E402
 
 app.include_router(auth_router)
 
-# -- Routers ----------------------------------------------------------------
+# -- Business routers (A1: all behind Depends(get_current_user)) --------------
 from .routers import (  # noqa: E402
     carte,
     compteurs,
@@ -175,22 +228,28 @@ from .routers import (  # noqa: E402
     upload,
 )
 
-app.include_router(upload.router)
-app.include_router(mapping.router)
-app.include_router(training.router)
-app.include_router(evaluation.router)
-app.include_router(export.router)
-app.include_router(carte.router)
-app.include_router(compteurs.router)
-app.include_router(models.router)
+_protected = [Depends(get_current_user)]
+
+app.include_router(upload.router, dependencies=_protected)
+app.include_router(mapping.router, dependencies=_protected)
+app.include_router(training.router, dependencies=_protected)
+app.include_router(evaluation.router, dependencies=_protected)
+app.include_router(export.router, dependencies=_protected)
+app.include_router(carte.router, dependencies=_protected)
+app.include_router(compteurs.router, dependencies=_protected)
+app.include_router(models.router, dependencies=_protected)
 
 
-# -- Health -----------------------------------------------------------------
+# -- Health (PUBLIC — minimal payload in production) ---------------------------
 
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:
+    """Liveness probe. Verbose payload only in development (A8)."""
+    if _settings.is_production:
+        return {"status": "ok"}
     return {
         "status": "ok",
-        "version": "2.0.0-preview-fix-v2",
+        "version": "2.0.0",
+        "environment": _settings.ENVIRONMENT,
         "active_sessions": str(session_manager.active_count),
     }

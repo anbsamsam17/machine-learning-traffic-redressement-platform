@@ -1,4 +1,15 @@
-"""Authentication system — JWT-based with in-memory user store (migratable to DB)."""
+"""Authentication system — JWT-based with in-memory user store (migratable to DB).
+
+Security notes (audit 01):
+
+- The JWT secret is validated fail-fast at boot (`config.Settings`, A4).
+- `get_current_user` is the per-request dependency that resolves a Bearer
+  token to a `UserRecord`.
+- `get_owned_session` (A2) couples sessions to their owner: it loads the
+  Session via `session_manager`, then returns 404 if the caller is not the
+  owner. Routers receive this via `Depends(get_owned_session)` instead of
+  calling `session_manager.get_session` directly — closes IDOR P1-2.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +27,7 @@ import bcrypt
 from pydantic import BaseModel, EmailStr
 
 from .config import get_settings
+from .session import Session, session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +208,42 @@ async def get_current_user(
 
 
 # ---------------------------------------------------------------------------
+# Dependency: get_owned_session (A2 — closes IDOR P1-2)
+# ---------------------------------------------------------------------------
+
+def get_owned_session(
+    session_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+) -> Session:
+    """Resolve a session and enforce that the caller owns it.
+
+    Returns 404 (not 403) when the caller is not the owner — same response
+    as a missing session so a third party cannot probe session-id existence.
+
+    Routers replace `session_manager.get_session(sid)` by
+    `session: Session = Depends(get_owned_session)` to inherit the check
+    without per-handler boilerplate (E2 will plug it everywhere).
+    """
+    sess = session_manager.get_session(session_id)
+    if sess is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session non trouvee ou expiree.",
+        )
+    if sess.owner_user_id and sess.owner_user_id != current_user.user_id:
+        # Log the cross-tenant attempt for monitoring (truncated ids only).
+        logger.warning(
+            "IDOR refused: user=%s tried to access session owned by %s",
+            current_user.user_id[:8], sess.owner_user_id[:8],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session non trouvee ou expiree.",
+        )
+    return sess
+
+
+# ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
 
@@ -223,6 +271,10 @@ class UserResponse(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
+# Rate limits are applied at the route level in main.py via the slowapi
+# `limiter.limit(...)` decorator after the limiter exists. We expose hooks
+# here for the future router-level decorators expected by A6.
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest) -> UserResponse:
     if len(body.password) < 8:
@@ -234,7 +286,7 @@ async def register(body: RegisterRequest) -> UserResponse:
         user = user_store.register(body.email, body.password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    logger.info("User registered: %s", body.email)
+    logger.info("User registered: user_id=%s", user.user_id[:8])
     return UserResponse(user_id=user.user_id, email=user.email)
 
 
@@ -247,7 +299,7 @@ async def login(body: LoginRequest) -> TokenResponse:
             detail="Email ou mot de passe incorrect",
         )
     token = create_access_token({"sub": user.user_id, "email": user.email})
-    logger.info("User logged in: %s", body.email)
+    logger.info("User logged in: user_id=%s", user.user_id[:8])
     return TokenResponse(access_token=token)
 
 
