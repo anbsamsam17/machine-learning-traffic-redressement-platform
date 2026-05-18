@@ -7,35 +7,35 @@ import pytest
 
 class TestAutoMap:
     @pytest.mark.asyncio
-    async def test_auto_map_invalid_session(self, client):
-        r = await client.post(
+    async def test_auto_map_invalid_session(self, authenticated_client):
+        r = await authenticated_client.post(
             "/api/mapping/auto", json={"session_id": "nonexistent"}
         )
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_auto_map_no_upload(self, client):
+    async def test_auto_map_no_upload(self, authenticated_client):
         """Session exists but no file uploaded yet."""
         from app.session import session_manager
 
         session = session_manager.create_session(mode="TV")
-        r = await client.post(
+        r = await authenticated_client.post(
             "/api/mapping/auto", json={"session_id": session.session_id}
         )
         assert r.status_code == 400
         assert "Aucun fichier" in r.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_auto_map_success(self, client, csv_content):
+    async def test_auto_map_success(self, authenticated_client, csv_content):
         # Upload first
-        r1 = await client.post(
+        r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
             data={"mode": "TV"},
         )
         sid = r1.json()["session_id"]
 
-        r2 = await client.post("/api/mapping/auto", json={"session_id": sid})
+        r2 = await authenticated_client.post("/api/mapping/auto", json={"session_id": sid})
         assert r2.status_code == 200
         data = r2.json()
         assert data["session_id"] == sid
@@ -45,14 +45,14 @@ class TestAutoMap:
         assert isinstance(data["unmapped_count"], int)
 
     @pytest.mark.asyncio
-    async def test_auto_map_finds_exact_matches(self, client, csv_content):
-        r1 = await client.post(
+    async def test_auto_map_finds_exact_matches(self, authenticated_client, csv_content):
+        r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
         )
         sid = r1.json()["session_id"]
 
-        data = (await client.post(
+        data = (await authenticated_client.post(
             "/api/mapping/auto", json={"session_id": sid}
         )).json()
 
@@ -65,15 +65,15 @@ class TestAutoMap:
         assert "car_average_speed_kmh" in exact_targets
 
     @pytest.mark.asyncio
-    async def test_auto_map_finds_synonym_matches(self, client, csv_content):
+    async def test_auto_map_finds_synonym_matches(self, authenticated_client, csv_content):
         """TMJAFCDTV in source -> TMJATV target via synonym."""
-        r1 = await client.post(
+        r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
         )
         sid = r1.json()["session_id"]
 
-        data = (await client.post(
+        data = (await authenticated_client.post(
             "/api/mapping/auto", json={"session_id": sid}
         )).json()
 
@@ -87,14 +87,14 @@ class TestAutoMap:
         assert synonym_mappings["TMJATV"] == "TMJAFCDTV"
 
     @pytest.mark.asyncio
-    async def test_auto_map_reports_missing(self, client, csv_content):
-        r1 = await client.post(
+    async def test_auto_map_reports_missing(self, authenticated_client, csv_content):
+        r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
         )
         sid = r1.json()["session_id"]
 
-        data = (await client.post(
+        data = (await authenticated_client.post(
             "/api/mapping/auto", json={"session_id": sid}
         )).json()
 
@@ -105,28 +105,28 @@ class TestAutoMap:
 
 class TestValidateMapping:
     @pytest.mark.asyncio
-    async def test_validate_invalid_session(self, client):
-        r = await client.put(
+    async def test_validate_invalid_session(self, authenticated_client):
+        r = await authenticated_client.put(
             "/api/mapping/validate",
             json={"session_id": "nonexistent", "mapping": {}},
         )
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_validate_success(self, client, csv_content):
+    async def test_validate_success(self, authenticated_client, csv_content):
         # Upload
-        r1 = await client.post(
+        r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
         )
         sid = r1.json()["session_id"]
 
         # Auto-map
-        r2 = await client.post("/api/mapping/auto", json={"session_id": sid})
+        r2 = await authenticated_client.post("/api/mapping/auto", json={"session_id": sid})
         proposed = {m["target"]: m["source"] for m in r2.json()["mappings"]}
 
         # Validate
-        r3 = await client.put(
+        r3 = await authenticated_client.put(
             "/api/mapping/validate",
             json={
                 "session_id": sid,
@@ -144,18 +144,18 @@ class TestValidateMapping:
         assert isinstance(data["preview"], list)
 
     @pytest.mark.asyncio
-    async def test_validate_derives_txpen(self, client, csv_content):
+    async def test_validate_derives_txpen(self, authenticated_client, csv_content):
         """TxPen should be derived from TMJATV/TMJABCTV when absent."""
-        r1 = await client.post(
+        r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
         )
         sid = r1.json()["session_id"]
 
-        r2 = await client.post("/api/mapping/auto", json={"session_id": sid})
+        r2 = await authenticated_client.post("/api/mapping/auto", json={"session_id": sid})
         proposed = {m["target"]: m["source"] for m in r2.json()["mappings"]}
 
-        r3 = await client.put(
+        r3 = await authenticated_client.put(
             "/api/mapping/validate",
             json={"session_id": sid, "mapping": proposed},
         )
@@ -163,18 +163,18 @@ class TestValidateMapping:
         assert "TxPen" in data["columns"]
 
     @pytest.mark.asyncio
-    async def test_validate_derives_flag_comptage(self, client, csv_content):
+    async def test_validate_derives_flag_comptage(self, authenticated_client, csv_content):
         """flag_comptage should be derived from Type column."""
-        r1 = await client.post(
+        r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
         )
         sid = r1.json()["session_id"]
 
-        r2 = await client.post("/api/mapping/auto", json={"session_id": sid})
+        r2 = await authenticated_client.post("/api/mapping/auto", json={"session_id": sid})
         proposed = {m["target"]: m["source"] for m in r2.json()["mappings"]}
 
-        r3 = await client.put(
+        r3 = await authenticated_client.put(
             "/api/mapping/validate",
             json={"session_id": sid, "mapping": proposed},
         )

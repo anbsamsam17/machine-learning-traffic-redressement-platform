@@ -10,8 +10,8 @@ import pytest
 
 class TestUploadCSV:
     @pytest.mark.asyncio
-    async def test_upload_csv_returns_200(self, client, csv_content):
-        r = await client.post(
+    async def test_upload_csv_returns_200(self, authenticated_client, csv_content):
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
             data={"mode": "TV"},
@@ -19,8 +19,8 @@ class TestUploadCSV:
         assert r.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_upload_csv_response_shape(self, client, csv_content):
-        r = await client.post(
+    async def test_upload_csv_response_shape(self, authenticated_client, csv_content):
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
             data={"mode": "TV"},
@@ -35,8 +35,8 @@ class TestUploadCSV:
         assert len(data["preview"]) == 3
 
     @pytest.mark.asyncio
-    async def test_upload_csv_columns_present(self, client, csv_content):
-        data = (await client.post(
+    async def test_upload_csv_columns_present(self, authenticated_client, csv_content):
+        data = (await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
             data={"mode": "TV"},
@@ -45,17 +45,17 @@ class TestUploadCSV:
         assert "car_average_speed_kmh" in data["columns"]
 
     @pytest.mark.asyncio
-    async def test_upload_csv_default_mode(self, client, csv_content):
+    async def test_upload_csv_default_mode(self, authenticated_client, csv_content):
         """Mode defaults to TV when not specified."""
-        r = await client.post(
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
         )
         assert r.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_upload_csv_pl_mode(self, client, csv_content):
-        r = await client.post(
+    async def test_upload_csv_pl_mode(self, authenticated_client, csv_content):
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
             data={"mode": "PL"},
@@ -65,8 +65,8 @@ class TestUploadCSV:
 
 class TestUploadGeoJSON:
     @pytest.mark.asyncio
-    async def test_upload_geojson_returns_200(self, client, geojson_content):
-        r = await client.post(
+    async def test_upload_geojson_returns_200(self, authenticated_client, geojson_content):
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.geojson", geojson_content, "application/json")},
             data={"mode": "TV"},
@@ -74,8 +74,8 @@ class TestUploadGeoJSON:
         assert r.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_upload_geojson_has_geometry_cols(self, client, geojson_content):
-        data = (await client.post(
+    async def test_upload_geojson_has_geometry_cols(self, authenticated_client, geojson_content):
+        data = (await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.geojson", geojson_content, "application/json")},
             data={"mode": "TV"},
@@ -86,9 +86,9 @@ class TestUploadGeoJSON:
         assert "__lon" in data["columns"]
 
     @pytest.mark.asyncio
-    async def test_upload_geojson_preview_serializable(self, client, geojson_content):
+    async def test_upload_geojson_preview_serializable(self, authenticated_client, geojson_content):
         """Geometry dicts in preview should be JSON-serialized to strings."""
-        data = (await client.post(
+        data = (await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.geojson", geojson_content, "application/json")},
             data={"mode": "TV"},
@@ -101,23 +101,23 @@ class TestUploadGeoJSON:
 
 class TestUploadValidation:
     @pytest.mark.asyncio
-    async def test_upload_no_file_returns_422(self, client):
-        r = await client.post("/api/upload")
+    async def test_upload_no_file_returns_422(self, authenticated_client):
+        r = await authenticated_client.post("/api/upload")
         assert r.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_upload_unsupported_format_returns_400(self, client):
-        r = await client.post(
+    async def test_upload_unsupported_format_returns_400(self, authenticated_client):
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.xyz", b"some data", "application/octet-stream")},
         )
         assert r.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_upload_invalid_csv_encoding(self, client):
+    async def test_upload_invalid_csv_encoding(self, authenticated_client):
         # Valid CSV but with unusual bytes -- should still try to decode
         content = b"col1,col2\n\xff\xfe,value"
-        r = await client.post(
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", content, "text/csv")},
         )
@@ -125,8 +125,8 @@ class TestUploadValidation:
         assert r.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_upload_bad_json_returns_400(self, client):
-        r = await client.post(
+    async def test_upload_bad_json_returns_400(self, authenticated_client):
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.geojson", b"not valid json", "application/json")},
         )
@@ -135,8 +135,8 @@ class TestUploadValidation:
 
 class TestUploadValidationData:
     @pytest.mark.asyncio
-    async def test_validation_upload_invalid_session(self, client, csv_content):
-        r = await client.post(
+    async def test_validation_upload_invalid_session(self, authenticated_client, csv_content):
+        r = await authenticated_client.post(
             "/api/upload/validation",
             files={"file": ("val.csv", csv_content, "text/csv")},
             data={"session_id": "nonexistent"},
@@ -144,15 +144,15 @@ class TestUploadValidationData:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_validation_upload_success(self, client, csv_content):
+    async def test_validation_upload_success(self, authenticated_client, csv_content):
         # Create session via upload
-        r1 = await client.post(
+        r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("data.csv", csv_content, "text/csv")},
         )
         sid = r1.json()["session_id"]
 
-        r2 = await client.post(
+        r2 = await authenticated_client.post(
             "/api/upload/validation",
             files={"file": ("val.csv", csv_content, "text/csv")},
             data={"session_id": sid},

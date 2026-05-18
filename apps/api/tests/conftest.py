@@ -138,14 +138,14 @@ def _cleanup_sessions():
 
 
 @pytest.fixture
-def csv_session_id(client, csv_content):
+def csv_session_id(authenticated_client, csv_content):
     """Create a fresh session via /api/upload and return its session_id.
 
     Used by router tests that need an existing session with a learning_df.
     Returns an async callable that performs the upload on demand.
     """
     async def _get():
-        r = await client.post(
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("data.csv", csv_content, "text/csv")},
             data={"mode": "TV"},
@@ -155,9 +155,9 @@ def csv_session_id(client, csv_content):
 
 
 @pytest.fixture
-async def owned_session_id(client, csv_content):
+async def owned_session_id(authenticated_client, csv_content):
     """Eagerly-resolved session_id (already-created upstream)."""
-    r = await client.post(
+    r = await authenticated_client.post(
         "/api/upload",
         files={"file": ("data.csv", csv_content, "text/csv")},
         data={"mode": "TV"},

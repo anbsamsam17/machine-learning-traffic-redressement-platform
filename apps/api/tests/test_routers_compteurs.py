@@ -7,8 +7,8 @@ import pytest
 
 class TestCompteursGenerate:
     @pytest.mark.asyncio
-    async def test_unknown_session_returns_404(self, client):
-        r = await client.post(
+    async def test_unknown_session_returns_404(self, authenticated_client):
+        r = await authenticated_client.post(
             "/api/compteurs/generate",
             json={
                 "session_id": "nonexistent",
@@ -18,15 +18,15 @@ class TestCompteursGenerate:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_happy_path_generates_geojson(self, client, csv_content):
-        r = await client.post(
+    async def test_happy_path_generates_geojson(self, authenticated_client, csv_content):
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("data.csv", csv_content, "text/csv")},
             data={"mode": "TV"},
         )
         sid = r.json()["session_id"]
 
-        r2 = await client.post(
+        r2 = await authenticated_client.post(
             "/api/compteurs/generate",
             json={
                 "session_id": sid,
@@ -54,16 +54,16 @@ class TestCompteursGenerate:
 
 class TestCompteursDownload:
     @pytest.mark.asyncio
-    async def test_download_before_generate_returns_400(self, client, csv_content):
-        r = await client.post(
+    async def test_download_before_generate_returns_400(self, authenticated_client, csv_content):
+        r = await authenticated_client.post(
             "/api/upload",
             files={"file": ("data.csv", csv_content, "text/csv")},
         )
         sid = r.json()["session_id"]
-        r2 = await client.get(f"/api/compteurs/download/{sid}")
+        r2 = await authenticated_client.get(f"/api/compteurs/download/{sid}")
         assert r2.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_download_invalid_session_404(self, client):
-        r = await client.get("/api/compteurs/download/doesnotexist")
+    async def test_download_invalid_session_404(self, authenticated_client):
+        r = await authenticated_client.get("/api/compteurs/download/doesnotexist")
         assert r.status_code == 404
