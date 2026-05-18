@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown,
   Layers,
@@ -131,9 +130,7 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className="rounded-xl border border-white/[0.06] bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur-xl overflow-hidden"
     >
       <button
@@ -150,27 +147,21 @@ function Section({
             </span>
           )}
         </span>
-        <motion.div
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
+        <div
         >
           <ChevronDown size={16} className="text-slate-500" />
-        </motion.div>
+        </div>
       </button>
-      <AnimatePresence>
+      
         {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
+          <div
             className="overflow-hidden"
           >
             <div className="px-5 pb-5 space-y-4">{children}</div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
-    </motion.div>
+      
+    </div>
   );
 }
 
@@ -189,10 +180,8 @@ function Chip({
   onRemove?: () => void;
 }) {
   return (
-    <motion.button
+    <button
       type="button"
-      whileHover={{ scale: 1.04 }}
-      whileTap={{ scale: 0.96 }}
       onClick={onClick}
       className={cn(
         "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200",
@@ -213,7 +202,7 @@ function Chip({
           <X size={12} />
         </span>
       )}
-    </motion.button>
+    </button>
   );
 }
 
@@ -236,9 +225,7 @@ function Toggle({
           checked ? "bg-indigo-500" : "bg-slate-700"
         )}
       >
-        <motion.div
-          animate={{ x: checked ? 14 : 2 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+        <div
           className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm"
         />
       </div>
@@ -635,10 +622,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               ))}
               {/* Bouton Ajouter */}
               <div className="relative">
-                <motion.button
+                <button
                   type="button"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
                   onClick={() => setShowExtraDropdown(!showExtraDropdown)}
                   disabled={availableExtras.length === 0}
                   className={cn(
@@ -650,13 +635,10 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 >
                   <Plus size={12} />
                   Ajouter
-                </motion.button>
-                <AnimatePresence>
+                </button>
+                
                   {showExtraDropdown && availableExtras.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                    <div
                       className="absolute z-20 top-full mt-1 left-0 min-w-[220px] max-h-[240px] overflow-y-auto py-1 rounded-lg border border-slate-700/60 bg-slate-900/95 backdrop-blur-lg shadow-xl"
                     >
                       {availableExtras.map((col) => (
@@ -672,9 +654,9 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                           {col}
                         </button>
                       ))}
-                    </motion.div>
+                    </div>
                   )}
-                </AnimatePresence>
+                
               </div>
             </div>
           </div>
@@ -755,12 +737,9 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           onChange={setUseYearFeature}
         />
 
-        <AnimatePresence>
+        
           {useYearFeature && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
+            <div
               className="overflow-hidden space-y-3"
             >
               <div className="grid grid-cols-2 gap-3">
@@ -849,9 +828,9 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 La feature &quot;year_mapped&quot; sera automatiquement ajoutee aux colonnes
                 d&apos;entree du modele.
               </p>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        
       </Section>
 
       {/* ═══════════ Section 3 : Colonnes obligatoires ═══════════ */}
@@ -1129,12 +1108,9 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           checked={useWeighting}
           onChange={setUseWeighting}
         />
-        <AnimatePresence>
+        
           {useWeighting && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
+            <div
               className="overflow-hidden"
             >
               <NumberInput
@@ -1144,15 +1120,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 min={0}
                 step={0.5}
               />
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        
       </Section>
 
       {/* ═══════════ Footer : compteur + bouton ═══════════ */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
+      <div
         className="flex items-center justify-between pt-2"
       >
         <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 backdrop-blur-sm px-5 py-3 flex items-center gap-3">
@@ -1161,14 +1135,12 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             <p className="text-[10px] text-slate-500 uppercase tracking-wide">
               Total configurations
             </p>
-            <motion.p
+            <p
               key={combinationsCount}
-              initial={{ scale: 1.2, color: "#818cf8" }}
-              animate={{ scale: 1, color: "#c7d2fe" }}
               className="text-lg font-bold font-mono text-indigo-200"
             >
               {combinationsCount.toLocaleString("fr-FR")}
-            </motion.p>
+            </p>
           </div>
         </div>
 
@@ -1179,7 +1151,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
         >
           Sauvegarder &amp; Lancer l&apos;entrainement
         </NeonButton>
-      </motion.div>
+      </div>
     </div>
   );
 }
