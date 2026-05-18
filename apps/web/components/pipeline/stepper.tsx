@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PIPELINE_STEPS } from "@/lib/store";
+import { stepperTransition } from "@/lib/animations/gsap";
 
 interface StepperProps {
   currentStep: number;
@@ -10,11 +12,26 @@ interface StepperProps {
 }
 
 export function Stepper({ currentStep, onStepClick }: StepperProps) {
+  const navRef = useRef<HTMLElement>(null);
+  const prevStepRef = useRef<number>(currentStep);
+
+  // M1 — animate stepper transitions when the active step changes.
+  useEffect(() => {
+    if (prevStepRef.current === currentStep) return;
+    prevStepRef.current = currentStep;
+
+    const nav = navRef.current;
+    if (!nav) return;
+    const activeEl = nav.querySelector<HTMLElement>(`[data-step="${currentStep}"]`);
+    const connectors = Array.from(
+      nav.querySelectorAll<HTMLElement>(`[data-step-connector][data-completed="true"]`)
+    );
+    const cleanup = stepperTransition(activeEl, connectors, nav);
+    return cleanup;
+  }, [currentStep]);
+
   return (
-    <nav
-      aria-label="Etapes du pipeline"
-      className="w-full"
-    >
+    <nav ref={navRef} aria-label="Etapes du pipeline" className="w-full">
       <ol className="flex items-center justify-between gap-2">
         {PIPELINE_STEPS.map((step, idx) => {
           const isCompleted = idx < currentStep;
@@ -25,6 +42,7 @@ export function Stepper({ currentStep, onStepClick }: StepperProps) {
             <li key={step.id} className="flex items-center flex-1 last:flex-none">
               <button
                 type="button"
+                data-step={idx}
                 onClick={() => onStepClick?.(idx)}
                 disabled={isFuture}
                 aria-current={isActive ? "step" : undefined}
@@ -64,6 +82,8 @@ export function Stepper({ currentStep, onStepClick }: StepperProps) {
               {idx < PIPELINE_STEPS.length - 1 && (
                 <div className="flex-1 mx-2 h-px">
                   <div
+                    data-step-connector
+                    data-completed={idx < currentStep ? "true" : "false"}
                     className={cn(
                       "h-full transition-colors",
                       idx < currentStep ? "bg-accent" : "bg-border"

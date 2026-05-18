@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, FileCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { dropZonePulse } from "@/lib/animations/gsap";
 
 interface DropZoneProps {
   onFile: (file: File) => void;
@@ -41,6 +42,15 @@ export function DropZone({
     multiple: false,
   });
 
+  const zoneRef = useRef<HTMLDivElement>(null);
+
+  // M5 — subtle pulse when drag enters (border accent comes from isDragActive).
+  useEffect(() => {
+    if (isDragActive && zoneRef.current) {
+      dropZonePulse(zoneRef.current);
+    }
+  }, [isDragActive]);
+
   if (file) {
     return (
       <div
@@ -72,9 +82,14 @@ export function DropZone({
     );
   }
 
+  const { ref: dzRef, ...rootProps } = getRootProps();
   return (
     <div
-      {...getRootProps()}
+      {...rootProps}
+      ref={(el) => {
+        zoneRef.current = el;
+        if (typeof dzRef === "function") dzRef(el);
+      }}
       className={cn(
         "relative flex flex-col items-center justify-center gap-3 px-6 py-10 rounded-md border border-dashed transition-colors cursor-pointer group",
         isDragActive

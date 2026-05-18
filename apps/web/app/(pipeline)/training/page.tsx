@@ -22,9 +22,11 @@ import { apiClient } from "@/lib/api";
 import { apiUrl } from "@/lib/api-url";
 import type { TrainingStartResponse, TrainingStatus } from "@/lib/types/api";
 
+import { Skeleton } from "@/components/ui/skeleton";
+
 const LossChart = dynamic(() => import("@/components/charts/loss-chart").then((m) => m.LossChart), {
   ssr: false,
-  loading: () => <div className="skeleton h-[220px] w-full" />,
+  loading: () => <Skeleton className="h-[220px] w-full" aria-label="Chargement du graphique" />,
 });
 
 interface LossPoint {

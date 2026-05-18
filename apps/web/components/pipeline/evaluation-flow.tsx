@@ -23,6 +23,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { DropZone } from "@/components/upload/drop-zone";
 import { useAppStore } from "@/lib/store";
 import { apiClient, ApiError } from "@/lib/api";
+import { staggerIn } from "@/lib/animations/gsap";
 import type {
   EvalMetrics,
   EvalRunResponse,
@@ -87,6 +88,17 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
   const [resolvedModelDir, setResolvedModelDir] = useState(outputDir ?? "");
   const [filterFlagComptage, setFilterFlagComptage] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const metricsGridRef = useRef<HTMLDivElement>(null);
+
+  // M7 — stagger-in metric cards when metrics arrive.
+  useEffect(() => {
+    if (!metrics || !metricsGridRef.current) return;
+    const cards = metricsGridRef.current.querySelectorAll<HTMLElement>(
+      ".stat-card"
+    );
+    if (cards.length === 0) return;
+    return staggerIn(Array.from(cards), metricsGridRef.current);
+  }, [metrics]);
 
   const [modelSource, setModelSource] = useState<ModelSource>(
     outputDir || sessionId ? "session" : "upload"
@@ -655,22 +667,61 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
               Metriques — <span className="text-accent font-mono">{selectedModel}</span>
             </h3>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            <StatCard label="MAE" value={metrics.mae.toFixed(2)} icon={<Activity size={16} />} />
-            <StatCard label="RMSE" value={metrics.rmse.toFixed(2)} icon={<Target size={16} />} />
+          <div
+            ref={metricsGridRef}
+            className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3"
+          >
+            <StatCard
+              label="MAE"
+              value={metrics.mae.toFixed(2)}
+              icon={<Activity size={16} />}
+              tween={{
+                to: metrics.mae,
+                format: (n) => n.toFixed(2),
+                key: `mae-${selectedModel}`,
+              }}
+            />
+            <StatCard
+              label="RMSE"
+              value={metrics.rmse.toFixed(2)}
+              icon={<Target size={16} />}
+              tween={{
+                to: metrics.rmse,
+                format: (n) => n.toFixed(2),
+                key: `rmse-${selectedModel}`,
+              }}
+            />
             <StatCard
               label="R²"
               value={metrics.r_squared.toFixed(4)}
               icon={<BarChart3 size={16} />}
               trend={metrics.r_squared > 0.95 ? "up" : metrics.r_squared > 0.85 ? "neutral" : "down"}
+              tween={{
+                to: metrics.r_squared,
+                format: (n) => n.toFixed(4),
+                key: `r2-${selectedModel}`,
+              }}
             />
             <StatCard
               label="GEH < 5%"
               value={`${metrics.geh_pct_below_5.toFixed(1)}%`}
               icon={<FileCheck size={16} />}
               trend={metrics.geh_pct_below_5 > 85 ? "up" : "down"}
+              tween={{
+                to: metrics.geh_pct_below_5,
+                format: (n) => `${n.toFixed(1)}%`,
+                key: `geh-${selectedModel}`,
+              }}
             />
-            <StatCard label="Echantillons" value={metrics.n_samples.toString()} />
+            <StatCard
+              label="Echantillons"
+              value={metrics.n_samples.toString()}
+              tween={{
+                to: metrics.n_samples,
+                format: (n) => Math.round(n).toString(),
+                key: `n-${selectedModel}`,
+              }}
+            />
           </div>
         </section>
       )}

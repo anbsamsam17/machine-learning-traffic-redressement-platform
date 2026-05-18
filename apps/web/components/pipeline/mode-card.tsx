@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hoverLift, hoverReset } from "@/lib/animations/gsap";
 import type { ReactNode } from "react";
 
 interface ModeCardProps {
@@ -19,10 +21,15 @@ export function ModeCard({
   icon,
   onClick,
 }: ModeCardProps) {
+  const ref = useRef<HTMLButtonElement>(null);
+
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onClick}
+      onMouseEnter={() => ref.current && hoverLift(ref.current)}
+      onMouseLeave={() => ref.current && hoverReset(ref.current)}
       className={cn(
         "group surface-elevated p-5 text-left transition-colors",
         "hover:border-border-strong",
