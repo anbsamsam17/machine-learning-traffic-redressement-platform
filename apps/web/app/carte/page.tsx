@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -21,6 +21,45 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AuroraBg } from "@/components/backgrounds/aurora-bg";
+
+// ---------------------------------------------------------------------------
+// Sam notify/mood — fallback stub if agent N's @/lib/sam is not yet delivered.
+// When N ships, replace the locals below with:
+//   import { samNotify } from "@/lib/sam/notify";
+//   import { samMood } from "@/lib/sam/store";
+// ---------------------------------------------------------------------------
+type SamMood =
+  | "based"
+  | "thinking"
+  | "analysing"
+  | "goodjob"
+  | "error"
+  | "welcome"
+  | "info";
+
+const samNotify = {
+  success: (m: string) => toast.success(m),
+  error: (m: string) => toast.error(m),
+  analysing: (m: string) => toast.loading(m),
+  thinking: (m: string) => toast.loading(m),
+  info: (m: string) => toast(m),
+  welcome: (m: string) => toast.success(m),
+  dismiss: (id?: string | number) => toast.dismiss(id),
+  promise: <T,>(
+    p: Promise<T>,
+    msgs: { loading: string; success: string; error: string }
+  ) => toast.promise(p, msgs),
+};
+
+const samMood = {
+  set: (_mood: SamMood, _message?: string, _autoResetMs?: number) => {
+    /* no-op stub until agent N delivers the global mood widget */
+  },
+  reset: () => {
+    /* no-op */
+  },
+};
+
 import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
@@ -134,6 +173,14 @@ export default function CartePage() {
   const [done, setDone] = useState(false);
   const [stats, setStats] = useState<CarteStats | null>(null);
 
+  // ---- Sam mood on mount ----
+  useEffect(() => {
+    samMood.set("based", "Charge tes modeles et tes donnees FCD.");
+    return () => {
+      samMood.reset();
+    };
+  }, []);
+
   // ---- Model folder upload ----
   const handleModelFolderSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>, type: "tv" | "pl") => {
@@ -158,6 +205,12 @@ export default function CartePage() {
         setPlFolderName(rootFolder);
         setPlUploading(true);
       }
+
+      const analysingId = samNotify.analysing(
+        type === "tv"
+          ? "Je verifie ton dossier TV..."
+          : "Je verifie ton dossier PL..."
+      );
 
       try {
         const form = new FormData();
@@ -193,14 +246,18 @@ export default function CartePage() {
           setPlMissing(data.missing_files);
         }
 
+        samNotify.dismiss(analysingId);
         if (data.valid) {
-          toast.success(`Modele ${type.toUpperCase()} valide et pret`);
+          samNotify.info(`Modele ${type.toUpperCase()} charge.`);
         } else {
-          toast.warning(`Modele ${type.toUpperCase()} incomplet : ${data.missing_files.join(", ")}`);
+          samNotify.error(
+            `Modele ${type.toUpperCase()} incomplet : ${data.missing_files.join(", ")}`
+          );
         }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Erreur inconnue";
-        toast.error(`Erreur upload modele ${type.toUpperCase()} : ${message}`);
+        samNotify.dismiss(analysingId);
+        samNotify.error(`Erreur upload modele ${type.toUpperCase()} : ${message}`);
         if (type === "tv") { setTvValid(false); setTvMissing(["(erreur upload)"]); }
         else { setPlValid(false); setPlMissing(["(erreur upload)"]); }
       } finally {
@@ -231,6 +288,7 @@ export default function CartePage() {
   const handleFcdUpload = useCallback(async (file: File) => {
     setFcdFile(file);
     setUploading(true);
+    const analysingId = samNotify.analysing("Je lis le fichier FCD...");
     try {
       const res = await uploadFile("/api/upload", file, { mode: "TV" }) as UploadResponse;
       setSessionId(res.session_id);
@@ -244,10 +302,14 @@ export default function CartePage() {
         autoMapping[col.key] = match ?? null;
       }
       setColumnMapping(autoMapping);
-      toast.success(`${res.rows} troncons charges depuis ${res.filename}`);
+      samNotify.dismiss(analysingId);
+      samNotify.success(
+        `FCD pret. ${res.rows} troncons charges. Configure le mapping et les filtres.`
+      );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erreur inconnue";
-      toast.error(`Erreur upload : ${message}`);
+      samNotify.dismiss(analysingId);
+      samNotify.error(`Erreur upload FCD : ${message}`);
       setFcdFile(null);
     } finally {
       setUploading(false);
@@ -273,6 +335,11 @@ export default function CartePage() {
     setStats(null);
     setProgress(10);
     setProgressText("Chargement des modeles...");
+
+    const thinkingId = samNotify.thinking(
+      "Application des modeles sur tous les segments. Ca prend ~30s sur un gros reseau."
+    );
+    samMood.set("thinking", "Generation carte...");
 
     try {
       setProgress(30);
@@ -301,11 +368,16 @@ export default function CartePage() {
       setProgressText("Generation terminee !");
       setStats(res.stats);
       setDone(true);
-      const _tvrMoy = res.stats.mean_tvr != null ? `, TVr moyen: ${Math.round(res.stats.mean_tvr).toLocaleString("fr-FR")} veh/j` : "";
-      toast.success(`Carte generee — ${res.geojson_feature_count.toLocaleString("fr-FR")} troncons${_tvrMoy}`);
+
+      samNotify.dismiss(thinkingId);
+      const nbSegments = res.geojson_feature_count.toLocaleString("fr-FR");
+      samNotify.success(`Carte generee. ${nbSegments} segments dans le GeoJSON.`);
+      samMood.set("goodjob", "Carte prete", 5000);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erreur inconnue";
-      toast.error(`Erreur generation : ${message}`);
+      samNotify.dismiss(thinkingId);
+      samNotify.error(`Generation echouee: ${message}`);
+      samMood.set("error", message, 6000);
       setProgress(0);
       setProgressText("");
     } finally {
@@ -320,6 +392,7 @@ export default function CartePage() {
   // ---- Download ----
   const handleDownload = useCallback(() => {
     if (!sessionId) return;
+    samNotify.info("Telechargement lance.");
     window.open(apiUrl(`/api/carte/download/${sessionId}`), "_blank");
   }, [sessionId]);
 
