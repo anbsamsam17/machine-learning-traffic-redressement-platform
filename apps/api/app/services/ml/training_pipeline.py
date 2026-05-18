@@ -30,6 +30,7 @@ from .grid_search import (
 from .model_builder import build_model
 from .normalize import normalize
 from .progress import ProgressPayload, TrainingProgressCallback
+from .seeding import seed_everything
 from .types import ModelTypeConfig
 
 SEED = 1750
@@ -237,8 +238,7 @@ def run_training(
         )
 
     seed: int = int(config.get("seed", SEED))
-    tf.random.set_seed(seed)
-    np.random.seed(seed)
+    seed_everything(seed)
 
     # Prepare data
     prepared = prepare_training_data(df, type_config, config=config)
@@ -370,6 +370,8 @@ def run_training(
 
         for combo in combos:
             model_idx += 1
+            # Reseed before each fit so model-init / shuffles are reproducible
+            seed_everything(seed, enable_op_determinism=False)
             artifact = _train_single(
                 x_train_norm=x_train_norm,
                 y_train_norm=y_train_norm,

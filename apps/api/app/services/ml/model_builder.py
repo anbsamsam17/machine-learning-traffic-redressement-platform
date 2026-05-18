@@ -13,7 +13,6 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 os.environ.setdefault("TF_GPU_ALLOCATOR", "cuda_malloc_async")
 os.environ.setdefault("TF_XLA_FLAGS", "--tf_xla_enable_xla_devices=false")
-os.environ.setdefault("TF_DISABLE_SEGMENT_REDUCTION_OP_DETERMINISM_EXCEPTIONS", "1")
 
 import tensorflow as tf  # noqa: E402
 from tensorflow import keras  # noqa: E402

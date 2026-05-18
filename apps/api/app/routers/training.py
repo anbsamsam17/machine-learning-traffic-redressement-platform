@@ -277,7 +277,6 @@ def _training_worker(task: TrainingTask) -> None:
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
     os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
     os.environ.setdefault("TF_XLA_FLAGS", "--tf_xla_enable_xla_devices=false")
-    os.environ.setdefault("TF_DISABLE_SEGMENT_REDUCTION_OP_DETERMINISM_EXCEPTIONS", "1")
 
     try:
         import tensorflow as tf
@@ -333,8 +332,8 @@ def _training_worker(task: TrainingTask) -> None:
             raise RuntimeError(f"Trop peu de lignes valides ({len(sub)}).")
 
         seed = cfg.get("seed", SEED)
-        np.random.seed(seed)
-        tf.random.set_seed(seed)
+        from ..services.ml.seeding import seed_everything
+        seed_everything(seed)
 
         # ON_OFF_NORM mask — mapped per column name so subsets can derive theirs
         on_off_norm_list = cfg.get("on_off_norm", [True] * len(all_input_cols))
