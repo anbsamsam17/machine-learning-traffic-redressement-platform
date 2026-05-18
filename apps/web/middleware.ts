@@ -17,6 +17,9 @@ function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return true;
   if (pathname.startsWith("/_next")) return true;
   if (pathname.startsWith("/api")) return true;
+  // Public static assets (Sam avatar moods + background images)
+  if (pathname.startsWith("/sam/")) return true;
+  if (pathname.startsWith("/bg/")) return true;
   if (pathname === "/favicon.ico") return true;
   return false;
 }
