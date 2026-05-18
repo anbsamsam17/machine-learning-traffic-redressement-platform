@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Map as MapIcon,
   ArrowLeft,
@@ -487,7 +486,6 @@ export default function CartePage() {
                   <input
                     ref={tvFolderInputRef}
                     type="file"
-                    // @ts-expect-error webkitdirectory is non-standard but widely supported
                     webkitdirectory=""
                     directory=""
                     multiple
@@ -497,7 +495,6 @@ export default function CartePage() {
                   <input
                     ref={plFolderInputRef}
                     type="file"
-                    // @ts-expect-error webkitdirectory is non-standard but widely supported
                     webkitdirectory=""
                     directory=""
                     multiple
@@ -564,14 +561,8 @@ export default function CartePage() {
                   )}
 
                   {/* --- Column mapping --- */}
-                  <AnimatePresence>
-                    {sourceColumns.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="space-y-2"
-                      >
+                  {sourceColumns.length > 0 && (
+                    <div className="space-y-2">
                         <div className="flex items-center gap-2">
                           <Layers size={12} className="text-cyan-400" />
                           <span className="text-[11px] font-semibold text-slate-100">
@@ -616,9 +607,8 @@ export default function CartePage() {
                             </div>
                           ))}
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                    </div>
+                  )}
 
                   {/* --- Section 3: Server filters --- */}
                   <SectionHeader index={3} accent="violet" title="Filtres & confiance" />
@@ -702,11 +692,9 @@ export default function CartePage() {
                         <span className="text-[10px] font-mono text-indigo-300">{progress}%</span>
                       </div>
                       <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${progress}%` }}
-                          transition={{ duration: 0.5 }}
-                          className={`h-full rounded-full ${
+                        <div
+                          style={{ width: `${progress}%` }}
+                          className={`h-full rounded-full transition-all duration-500 ${
                             done
                               ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
                               : "bg-gradient-to-r from-indigo-500 to-cyan-400"
