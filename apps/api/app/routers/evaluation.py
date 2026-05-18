@@ -82,10 +82,17 @@ class ModelsListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _geh(observed: np.ndarray, predicted: np.ndarray) -> np.ndarray:
-    """GEH statistic (traffic engineering)."""
-    denom = (observed + predicted) / 2.0
+    """GEH statistic (traffic engineering).
+
+    Inputs are TMJA (volumes journaliers) — converted to hourly (/24) before
+    applying the standard GEH formula `sqrt(2*(M-C)**2/(M+C))`. Matches the
+    implementation in services/ml/evaluation_pipeline.py.
+    """
+    obs_h = observed / 24.0
+    pred_h = predicted / 24.0
+    denom = (obs_h + pred_h) / 2.0
     denom = np.where(denom == 0, 1e-9, denom)
-    return np.sqrt((observed - predicted) ** 2 / denom)
+    return np.sqrt((obs_h - pred_h) ** 2 / denom)
 
 
 def _compute_metrics(
