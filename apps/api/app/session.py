@@ -1,4 +1,23 @@
-"""Session manager with Redis backend (optional) and in-memory fallback."""
+"""Session manager with Redis backend (optional) and in-memory fallback.
+
+Security notes (audit 01):
+
+- P0-2 (RCE): the previous implementation pickled non-Parquet DataFrames into
+  Redis as `__DFPKL__<bytes>` and used `pickle.loads` on read. Any attacker
+  able to write a Redis key under `mdl:sdata:*` (compromised host, exposed
+  port, mis-config) could trigger arbitrary code execution. We now refuse
+  Pickle entirely:
+    - on write, DataFrames are cast (geometry/dict → JSON string) before
+      Parquet serialisation; if the cast still fails we raise instead of
+      silently falling back to Pickle;
+    - on read, any leftover `__DFPKL__` blob raises `ValueError`. Existing
+      Pickle blobs become unreadable; they will be re-uploaded by the user
+      on the next session (TTL is short, default 2h).
+
+- P1-2 (IDOR): sessions now carry `owner_user_id` and `get_owned_session`
+  (in auth.py) wraps `session_manager.get_session` to refuse cross-tenant
+  access. Logs only emit truncated session ids (8 hex chars).
+"""
 
 from __future__ import annotations
 
@@ -18,16 +37,24 @@ from .config import get_settings
 logger = logging.getLogger(__name__)
 
 
+def _sid_log(sid: str) -> str:
+    """Return the first 8 hex chars of a session id for log lines (P1-2)."""
+    if not sid:
+        return "<empty>"
+    return sid[:8]
+
+
 # ---------------------------------------------------------------------------
 # Session data class (used by both backends)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class Session:
-    """One user session."""
+    """One user session — bound to its owner for tenant isolation (A2)."""
 
     session_id: str
     mode: str  # "TV" | "PL" | "TV+PL"
+    owner_user_id: str = ""  # empty only for legacy sessions; A2 enforces non-empty
     created_at: float = field(default_factory=time.time)
     last_accessed: float = field(default_factory=time.time)
     data: dict[str, Any] = field(default_factory=dict)
@@ -40,13 +67,42 @@ class Session:
 
 
 # ---------------------------------------------------------------------------
+# Helpers — DataFrame normalisation for safe serialisation (A3)
+# ---------------------------------------------------------------------------
+
+def _df_to_parquet_safe(df: pd.DataFrame) -> bytes:
+    """Serialise *df* to Parquet, casting non-Parquet-compatible cells to JSON str.
+
+    Parquet rejects mixed-type cells and Python dicts (e.g. GeoJSON geometry).
+    We force such columns to string JSON to avoid the historical Pickle fallback
+    (audit P0-2). If a column still fails, we raise — never fall back to Pickle.
+    """
+    safe = df.copy()
+    for col in safe.columns:
+        series = safe[col]
+        if series.dtype != "object":
+            continue
+        # Probe a few non-null entries; if any cell is a dict/list/set we cast
+        # the whole column to JSON string.
+        sample = series.dropna().head(20)
+        if any(isinstance(v, (dict, list, set, tuple)) for v in sample):
+            safe[col] = series.apply(
+                lambda v: json.dumps(v, default=str) if isinstance(v, (dict, list, set, tuple)) else v
+            )
+
+    buf = io.BytesIO()
+    safe.to_parquet(buf, engine="pyarrow")
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
 # Backend interface
 # ---------------------------------------------------------------------------
 
 class SessionBackend:
     """Abstract base for session storage."""
 
-    def create_session(self, mode: str) -> Session:
+    def create_session(self, mode: str, owner_user_id: str = "") -> Session:
         raise NotImplementedError
 
     def get_session(self, session_id: str) -> Session | None:
@@ -80,12 +136,13 @@ class MemoryBackend(SessionBackend):
         self._sessions: dict[str, Session] = {}
         self._lock = Lock()
 
-    def create_session(self, mode: str = "TV") -> Session:
+    def create_session(self, mode: str = "TV", owner_user_id: str = "") -> Session:
         sid = uuid.uuid4().hex
-        session = Session(session_id=sid, mode=mode)
+        session = Session(session_id=sid, mode=mode, owner_user_id=owner_user_id)
         with self._lock:
             self._sessions[sid] = session
-        logger.info("Session created: %s (mode=%s)", sid, mode)
+        logger.info("Session created: sid=%s mode=%s owner=%s",
+                    _sid_log(sid), mode, _sid_log(owner_user_id))
         return session
 
     def get_session(self, session_id: str) -> Session | None:
@@ -96,7 +153,7 @@ class MemoryBackend(SessionBackend):
             ttl = get_settings().SESSION_TTL_SECONDS
             if session.is_expired(ttl):
                 del self._sessions[session_id]
-                logger.info("Session expired and removed: %s", session_id)
+                logger.info("Session expired and removed: sid=%s", _sid_log(session_id))
                 return None
             session.touch()
             return session
@@ -104,13 +161,13 @@ class MemoryBackend(SessionBackend):
     def store_data(self, session_id: str, key: str, value: Any) -> None:
         session = self.get_session(session_id)
         if session is None:
-            raise KeyError(f"Session {session_id} not found or expired")
+            raise KeyError(f"Session {_sid_log(session_id)} not found or expired")
         session.data[key] = value
 
     def get_data(self, session_id: str, key: str, default: Any = None) -> Any:
         session = self.get_session(session_id)
         if session is None:
-            raise KeyError(f"Session {session_id} not found or expired")
+            raise KeyError(f"Session {_sid_log(session_id)} not found or expired")
         return session.data.get(key, default)
 
     def delete_session(self, session_id: str) -> None:
@@ -143,8 +200,8 @@ class MemoryBackend(SessionBackend):
 class _RedisDataProxy(dict):
     """Dict-like proxy that lazily loads values from Redis on access.
 
-    This ensures ``session.data.get("raw_df")`` works transparently
-    with the Redis backend, just like it does with the MemoryBackend.
+    Ensures ``session.data.get("raw_df")`` works transparently with the Redis
+    backend, just like it does with MemoryBackend.
     """
 
     def __init__(self, backend: "RedisBackend", session_id: str) -> None:
@@ -162,8 +219,13 @@ class _RedisDataProxy(dict):
                 val = self._backend._deserialize_value(raw)
                 self._cache[key] = val
                 return val
+        except ValueError:
+            # Pickle blob refused (A3); propagate so caller knows the cache
+            # is corrupt instead of silently returning default.
+            raise
         except Exception:
-            pass
+            logger.exception("Redis read failed for key=%s sid=%s",
+                             key, _sid_log(self._sid))
         return default
 
     def __getitem__(self, key: str) -> Any:
@@ -176,23 +238,27 @@ class _RedisDataProxy(dict):
         return self.get(str(key)) is not None
 
     # Write-through: persists to Redis so ``session.data["x"] = y`` behaves
-    # the same as ``session_manager.store_data(sid, "x", y)``. Previously a
-    # direct assignment only updated the in-memory cache and silently
-    # disappeared between requests (e.g. training output_dir bug).
+    # the same as ``session_manager.store_data(sid, "x", y)``.
     def __setitem__(self, key: str, value: Any) -> None:
         try:
             data_key = self._backend._data_key(self._sid, key)
-            self._backend._r.setex(data_key, self._backend._ttl, self._backend._serialize_value(value))
+            self._backend._r.setex(
+                data_key,
+                self._backend._ttl,
+                self._backend._serialize_value(value),
+            )
             self._cache[key] = value
         except Exception:
-            logger.exception("Redis write-through failed for key %r; cache only", key)
+            logger.exception("Redis write-through failed for key=%s sid=%s; cache only",
+                             key, _sid_log(self._sid))
             self._cache[key] = value
 
     def pop(self, key: str, *args: Any) -> Any:
         try:
             self._backend._r.delete(self._backend._data_key(self._sid, key))
         except Exception:
-            pass
+            logger.exception("Redis delete failed for key=%s sid=%s",
+                             key, _sid_log(self._sid))
         return self._cache.pop(key, *args)
 
     def update(self, *args: Any, **kwargs: Any) -> None:
@@ -205,7 +271,7 @@ class _RedisDataProxy(dict):
 
 
 class RedisBackend(SessionBackend):
-    """Redis-backed session store. DataFrames are serialised as Parquet bytes."""
+    """Redis-backed session store. DataFrames serialised as Parquet only (A3)."""
 
     _PREFIX = "mdl:session:"
     _DATA_PREFIX = "mdl:sdata:"
@@ -228,25 +294,17 @@ class RedisBackend(SessionBackend):
     @staticmethod
     def _serialize_value(value: Any) -> bytes:
         if isinstance(value, pd.DataFrame):
-            buf = io.BytesIO()
-            try:
-                value.to_parquet(buf, engine="pyarrow")
-                return b"__DF__" + buf.getvalue()
-            except Exception as exc:
-                # Parquet can fail when columns hold mixed/dict values
-                # (e.g., geometry dicts). Fall back to pickle.
-                logger.warning("Parquet serialize failed (%s), falling back to pickle", exc)
-                import pickle
-                buf = io.BytesIO()
-                pickle.dump(value, buf)
-                return b"__DFPKL__" + buf.getvalue()
+            # A3: no Pickle fallback. _df_to_parquet_safe casts non-Parquet
+            # columns; if it still fails we propagate the error.
+            return b"__DF__" + _df_to_parquet_safe(value)
         return b"__JSON__" + json.dumps(value, default=str).encode("utf-8")
 
     @staticmethod
     def _deserialize_value(raw: bytes) -> Any:
         if raw.startswith(b"__DFPKL__"):
-            import pickle
-            return pickle.loads(raw[9:])
+            # A3: legacy Pickle blobs are explicitly refused (RCE vector).
+            logger.error("Refused legacy pickle blob from Redis (A3, P0-2)")
+            raise ValueError("legacy pickle blob refused")
         if raw.startswith(b"__DF__"):
             return pd.read_parquet(io.BytesIO(raw[6:]))
         if raw.startswith(b"__JSON__"):
@@ -255,13 +313,25 @@ class RedisBackend(SessionBackend):
 
     # -- public API ------------------------------------------------------------
 
-    def create_session(self, mode: str = "TV") -> Session:
+    def create_session(self, mode: str = "TV", owner_user_id: str = "") -> Session:
         sid = uuid.uuid4().hex
         now = time.time()
-        session = Session(session_id=sid, mode=mode, created_at=now, last_accessed=now)
-        meta = json.dumps({"mode": mode, "created_at": now, "last_accessed": now})
+        session = Session(
+            session_id=sid,
+            mode=mode,
+            owner_user_id=owner_user_id,
+            created_at=now,
+            last_accessed=now,
+        )
+        meta = json.dumps({
+            "mode": mode,
+            "owner_user_id": owner_user_id,
+            "created_at": now,
+            "last_accessed": now,
+        })
         self._r.setex(self._session_key(sid), self._ttl, meta.encode("utf-8"))
-        logger.info("Session created (redis): %s (mode=%s)", sid, mode)
+        logger.info("Session created (redis): sid=%s mode=%s owner=%s",
+                    _sid_log(sid), mode, _sid_log(owner_user_id))
         return session
 
     def get_session(self, session_id: str) -> Session | None:
@@ -273,6 +343,7 @@ class RedisBackend(SessionBackend):
         session = Session(
             session_id=session_id,
             mode=meta["mode"],
+            owner_user_id=meta.get("owner_user_id", ""),
             created_at=meta["created_at"],
             last_accessed=time.time(),
         )
@@ -287,13 +358,13 @@ class RedisBackend(SessionBackend):
 
     def store_data(self, session_id: str, key: str, value: Any) -> None:
         if self.get_session(session_id) is None:
-            raise KeyError(f"Session {session_id} not found or expired")
+            raise KeyError(f"Session {_sid_log(session_id)} not found or expired")
         data_key = self._data_key(session_id, key)
         self._r.setex(data_key, self._ttl, self._serialize_value(value))
 
     def get_data(self, session_id: str, key: str, default: Any = None) -> Any:
         if self.get_session(session_id) is None:
-            raise KeyError(f"Session {session_id} not found or expired")
+            raise KeyError(f"Session {_sid_log(session_id)} not found or expired")
         raw = self._r.get(self._data_key(session_id, key))
         if raw is None:
             return default
@@ -348,8 +419,8 @@ class SessionManager:
             self._backend = MemoryBackend()
             logger.info("Using in-memory session backend")
 
-    def create_session(self, mode: str = "TV") -> Session:
-        return self._backend.create_session(mode)
+    def create_session(self, mode: str = "TV", owner_user_id: str = "") -> Session:
+        return self._backend.create_session(mode, owner_user_id=owner_user_id)
 
     def get_session(self, session_id: str) -> Session | None:
         return self._backend.get_session(session_id)
