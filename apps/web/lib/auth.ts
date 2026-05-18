@@ -1,5 +1,8 @@
 /**
- * Auth helpers — token management and authenticated fetch.
+ * Auth helpers — token management.
+ *
+ * `fetchWithAuth` is kept as a thin compat shim around the new typed
+ * apiClient (lib/api.ts). Prefer apiClient.* for new code.
  */
 
 const TOKEN_KEY = "mdl_access_token";
@@ -28,8 +31,8 @@ export function isAuthenticated(): boolean {
 
 /**
  * Wrapper around `fetch` that injects the Authorization header.
- * If the response is 401, the token is cleared and the user is
- * redirected to /login.
+ * If the response is 401 (and the URL is not an auth endpoint), the
+ * token is cleared and the user is redirected to /login.
  */
 export async function fetchWithAuth(
   url: string,
@@ -37,20 +40,13 @@ export async function fetchWithAuth(
 ): Promise<Response> {
   const token = getToken();
   const headers = new Headers(options.headers);
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+  if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const res = await fetch(url, { ...options, headers });
 
-  // Only auto-redirect on 401 for non-auth endpoints
-  // Auth endpoints (login/register/me) should handle their own errors
   if (res.status === 401 && !url.includes("/api/auth/")) {
     removeToken();
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
-    }
+    if (typeof window !== "undefined") window.location.href = "/login";
   }
-
   return res;
 }

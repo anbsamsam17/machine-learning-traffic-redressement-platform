@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl } from "@/lib/api-url";
 import { FileSpreadsheet, Wand2, Table2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
@@ -264,12 +263,9 @@ export default function DonneesPage() {
       </GlowCard>
 
       {/* Mapping */}
-      <AnimatePresence>
+      
         {step === "mapping" && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
+          <div
           >
             <GlowCard>
               <div className="flex items-center justify-between mb-4">
@@ -291,9 +287,7 @@ export default function DonneesPage() {
 
               {/* Critical columns warning */}
               {unmappedCritical.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
+                <div
                   className="flex items-start gap-2 p-3 mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5"
                 >
                   <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
@@ -305,7 +299,7 @@ export default function DonneesPage() {
                       {unmappedCritical.join(", ")}
                     </p>
                   </div>
-                </motion.div>
+                </div>
               )}
 
               <ColumnMapper
@@ -316,9 +310,9 @@ export default function DonneesPage() {
                 onMappingsChange={setMappings}
               />
             </GlowCard>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      
 
       {/* Success banner */}
       <SuccessBanner
@@ -328,13 +322,10 @@ export default function DonneesPage() {
       />
 
       {/* Preview */}
-      <AnimatePresence>
+      
         {step === "preview" && previewRows.length > 0 && (
-          <motion.div
+          <div
             ref={previewContainerRef}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
             className="relative"
           >
             <GlowCard glowColor="cyan">
@@ -344,14 +335,12 @@ export default function DonneesPage() {
                   Apercu de la table d&apos;apprentissage
                 </h3>
                 {showStepComplete && (
-                  <motion.span
-                    initial={{ opacity: 0, scale: 0.7 }}
-                    animate={{ opacity: 1, scale: 1 }}
+                  <span
                     className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold"
                   >
                     <CheckCircle2 size={12} />
                     Etape completee
-                  </motion.span>
+                  </span>
                 )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -420,9 +409,9 @@ export default function DonneesPage() {
                 {Object.keys(previewRows[0]).length} colonnes totales.
               </p>
             </GlowCard>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      
     </div>
   );
 }

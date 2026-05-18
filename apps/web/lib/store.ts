@@ -24,16 +24,14 @@ interface AppState {
   currentStep: number;
   sessionId: string | null;
   taskId: string | null;
-  territory: string | null;
   fileName: string | null;
   outputDir: string | null;
   trainingConfig: Record<string, unknown> | null;
 
   setMode: (mode: AppMode) => void;
-  setTerritory: (territory: string) => void;
   setFileName: (name: string) => void;
   setSessionId: (id: string) => void;
-  setTaskId: (id: string) => void;
+  setTaskId: (id: string | null) => void;
   setOutputDir: (dir: string) => void;
   setTrainingConfig: (config: Record<string, unknown>) => void;
   nextStep: () => void;
@@ -42,6 +40,12 @@ interface AppState {
   reset: () => void;
 }
 
+const noopStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
+
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
@@ -49,13 +53,11 @@ export const useAppStore = create<AppState>()(
       currentStep: 0,
       sessionId: null,
       taskId: null,
-      territory: null,
       fileName: null,
       outputDir: null,
       trainingConfig: null,
 
       setMode: (mode) => set({ mode }),
-      setTerritory: (territory) => set({ territory }),
       setFileName: (name) => set({ fileName: name }),
       setSessionId: (id) => set({ sessionId: id }),
       setTaskId: (id) => set({ taskId: id }),
@@ -74,7 +76,6 @@ export const useAppStore = create<AppState>()(
           currentStep: 0,
           sessionId: null,
           taskId: null,
-          territory: null,
           fileName: null,
           outputDir: null,
           trainingConfig: null,
@@ -82,12 +83,9 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "mdl-pipeline-store",
+      // localStorage so a long-running training survives a tab close/reopen.
       storage: createJSONStorage(() =>
-        typeof window !== "undefined" ? sessionStorage : {
-          getItem: () => null,
-          setItem: () => {},
-          removeItem: () => {},
-        }
+        typeof window !== "undefined" ? localStorage : noopStorage
       ),
     }
   )

@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PIPELINE_STEPS } from "@/lib/store";
@@ -12,7 +11,10 @@ interface StepperProps {
 
 export function Stepper({ currentStep, onStepClick }: StepperProps) {
   return (
-    <nav className="w-full px-4 py-3">
+    <nav
+      aria-label="Etapes du pipeline"
+      className="w-full"
+    >
       <ol className="flex items-center justify-between gap-2">
         {PIPELINE_STEPS.map((step, idx) => {
           const isCompleted = idx < currentStep;
@@ -25,38 +27,34 @@ export function Stepper({ currentStep, onStepClick }: StepperProps) {
                 type="button"
                 onClick={() => onStepClick?.(idx)}
                 disabled={isFuture}
+                aria-current={isActive ? "step" : undefined}
+                aria-disabled={isFuture || undefined}
                 className={cn(
-                  "flex items-center gap-2 group transition-all",
-                  isFuture && "opacity-50 cursor-not-allowed",
-                  !isFuture && "cursor-pointer"
+                  "flex items-center gap-2 rounded px-1 py-1 transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                  isFuture && "opacity-60 cursor-not-allowed",
+                  !isFuture && "cursor-pointer hover:bg-bg-subtle"
                 )}
               >
-                <motion.div
-                  initial={false}
-                  animate={{
-                    scale: isActive ? 1.15 : 1,
-                    boxShadow: isActive
-                      ? "0 0 20px rgba(99,102,241,0.4)"
-                      : "0 0 0px transparent",
-                  }}
+                <span
                   className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors flex-shrink-0",
+                    "w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold border transition-colors shrink-0",
                     isCompleted &&
-                      "bg-indigo-500 border-indigo-500 text-white",
+                      "bg-accent border-accent text-accent-fg",
                     isActive &&
-                      "bg-indigo-500/20 border-indigo-400 text-indigo-300",
+                      "bg-accent-subtle border-accent text-accent",
                     isFuture &&
-                      "bg-slate-800/50 border-slate-600/50 text-slate-400"
+                      "bg-bg-elevated border-border text-text-muted"
                   )}
                 >
-                  {isCompleted ? <Check size={14} /> : idx + 1}
-                </motion.div>
+                  {isCompleted ? <Check size={12} aria-hidden="true" /> : idx + 1}
+                </span>
                 <span
                   className={cn(
                     "text-xs font-medium hidden sm:block whitespace-nowrap",
-                    isActive && "text-indigo-300",
-                    isCompleted && "text-slate-200",
-                    isFuture && "text-slate-400"
+                    isActive && "text-text",
+                    isCompleted && "text-text-muted",
+                    isFuture && "text-text-subtle"
                   )}
                 >
                   {step.label}
@@ -68,7 +66,7 @@ export function Stepper({ currentStep, onStepClick }: StepperProps) {
                   <div
                     className={cn(
                       "h-full transition-colors",
-                      idx < currentStep ? "bg-indigo-500" : "bg-white/10"
+                      idx < currentStep ? "bg-accent" : "bg-border"
                     )}
                   />
                 </div>

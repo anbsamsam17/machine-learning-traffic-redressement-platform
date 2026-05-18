@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Check, AlertCircle, Search, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -123,28 +122,21 @@ export function ColumnMapper({
 
       {/* Progress bar */}
       <div className="h-1.5 rounded-full bg-surface-light overflow-hidden">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{
-            width: `${(mappedCount / targetColumns.length) * 100}%`,
-          }}
+        <div
           className="h-full rounded-full bg-gradient-to-r from-accent to-cyan"
         />
       </div>
 
       {/* Mapping rows */}
       <div className="space-y-1.5 max-h-[400px] overflow-y-auto pr-1">
-        <AnimatePresence>
+        
           {filteredMappings.map((mapping, idx) => {
             const isCritical = criticalSet.has(mapping.target);
             const isCriticalUnmapped = isCritical && !mapping.source;
 
             return (
-              <motion.div
+              <div
                 key={mapping.target}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.02 }}
                 className={cn(
                   "grid grid-cols-[1fr_auto_1fr] items-center gap-3 p-2.5 rounded-lg transition-colors",
                   isCriticalUnmapped
@@ -221,10 +213,10 @@ export function ColumnMapper({
                     </option>
                   ))}
                 </select>
-              </motion.div>
+              </div>
             );
           })}
-        </AnimatePresence>
+        
       </div>
     </div>
   );

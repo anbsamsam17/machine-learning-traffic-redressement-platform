@@ -1,3 +1,8 @@
+/**
+ * Compat shim — gradient text is consumer/playful and out of place in
+ * the sober redesign. We keep the component name (used by 7+ files)
+ * but render plain semantic text.
+ */
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
@@ -12,7 +17,5 @@ export function GradientText({
   className,
   as: Tag = "span",
 }: GradientTextProps) {
-  return (
-    <Tag className={cn("gradient-text font-bold", className)}>{children}</Tag>
-  );
+  return <Tag className={cn("font-semibold text-text", className)}>{children}</Tag>;
 }

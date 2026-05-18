@@ -1,6 +1,10 @@
 "use client";
 
-import { motion } from "framer-motion";
+/**
+ * Compat shim — original GlowCard had glassmorphism + neon glow.
+ * Replaced with the sober Card (surface-elevated + border, no glow).
+ * The `glowColor` prop is accepted but ignored.
+ */
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
@@ -11,32 +15,26 @@ interface GlowCardProps {
   onClick?: () => void;
 }
 
-const glowMap = {
-  accent: "hover:shadow-[0_0_30px_rgba(99,102,241,0.3)]",
-  cyan: "hover:shadow-[0_0_30px_rgba(6,182,212,0.3)]",
-  violet: "hover:shadow-[0_0_30px_rgba(139,92,246,0.3)]",
-};
-
 export function GlowCard({
   children,
   className,
-  glowColor = "accent",
+  glowColor: _glowColor,
   onClick,
 }: GlowCardProps) {
   return (
-    <motion.div
-      whileHover={{ scale: 1.02, y: -2 }}
-      whileTap={onClick ? { scale: 0.98 } : undefined}
-      transition={{ type: "spring", stiffness: 300, damping: 20 }}
+    <div
       onClick={onClick}
       className={cn(
-        "glass p-6 transition-shadow duration-300 cursor-default text-white",
-        glowMap[glowColor],
-        onClick && "cursor-pointer",
+        "surface-elevated p-5 text-text transition-colors",
+        onClick &&
+          "cursor-pointer hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         className
       )}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
+
+/** New primary export: prefer `<Card>` in new code */
+export const Card = GlowCard;

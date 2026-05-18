@@ -1,11 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { Car, Truck, Map, CircleDot, Sparkles } from "lucide-react";
-import { GradientText } from "@/components/ui/gradient-text";
+import { Brain, Truck, Map, Activity } from "lucide-react";
 import { ModeCard } from "@/components/pipeline/mode-card";
 import { useAppStore } from "@/lib/store";
+import { fr } from "@/lib/i18n/fr";
 
 export default function HomePage() {
   const router = useRouter();
@@ -13,87 +12,54 @@ export default function HomePage() {
 
   function handleMode(mode: "tv" | "pl" | "carte" | "compteurs") {
     setMode(mode);
-    if (mode === "carte") {
-      router.push("/carte");
-    } else if (mode === "compteurs") {
-      router.push("/compteurs");
-    } else {
-      router.push("/donnees");
-    }
+    if (mode === "carte") router.push("/carte");
+    else if (mode === "compteurs") router.push("/compteurs");
+    else router.push("/donnees");
   }
 
   return (
-    <div className="bg-landing relative min-h-screen flex flex-col items-center justify-center px-4 py-12">
-      <div className="relative z-10 w-full max-w-3xl mx-auto text-center space-y-10">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="space-y-4"
-        >
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Sparkles size={20} className="text-indigo-400" />
-            <span className="text-xs font-medium text-slate-300 uppercase tracking-widest">
-              MDL Redressement Tool
-            </span>
-          </div>
-          <GradientText as="h1" className="text-4xl sm:text-5xl lg:text-6xl">
-            Modelisation de Redressement
-          </GradientText>
-          <p className="text-slate-300 text-sm sm:text-base max-w-lg mx-auto leading-relaxed">
-            Pipeline complet de redressement FCD : import de donnees,
-            entrainement grid search, evaluation multi-modeles et generation de
-            cartes de debits.
+    <div className="min-h-[calc(100vh-3rem)] px-4 py-12">
+      <div className="max-w-3xl mx-auto space-y-8">
+        <header className="space-y-2">
+          <p className="text-xs font-medium text-accent uppercase tracking-wider">
+            {fr.common.appName}
           </p>
-        </motion.div>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-text">
+            {fr.landing.title}
+          </h1>
+          <p className="text-sm text-text-muted max-w-xl">{fr.landing.subtitle}</p>
+        </header>
 
-        {/* Mode cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <ModeCard
-            title="Modele TV"
-            description="Entrainement et evaluation du modele de redressement pour les vehicules legers (Tous Vehicules)."
-            icon={<Car size={28} />}
-            glowColor="accent"
+            title={fr.landing.cards.tv.title}
+            description={fr.landing.cards.tv.desc}
+            icon={<Brain aria-hidden="true" />}
             onClick={() => handleMode("tv")}
-            delay={0.1}
           />
           <ModeCard
-            title="Modele PL"
-            description="Entrainement et evaluation du modele de redressement pour les Poids Lourds."
-            icon={<Truck size={28} />}
-            glowColor="violet"
+            title={fr.landing.cards.pl.title}
+            description={fr.landing.cards.pl.desc}
+            icon={<Truck aria-hidden="true" />}
             onClick={() => handleMode("pl")}
-            delay={0.2}
           />
           <ModeCard
-            title="Carte de Debits"
-            description="Generation de cartes geographiques avec les debits redresses sur le reseau routier."
-            icon={<Map size={28} />}
-            glowColor="cyan"
+            title={fr.landing.cards.carte.title}
+            description={fr.landing.cards.carte.desc}
+            icon={<Map aria-hidden="true" />}
             onClick={() => handleMode("carte")}
-            delay={0.3}
           />
           <ModeCard
-            title="Boucles de Comptage"
-            description="Generation des boucles de comptage virtuelles a partir des modeles entraines."
-            icon={<CircleDot size={28} />}
-            glowColor="accent"
+            title={fr.landing.cards.compteurs.title}
+            description={fr.landing.cards.compteurs.desc}
+            icon={<Activity aria-hidden="true" />}
             onClick={() => handleMode("compteurs")}
-            delay={0.4}
           />
         </div>
 
-        {/* Footer note */}
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="text-xs text-slate-400"
-        >
-          Aucune donnee n&apos;est stockee en dehors de votre machine. Tous les
-          traitements s&apos;effectuent localement.
-        </motion.p>
+        <p className="text-xs text-text-subtle">
+          Vos donnees sont traitees sur le serveur MDL Redressement. Aucun stockage tiers.
+        </p>
       </div>
     </div>
   );

@@ -1,10 +1,9 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Stepper } from "@/components/pipeline/stepper";
-import { NeonButton } from "@/components/ui/neon-button";
+import { Button } from "@/components/ui/button";
 import { useAppStore, PIPELINE_STEPS } from "@/lib/store";
 
 const pathToStep: Record<string, number> = {
@@ -48,44 +47,40 @@ export default function PipelineLayout({
   }
 
   return (
-    <div className="bg-pipeline relative min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-bg">
       {/* Stepper */}
-      <div className="relative z-10 glass border-b border-white/[0.08] rounded-none">
+      <div className="border-b border-border bg-bg/95 backdrop-blur supports-[backdrop-filter]:bg-bg/80 sticky top-12 z-30">
         <div className="max-w-5xl mx-auto px-4 py-3">
           <Stepper currentStep={activeStep} onStepClick={handleStepClick} />
         </div>
       </div>
 
       {/* Content */}
-      <main className="relative z-10 flex-1 w-full max-w-5xl mx-auto px-4 py-8">
-        <motion.div
-          key={pathname}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {children}
-        </motion.div>
+      <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-8">
+        {children}
       </main>
 
       {/* Footer nav */}
-      <footer className="relative z-10 glass border-t border-white/[0.08] rounded-none">
+      <footer className="border-t border-border bg-bg-elevated/60">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <NeonButton
+          <Button
             variant="ghost"
+            size="sm"
             onClick={handleBack}
             disabled={activeStep === 0}
-            icon={<ArrowLeft size={14} />}
+            icon={<ArrowLeft size={14} aria-hidden="true" />}
           >
             Retour
-          </NeonButton>
-          <NeonButton
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
             onClick={handleNext}
             disabled={activeStep === PIPELINE_STEPS.length - 1}
-            icon={<ArrowRight size={14} />}
+            iconAfter={<ArrowRight size={14} aria-hidden="true" />}
           >
             Continuer
-          </NeonButton>
+          </Button>
         </div>
       </footer>
     </div>
