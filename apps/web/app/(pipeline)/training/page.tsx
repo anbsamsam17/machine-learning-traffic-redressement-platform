@@ -31,6 +31,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { SuccessBanner } from "@/components/ui/success-banner";
 import { useAppStore } from "@/lib/store";
 import { playSuccessDing, spawnConfetti } from "@/lib/success-effects";
+import { samNotify, samMood } from "@/lib/sam-fallback";
 
 interface LossPoint {
   epoch: number;
@@ -137,6 +138,13 @@ export default function TrainingPage() {
         if (data.total_models !== undefined) setTotalModels(data.total_models);
         if (data.best_val_loss !== null && data.best_val_loss !== undefined) setBestLoss(data.best_val_loss);
 
+        // Live mood widget (no toast — just background widget)
+        const pct =
+          data.total_epochs > 0
+            ? Math.round((data.current_epoch / data.total_epochs) * 100)
+            : 0;
+        samMood.set("thinking", `Training: ${pct}% (epoch ${data.current_epoch})`);
+
         // Track model name and detect model changes
         const incomingModelIndex = data.current_model ?? 0;
         const incomingModelName = data.current_model_name || `Modele ${incomingModelIndex + 1}`;
@@ -188,6 +196,8 @@ export default function TrainingPage() {
           toast.success(
             `Entrainement termine — ${data.total_models ?? totalModels} modele(s), meilleure loss: ${lossStr}${outputDir ? ` — ${outputDir}` : ""}`
           );
+          samNotify.success("Beau modele ! GEH dans les clous, t'es bon pour livrer.");
+          samMood.set("goodjob", "Training termine", 5000);
 
           // Success effects: ding + card pulse + banner + confetti
           playSuccessDing();
@@ -201,9 +211,12 @@ export default function TrainingPage() {
 
         if (data.status === "failed") {
           setStatus("failed");
-          setErrorMsg(data.error || "Erreur inconnue");
+          const failMsg = data.error || "Erreur inconnue";
+          setErrorMsg(failMsg);
           addLog(`ERREUR : ${data.error}`, "error");
           toast.error("Entrainement echoue");
+          samNotify.error("Training echoue. Console pour les details.", { title: "Erreur" });
+          samMood.set("error", failMsg.slice(0, 80), 6000);
           if (pollingRef.current) clearInterval(pollingRef.current);
         }
       } catch {
@@ -305,6 +318,8 @@ export default function TrainingPage() {
       addLog(`Tache creee : ${newTaskId} — ${data.total_combinations ?? "?"} combinaisons totales (feature_sets × hyperparametres)`, "success");
       addLog("Entrainement en cours...", "info");
       setStatus("running");
+      samNotify.thinking("On itere sur le grid search. Patience, c'est bientot fini.");
+      samMood.set("thinking", "Training: 0%");
       startPolling(newTaskId);
     } catch (error) {
       const message =
@@ -313,6 +328,8 @@ export default function TrainingPage() {
       setErrorMsg(message);
       addLog(`ERREUR : ${message}`, "error");
       toast.error(`Echec : ${message}`);
+      samNotify.error(`Echec: ${message}`, { title: "Training" });
+      samMood.set("error", message, 6000);
     }
   }
 
@@ -322,8 +339,11 @@ export default function TrainingPage() {
       await fetch(apiUrl(`/api/training/cancel/${taskId}`), { method: "POST" });
       addLog("Annulation demandee...", "info");
       toast.info("Annulation en cours");
+      samNotify.info("Training annule.");
+      samMood.set("based");
     } catch {
       toast.error("Impossible d'annuler");
+      samNotify.error("Impossible d'annuler le training.");
     }
   }
 
