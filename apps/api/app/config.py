@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # -- Training --------------------------------------------------------------
     MAX_TRAINING_MINUTES: int = 30
+    MAX_GRID_COMBINATIONS: int = 100
 
     # -- TensorFlow / GPU ------------------------------------------------------
     CUDA_VISIBLE_DEVICES: str = "-1"

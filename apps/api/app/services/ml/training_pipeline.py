@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+import threading  # noqa: F401 -- used in type hint string
 from typing import Any, Callable
 
 # GPU disabled before any TF import
@@ -30,6 +31,7 @@ from .grid_search import (
 from .model_builder import build_model
 from .normalize import normalize
 from .progress import ProgressPayload, TrainingProgressCallback
+from .seeding import seed_everything
 from .types import ModelTypeConfig
 
 SEED = 1750
@@ -90,6 +92,7 @@ def _train_single(
     total_models: int,
     model_idx: int,
     test_size: float,
+    cancel_event: "threading.Event | None" = None,
 ) -> TrainedModelArtifact:
     """Train one model and return an in-memory artifact."""
 
@@ -104,17 +107,33 @@ def _train_single(
         use_batch_norm=use_batch_norm,
     )
 
-    # Adaptive patience: proportional to epochs, min 30
-    patience = max(30, max_epochs // 10)
+    # EarlyStopping — patience=50 fixed (audit ML P0-3). start_from_epoch
+    # is capped at min(50, min_nb_epochs // 4) so divergent runs can still
+    # bail out before the soft `min_nb_epochs` floor.
+    patience = 50
+    start_from = min(50, max(1, combo.min_nb_epochs // 4))
 
     early_stop = keras.callbacks.EarlyStopping(
         monitor="val_loss",
         patience=patience,
         restore_best_weights=True,
-        start_from_epoch=combo.min_nb_epochs,
+        start_from_epoch=start_from,
+    )
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.5,
+        patience=20,
+        min_lr=1e-5,
+        verbose=0,
     )
 
-    callbacks_list: list = [early_stop]
+    callbacks_list: list = [early_stop, reduce_lr]
+    if cancel_event is not None:
+        class _CancelCallback(keras.callbacks.Callback):
+            def on_epoch_end(self, epoch, logs=None):
+                if cancel_event.is_set():
+                    self.model.stop_training = True
+        callbacks_list.append(_CancelCallback())
     if progress_callback is not None:
         callbacks_list.append(
             TrainingProgressCallback(
@@ -174,8 +193,11 @@ def _train_single(
         "loss": combo.loss,
         "neurons_factors": combo.neurons_factors,
         "use_batch_norm": use_batch_norm,
-        "start_from_epoch": combo.min_nb_epochs,
+        "start_from_epoch": start_from,
         "patience": patience,
+        "reduce_lr_factor": 0.5,
+        "reduce_lr_patience": 20,
+        "reduce_lr_min": 1e-5,
         "analysis_scope": analysis_scope,
         "seed": seed,
         "train_rows": int(len(x_train_norm)),
@@ -211,6 +233,7 @@ def run_training(
     config: dict[str, Any],
     type_config: ModelTypeConfig,
     progress_callback: Callable[[ProgressPayload], None] | None = None,
+    cancel_event=None,
 ) -> dict[str, TrainedModelArtifact]:
     """Execute the full grid search training pipeline in memory.
 
@@ -237,8 +260,7 @@ def run_training(
         )
 
     seed: int = int(config.get("seed", SEED))
-    tf.random.set_seed(seed)
-    np.random.seed(seed)
+    seed_everything(seed)
 
     # Prepare data
     prepared = prepare_training_data(df, type_config, config=config)
@@ -340,6 +362,12 @@ def run_training(
     total_models = len(combinations)
     if total_models == 0:
         return {}
+    _hard_cap = int(config.get("_max_grid_combinations", 100))
+    if total_models > _hard_cap:
+        raise ValueError(
+            f"Grid search would expand to {total_models} combinations; "
+            f"refuse to launch (hard cap = {_hard_cap})."
+        )
 
     results: dict[str, TrainedModelArtifact] = {}
 
@@ -369,7 +397,11 @@ def run_training(
         x_all_norm, _, _ = normalize(x_subset, on_off_subset, mu_x, sigma_x)
 
         for combo in combos:
+            if cancel_event is not None and cancel_event.is_set():
+                return results
             model_idx += 1
+            # Reseed before each fit so model-init / shuffles are reproducible
+            seed_everything(seed, enable_op_determinism=False)
             artifact = _train_single(
                 x_train_norm=x_train_norm,
                 y_train_norm=y_train_norm,
@@ -397,7 +429,20 @@ def run_training(
                 total_models=total_models,
                 model_idx=model_idx,
                 test_size=test_size,
+                cancel_event=cancel_event,
             )
             results[combo.run_name] = artifact
+            # C7: free TF state between every model (not just between feature
+            # groups) — long grids otherwise leak ~hundreds of MB on CPU.
+            import gc as _gc
+            del artifact
+            _gc.collect()
+            try:
+                tf.keras.backend.clear_session()
+            except Exception as exc:  # noqa: BLE001 — defensive
+                import logging as _l
+                _l.getLogger(__name__).warning(
+                    "clear_session after model failed: %s", exc,
+                )
 
     return results

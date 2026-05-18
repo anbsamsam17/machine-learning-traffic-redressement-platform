@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -223,14 +224,16 @@ async def generate_compteurs(body: CompteursGenerateRequest) -> CompteursRespons
         )
 
     try:
-        geojson, stats = _build_compteurs_geojson(
-            raw_df=raw_df,
-            column_mapping=body.column_mapping,
-            missing_columns_action=body.missing_columns_action,
-            missing_columns_default=body.missing_columns_default,
-            filter_flag_comptage=body.filter_flag_comptage,
-            longitude_col=body.longitude_col,
-            latitude_col=body.latitude_col,
+        # B4: heavy DataFrame + geometry processing - offload to worker thread
+        geojson, stats = await asyncio.to_thread(
+            _build_compteurs_geojson,
+            raw_df,
+            body.column_mapping,
+            body.missing_columns_action,
+            body.missing_columns_default,
+            body.filter_flag_comptage,
+            body.longitude_col,
+            body.latitude_col,
         )
     except Exception as exc:
         logger.exception("Compteurs generation failed: %s", exc)

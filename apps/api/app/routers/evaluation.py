@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html as _html
 import io
 import json
@@ -151,7 +152,15 @@ def _fmt(v, digits=2):
 
 
 def _add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute TVrmin, TVrmax, Tolerance_IN_OUT (1=in, 2=near, 3=out) exactly as original."""
+    """Compute TVrmin, TVrmax, Tolerance_IN_OUT — delegates to the
+    unified service implementation (B3).
+    """
+    from ..services.ml.evaluation_pipeline import add_tolerance_columns
+    from ..services.ml.types import TV_CONFIG
+    return add_tolerance_columns(df, TV_CONFIG)
+
+
+def _LEGACY_add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["TVr"] = pd.to_numeric(out["TVr"], errors="coerce")
 
@@ -208,7 +217,13 @@ def _add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _compute_flow_metrics(df: pd.DataFrame) -> dict:
-    """Compute flow metrics from a DataFrame with TVr and TMJABCTV columns."""
+    """Compute flow metrics — delegates to service.evaluation_pipeline (B3)."""
+    from ..services.ml.evaluation_pipeline import compute_flow_metrics
+    from ..services.ml.types import TV_CONFIG
+    return compute_flow_metrics(df, TV_CONFIG)
+
+
+def _LEGACY_compute_flow_metrics(df: pd.DataFrame) -> dict:
     d = df.copy()
     d["TMJABCTV"] = pd.to_numeric(d.get("TMJABCTV"), errors="coerce")
     d["TVr"] = pd.to_numeric(d.get("TVr"), errors="coerce")
@@ -244,14 +259,9 @@ def _compute_flow_metrics(df: pd.DataFrame) -> dict:
 
 
 def _compute_tolerance_counts(df: pd.DataFrame) -> dict:
-    """Count tolerance categories from Tolerance_IN_OUT column."""
-    tol = pd.to_numeric(df.get("Tolerance_IN_OUT"), errors="coerce")
-    return {
-        "tol_total": int(tol.notna().sum()),
-        "tol_in": int((tol == 1).sum()),
-        "tol_near": int((tol == 2).sum()),
-        "tol_out": int((tol == 3).sum()),
-    }
+    """Count Tolerance_IN_OUT — delegates to service.evaluation_pipeline (B3)."""
+    from ..services.ml.evaluation_pipeline import compute_tolerance_counts
+    return compute_tolerance_counts(df)
 
 
 def _make_barplot_html(df: pd.DataFrame, title: str) -> str:
@@ -1021,28 +1031,18 @@ $(document).ready(function(){{
 # ---------------------------------------------------------------------------
 
 def _load_model_from_dir(model_path: Path) -> tuple[Any, dict]:
-    """Load a Keras model + norm coefficients from a model directory on disk."""
+    """Load a Keras model + norm coefficients from a model directory on disk.
+
+    Uses services.ml.packaging.load_model_compat so both the new
+    .keras format and the legacy NNarchitecture.json + .weights.h5 layout
+    are supported transparently (C4).
+    """
     import os
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
-    from tensorflow.keras.models import model_from_json
-
-    arch_file = model_path / "NNarchitecture.json"
-    if not arch_file.exists():
-        raise FileNotFoundError(f"NNarchitecture.json introuvable dans {model_path}")
-
-    model_json = arch_file.read_text(encoding="utf-8")
-    model = model_from_json(model_json)
-
-    # Try both naming conventions for weights
-    weights_file = model_path / "NNweights.weights.h5"
-    if not weights_file.exists():
-        weights_file = model_path / "NNweights.h5"
-    if not weights_file.exists():
-        raise FileNotFoundError(f"Fichier de poids introuvable dans {model_path}")
-
-    model.load_weights(str(weights_file))
+    from ..services.ml.packaging import load_model_compat
+    model = load_model_compat(model_path)
 
     # Load norm coefficients
     norm_file = model_path / "NNnormCoefficients.json"
@@ -1109,8 +1109,8 @@ async def upload_validation(
                         df["lat"] = points.y
                     if "lon" not in df.columns:
                         df["lon"] = points.x
-                except Exception:
-                    pass
+                except (AttributeError, ValueError) as exc:
+                    logger.warning("Could not derive lat/lon from geometry: %s", exc)
                 df = pd.DataFrame(df.drop(columns=["geometry"]))
         else:
             # Try CSV fallback
@@ -1206,7 +1206,9 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
                 detail=f"Dossier modele introuvable : {model_path}",
             )
         try:
-            model, norm_raw, training_config = _load_model_from_dir(model_path)
+            model, norm_raw, training_config = await asyncio.to_thread(
+                _load_model_from_dir, model_path,
+            )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -1316,7 +1318,8 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
     # Normalize and predict
     x_std_safe = np.where(x_std == 0, 1.0, x_std)
     X_norm = (X - x_mean) / x_std_safe
-    y_pred_norm = model.predict(X_norm, verbose=0).flatten()
+    # B4: predict can take seconds on validation data sets - offload
+    y_pred_norm = (await asyncio.to_thread(model.predict, X_norm, verbose=0)).flatten()
     y_pred = y_pred_norm * y_std + y_mean
 
     # Compute basic API metrics

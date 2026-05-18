@@ -13,7 +13,6 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 os.environ.setdefault("TF_GPU_ALLOCATOR", "cuda_malloc_async")
 os.environ.setdefault("TF_XLA_FLAGS", "--tf_xla_enable_xla_devices=false")
-os.environ.setdefault("TF_DISABLE_SEGMENT_REDUCTION_OP_DETERMINISM_EXCEPTIONS", "1")
 
 import tensorflow as tf  # noqa: E402
 from tensorflow import keras  # noqa: E402
@@ -21,18 +20,21 @@ from tensorflow.keras import Sequential  # noqa: E402
 from tensorflow.keras.layers import Dense, Dropout  # noqa: E402
 from tensorflow.keras.optimizers import Adam  # noqa: E402
 
-# Limit TF threads — must run before TF initializes. If TF was already
-# initialized (e.g. by a previous training run in the same worker), these
-# calls raise "cannot be modified after initialization" — ignore it.
-for _setter in (
-    lambda: tf.config.threading.set_intra_op_parallelism_threads(4),
-    lambda: tf.config.threading.set_inter_op_parallelism_threads(2),
-    lambda: tf.config.optimizer.set_jit(False),
+import logging as _logging  # noqa: E402
+_mb_logger = _logging.getLogger(__name__)
+
+# Limit TF threads — must run before TF initialises. If TF was already
+# initialised (e.g. by a previous training run in the same worker), these
+# calls raise RuntimeError("cannot be modified after initialization").
+for _setter, _label in (
+    (lambda: tf.config.threading.set_intra_op_parallelism_threads(4), "intra_op_threads"),
+    (lambda: tf.config.threading.set_inter_op_parallelism_threads(2), "inter_op_threads"),
+    (lambda: tf.config.optimizer.set_jit(False), "jit_disable"),
 ):
     try:
         _setter()
-    except Exception:
-        pass
+    except RuntimeError as exc:
+        _mb_logger.debug("TF setter %s skipped (already initialised): %s", _label, exc)
 
 
 def build_model(

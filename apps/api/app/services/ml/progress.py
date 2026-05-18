@@ -88,5 +88,8 @@ class TrainingProgressCallback(keras.callbacks.Callback):
         )
         try:
             self._cb(payload)
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging as _l
+            _l.getLogger(__name__).warning(
+                "Progress callback failed at epoch %d: %s", epoch + 1, exc,
+            )

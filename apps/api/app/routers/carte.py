@@ -7,6 +7,7 @@ Reproduces the full logic from the Streamlit page 8_Generation_Carte_Debits.py:
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -189,30 +190,23 @@ def _calculer_DPLmax(JOr: float) -> float:
 
 
 def _load_model(model_path: str):
-    """Load a TensorFlow model with weights, norm coefficients, and training config."""
+    """Load a TensorFlow model with weights, norm coefficients, and training config.
+
+    Accepts both legacy (.h5 weights + JSON arch) and new (model.keras) layouts
+    via services.ml.packaging.load_model_compat (C4).
+    """
     import os
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-    from tensorflow.keras.models import model_from_json
+
+    from ..services.ml.packaging import load_model_compat
 
     p = Path(model_path)
-
-    arch_file = p / "NNarchitecture.json"
-    weights_file = p / "NNweights.h5"
-    if not weights_file.exists():
-        weights_file = p / "NNweights.weights.h5"
     norm_file = p / "NNnormCoefficients.json"
-
-    if not arch_file.exists():
-        raise FileNotFoundError(f"NNarchitecture.json introuvable dans {model_path}")
-    if not weights_file.exists():
-        raise FileNotFoundError(f"NNweights.h5 introuvable dans {model_path}")
     if not norm_file.exists():
         raise FileNotFoundError(f"NNnormCoefficients.json introuvable dans {model_path}")
 
-    with open(arch_file, "r") as f:
-        model = model_from_json(f.read())
-    model.load_weights(str(weights_file))
+    model = load_model_compat(p)
 
     with open(norm_file, "r") as f:
         norm_coefficients = json.load(f)
@@ -227,27 +221,31 @@ def _load_model(model_path: str):
 
 
 def _verify_model_structure(model_path: str) -> tuple[bool, list[str], dict | None]:
-    """Verify model directory has all required files. Returns (valid, missing, config)."""
+    """Verify model directory has all required files. Returns (valid, missing, config).
+
+    C4: accept either the new model.keras artefact or the legacy
+    NNarchitecture.json + NNweights{.weights}.h5 pair.
+    """
     p = Path(model_path)
-    required = ["NNarchitecture.json", "NNnormCoefficients.json"]
-    weight_files = ["NNweights.h5", "NNweights.weights.h5"]
+    has_native = (p / "model.keras").exists()
 
-    missing = []
-    for f in required:
-        if not (p / f).exists():
-            missing.append(f)
+    missing: list[str] = []
+    if not (p / "NNnormCoefficients.json").exists():
+        missing.append("NNnormCoefficients.json")
 
-    has_weights = any((p / w).exists() for w in weight_files)
-    if not has_weights:
-        missing.append("NNweights.h5")
+    if not has_native:
+        if not (p / "NNarchitecture.json").exists():
+            missing.append("NNarchitecture.json")
+        if not any((p / w).exists() for w in ("NNweights.h5", "NNweights.weights.h5")):
+            missing.append("NNweights.h5")
 
     config = None
     config_file = p / "training_config.json"
     if config_file.exists():
         try:
             config = json.loads(config_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to load training_config.json at %s: %s", config_file, exc)
 
     return len(missing) == 0, missing, config
 
@@ -438,12 +436,12 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
 
     # 3. Load both models
     try:
-        model_tv, coeff_tv, config_tv = _load_model(body.model_tv_dir)
+        model_tv, coeff_tv, config_tv = await asyncio.to_thread(_load_model, body.model_tv_dir)
     except (FileNotFoundError, Exception) as e:
         raise HTTPException(status_code=400, detail=f"Erreur chargement modele TV: {e}")
 
     try:
-        model_pl, coeff_pl, config_pl = _load_model(body.model_pl_dir)
+        model_pl, coeff_pl, config_pl = await asyncio.to_thread(_load_model, body.model_pl_dir)
     except (FileNotFoundError, Exception) as e:
         raise HTTPException(status_code=400, detail=f"Erreur chargement modele PL: {e}")
 
@@ -491,11 +489,22 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
     onOffNorm_tv = [1] * len(input_cols_tv)
     xNorm_tv = _my_norm(x1_tv, onOffNorm_tv, muX_tv, SX_tv)
     x_tv = np.array(xNorm_tv).astype(np.float32)
-    yestTNorm_tv = model_tv.predict(x_tv, verbose=0)
+    # B4: TF predict can take several seconds - offload to worker thread
+    yestTNorm_tv = await asyncio.to_thread(model_tv.predict, x_tv, verbose=0)
     yestT_tv = _my_denorm(yestTNorm_tv, muY_tv, SY_tv)
 
     data["TxPenTVpred"] = yestT_tv[:, 0]
     data["TMJATVred"] = data["TMJATV"] / np.abs(yestT_tv[:, 0]) * 100
+
+    # C7: release TV model resources before loading the PL model
+    del model_tv, x_tv, yestTNorm_tv
+    import gc as _gc
+    _gc.collect()
+    try:
+        import tensorflow as _tf
+        _tf.keras.backend.clear_session()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("clear_session after TV predict failed: %s", exc)
 
     # Format intermediates
     data["TMJAVL"] = pd.to_numeric(data.get("TMJAVL", 0), errors="coerce").round(1)
@@ -579,11 +588,21 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
     onOffNorm_pl = [1] * len(input_cols_pl)
     xNorm_pl = _my_norm(x1_pl, onOffNorm_pl, muX_pl, SX_pl)
     x_pl = np.array(xNorm_pl).astype(np.float32)
-    yestTNorm_pl = model_pl.predict(x_pl, verbose=0)
+    # B4: TF predict can take several seconds - offload to worker thread
+    yestTNorm_pl = await asyncio.to_thread(model_pl.predict, x_pl, verbose=0)
     yestT_pl = _my_denorm(yestTNorm_pl, muY_pl, SY_pl)
 
     data_pl["TxPenPL"] = yestT_pl[:, 0]
     data_pl["TMJAPLred"] = data_pl["TMJAPL"] / yestT_pl[:, 0] * 100
+
+    # C7: release PL model resources after predict
+    del model_pl, x_pl, yestTNorm_pl
+    _gc.collect()
+    try:
+        import tensorflow as _tf2
+        _tf2.keras.backend.clear_session()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("clear_session after PL predict failed: %s", exc)
 
     # Add PL results
     prod["DPL"] = data_pl["TMJAPLred"].round(0).values
