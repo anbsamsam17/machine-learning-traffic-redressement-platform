@@ -1,16 +1,12 @@
-import type { ReactNode } from "react";
 import { Logo } from "@/components/login/Logo";
 import { HeroSection } from "@/components/login/HeroSection";
 import { FeaturesPills } from "@/components/login/FeaturesPills";
 import { StatsBand } from "@/components/login/StatsBand";
 import { LoginForm } from "@/components/login/LoginForm";
-
-// FALLBACK STUBS — L2 will replace these with real animation components.
-// Once L2 merges `@/components/login/animations/*`, swap these imports.
-const TrafficFlowBg = () => null;
-const SignalLights = () => null;
-const NetworkGraph = () => null;
-const PageEnter = ({ children }: { children: ReactNode }) => <>{children}</>;
+import { TrafficFlowBg } from "@/components/login/animations/TrafficFlowBg";
+import { SignalLights } from "@/components/login/animations/SignalLights";
+import { NetworkGraph } from "@/components/login/animations/NetworkGraph";
+import { PageEnter } from "@/components/login/animations/PageEnter";
 
 export const metadata = {
   title: "Connexion — MDL Trafic",
