@@ -24,19 +24,20 @@ from pydantic import BaseModel
 
 from ..config import get_settings
 from ..session import session_manager
+from typing import TYPE_CHECKING
+
 from ..services.ml.grid_search import (
     build_feature_sets,
     generate_all_combinations,
 )
-from ..services.ml.packaging import build_meta, data_sha256_of
-from ..services.ml.progress import ProgressPayload
-from ..services.ml.seeding import seed_everything
-from ..services.ml.training_pipeline import (
-    SEED,
-    TrainedModelArtifact,
-    run_training,
-)
 from ..services.ml.types import PL_CONFIG, TV_CONFIG, ModelTypeConfig
+
+# Top-level constant - keep numeric default available for Pydantic field defaults
+SEED = 1750
+
+if TYPE_CHECKING:
+    from ..services.ml.progress import ProgressPayload
+    from ..services.ml.training_pipeline import TrainedModelArtifact
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/training", tags=["training"])
@@ -102,8 +103,7 @@ class TrainingConfig(BaseModel):
     use_flag_comptage_weighting: bool = True
     flag_priority_weight: float = 4.0
 
-    class Config:
-        extra = "allow"
+    model_config = {"extra": "allow"}
 
 
 class TrainingStartResponse(BaseModel):
@@ -183,7 +183,7 @@ def _make_progress_callback(task: TrainingTask, max_epochs: int):
     """Forward run_training ProgressPayload events into task.progress."""
     last_model_idx: dict[str, int | None] = {"idx": None}
 
-    def _push(p: ProgressPayload) -> None:
+    def _push(p: "ProgressPayload") -> None:
         if last_model_idx["idx"] != p.model_idx:
             last_model_idx["idx"] = p.model_idx
             task.progress.append({
@@ -209,7 +209,7 @@ def _make_progress_callback(task: TrainingTask, max_epochs: int):
 
 
 def _serialise_artifact_to_disk(
-    artifact: TrainedModelArtifact,
+    artifact: "TrainedModelArtifact",
     out_root: Path,
     *,
     seed: int,
@@ -249,7 +249,8 @@ def _serialise_artifact_to_disk(
     )
 
     try:
-        meta = build_meta(
+        from ..services.ml.packaging import build_meta as _build_meta
+        meta = _build_meta(
             seed=seed,
             data_sha256=data_sha256,
             extra={"format": "keras-native+legacy-h5"},
@@ -274,6 +275,11 @@ def _training_worker(task: TrainingTask) -> None:
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
     os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
     os.environ.setdefault("TF_XLA_FLAGS", "--tf_xla_enable_xla_devices=false")
+
+    # Lazy import (heavy TF) so the module remains importable without TF
+    from ..services.ml.packaging import data_sha256_of
+    from ..services.ml.seeding import seed_everything
+    from ..services.ml.training_pipeline import run_training
 
     try:
         task.status = "running"

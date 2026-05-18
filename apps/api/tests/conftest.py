@@ -90,5 +90,58 @@ def geojson_content() -> str:
 def _cleanup_sessions():
     """Ensure sessions are cleaned up between tests."""
     yield
-    with session_manager._lock:
-        session_manager._sessions.clear()
+    backend = getattr(session_manager, "_backend", None)
+    # Memory backend exposes ._sessions and ._lock - skip otherwise
+    if backend is not None and hasattr(backend, "_sessions") and hasattr(backend, "_lock"):
+        with backend._lock:
+            backend._sessions.clear()
+
+
+@pytest.fixture
+def csv_session_id(client, csv_content):
+    """Create a fresh session via /api/upload and return its session_id.
+
+    Used by router tests that need an existing session with a learning_df.
+    """
+    import asyncio
+    async def _get():
+        r = await client.post(
+            "/api/upload",
+            files={"file": ("data.csv", csv_content, "text/csv")},
+            data={"mode": "TV"},
+        )
+        return r.json()["session_id"]
+    return _get
+
+
+@pytest.fixture
+async def owned_session_id(client, csv_content):
+    """Eagerly-resolved session_id (already-created upstream)."""
+    r = await client.post(
+        "/api/upload",
+        files={"file": ("data.csv", csv_content, "text/csv")},
+        data={"mode": "TV"},
+    )
+    assert r.status_code == 200
+    return r.json()["session_id"]
+
+
+@pytest.fixture
+def tmp_workspace(tmp_path, monkeypatch):
+    """Override WORKSPACE_ROOT to a temporary directory for the duration of the test."""
+    from app.config import get_settings
+    monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path))
+    get_settings.cache_clear()
+    yield tmp_path
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def authenticated_client(client):
+    """Placeholder fixture for the post-A1 auth-mandatory routes.
+
+    Today the routers do not enforce authentication (E1 is parallel),
+    so this is just an alias for the standard client. After E1 lands
+    it should register + login a user and attach Bearer <token>.
+    """
+    return client

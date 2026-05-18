@@ -19,7 +19,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .training_pipeline import TrainedModelArtifact
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .training_pipeline import TrainedModelArtifact
 
 
 def build_meta(*, seed=None, data_sha256=None, extra=None):
@@ -107,7 +110,7 @@ def load_model_compat(model_dir):
     return model
 
 
-def export_model_zip(artifact: TrainedModelArtifact) -> bytes:
+def export_model_zip(artifact: "TrainedModelArtifact") -> bytes:
     buf = io.BytesIO()
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
