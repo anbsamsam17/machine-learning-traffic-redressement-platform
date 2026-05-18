@@ -1,57 +1,13 @@
-// FALLBACK Sam notify/mood — to remove after agent N merges @/lib/sam/notify
-// and @/lib/sam/store. The contract here MUST match those modules exactly so
-// pipeline pages can switch the import path without other changes.
-//
-// Once agent N has merged, swap each page's import:
-//   from "@/lib/sam-fallback"  →  "@/lib/sam/notify" / "@/lib/sam/store"
-// (or just re-export from those modules here for a single-flip swap.)
+/**
+ * Compatibility re-export shim.
+ *
+ * Pipeline pages (agent P) were briefed to import samNotify/samMood from
+ * `@/lib/sam-fallback` because their worktree was created before agent N's
+ * `@/lib/sam/notify` and `@/lib/sam/store` existed. Now that N has merged,
+ * we keep this module as a thin re-export so the page files don't need to
+ * be touched. New code should import directly from the real modules.
+ */
 
-import { toast } from "sonner";
-
-export type SamMood =
-  | "welcome"
-  | "based"
-  | "thinking"
-  | "analysing"
-  | "info"
-  | "goodjob"
-  | "error";
-
-interface NotifyOptions {
-  title?: string;
-  autoCloseMs?: number;
-  id?: string | number;
-}
-
-interface PromiseMessages {
-  loading: string;
-  success: string;
-  error: string;
-}
-
-export const samNotify = {
-  success: (m: string, opts?: NotifyOptions) =>
-    toast.success(opts?.title ? `${opts.title}: ${m}` : m, { id: opts?.id, duration: opts?.autoCloseMs }),
-  error: (m: string, opts?: NotifyOptions) =>
-    toast.error(opts?.title ? `${opts.title}: ${m}` : m, { id: opts?.id, duration: opts?.autoCloseMs }),
-  analysing: (m: string, opts?: NotifyOptions) =>
-    toast.loading(m, { id: opts?.id, duration: opts?.autoCloseMs }),
-  thinking: (m: string, opts?: NotifyOptions) =>
-    toast.loading(m, { id: opts?.id, duration: opts?.autoCloseMs }),
-  info: (m: string, opts?: NotifyOptions) =>
-    toast(m, { id: opts?.id, duration: opts?.autoCloseMs }),
-  welcome: (m: string, opts?: NotifyOptions) =>
-    toast.success(m, { id: opts?.id, duration: opts?.autoCloseMs }),
-  dismiss: (id?: string | number) => toast.dismiss(id),
-  promise: <T>(p: Promise<T>, msgs: PromiseMessages) =>
-    toast.promise(p, msgs),
-};
-
-export const samMood = {
-  set: (_mood: SamMood, _label?: string, _autoResetMs?: number): void => {
-    /* no-op in fallback; widget mounted in app/layout.tsx will pick up real impl */
-  },
-  reset: (): void => {
-    /* no-op */
-  },
-};
+export { samNotify } from "@/lib/sam/notify";
+export { samMood, useSamStore } from "@/lib/sam/store";
+export type { SamMood } from "@/lib/sam/moods";
