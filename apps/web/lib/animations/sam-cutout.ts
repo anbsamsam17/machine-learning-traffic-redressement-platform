@@ -164,6 +164,110 @@ export function samShake(el: SamTarget): SamAnim {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 5. samWorkingFocus — Concentration micro-animation                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `samWorkingFocus` — subtle "leaning into the work" pose for the **working** mood.
+ *
+ * Tilts Sam forward (-2deg rotate) with a tiny scale-up (1.02) over 200ms, then holds.
+ * Intended to be combined with `samFloat` so Sam still bobs gently while concentrated.
+ *
+ * Unlike the other one-shot helpers, this anim does NOT return to its initial state on
+ * completion — the next mood change is expected to overwrite it (via `samCleanup` +
+ * a new helper, typically dispatched by `samMoodEnter`).
+ *
+ * @param el  GSAP target
+ * @returns   MatchMedia handle — call `.revert()` to restore the pre-focus pose
+ */
+export function samWorkingFocus(el: SamTarget): SamAnim {
+  return withMotion(() => {
+    gsap.to(el, {
+      rotate: -2,
+      scale: 1.02,
+      transformOrigin: "50% 100%",
+      duration: 0.2,
+      ease: "power2.out",
+    });
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* 6. samMoodEnter — Generic dispatcher                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Aggregate of the active animations triggered by a `samMoodEnter` call. Hold this
+ * value across mood changes and call `.dispose()` (or revert each entry) before
+ * dispatching the next mood.
+ */
+export interface SamMoodHandle {
+  /** The one-shot intro anim (wave / bounce / shake / focus) — undefined for 'based'. */
+  readonly intro?: SamAnim;
+  /** The looping idle float — kept running for all moods. */
+  readonly idle: SamAnim;
+  /** Kill + revert every anim this handle owns. Idempotent. */
+  dispose(): void;
+}
+
+function makeHandle(intro: SamAnim | undefined, idle: SamAnim): SamMoodHandle {
+  let disposed = false;
+  return {
+    intro,
+    idle,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      intro?.revert();
+      idle.revert();
+    },
+  };
+}
+
+/**
+ * `samMoodEnter` — top-level dispatcher consumed by `SamAvatar`. Selects the correct
+ * intro anim for `mood`, then starts the persistent idle float. Returns a handle
+ * the caller stores in a ref; before the next mood change the caller invokes
+ * `handle.dispose()` and replaces it.
+ *
+ * Mapping:
+ *  - `welcome`  → samWave, then samFloat
+ *  - `goodjob`  → samBounce, then samFloat
+ *  - `error`    → samShake, then samFloat
+ *  - `working`  → samWorkingFocus held + samFloat under it
+ *  - `based`    → samFloat only (no intro)
+ *
+ * GSAP's matchMedia handles co-exist independently — the looping float keeps running
+ * alongside the (typically shorter) intro animation.
+ *
+ * @param el    GSAP target
+ * @param mood  Discriminator
+ * @returns     SamMoodHandle — caller must `dispose()` before next mood / on unmount
+ */
+export function samMoodEnter(el: SamTarget, mood: SamMood): SamMoodHandle {
+  let intro: SamAnim | undefined;
+  switch (mood) {
+    case "welcome":
+      intro = samWave(el);
+      break;
+    case "goodjob":
+      intro = samBounce(el);
+      break;
+    case "error":
+      intro = samShake(el);
+      break;
+    case "working":
+      intro = samWorkingFocus(el);
+      break;
+    case "based":
+      intro = undefined;
+      break;
+  }
+  const idle = samFloat(el);
+  return makeHandle(intro, idle);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 7. samCleanup — Kill all tweens on a target                                 */
 /* -------------------------------------------------------------------------- */
 
