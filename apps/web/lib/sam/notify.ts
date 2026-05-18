@@ -73,6 +73,12 @@ function fireToast(
     {
       id: opts.id,
       duration: duration === 0 ? Infinity : duration,
+      // SamToastContent draws its own surface (bubble + avatar). Disable
+      // sonner's default wrapper styling so it doesn't double-render.
+      unstyled: true,
+      classNames: {
+        toast: "bg-transparent border-none shadow-none p-0",
+      },
     },
   );
 }

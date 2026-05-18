@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { AppHeader } from "@/components/layout/app-header";
+import { SamWidget } from "@/components/avatar/SamWidget";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -39,6 +40,11 @@ export default function RootLayout({
             theme="dark"
             position="bottom-right"
             duration={4000}
+            gap={12}
+            // Sam persistent widget lives at bottom-6 right-6 (≈96px wide +
+            // 24px margin). We push the sonner stack above the widget so
+            // toasts and Sam don't overlap.
+            offset={{ bottom: 144, right: 24 }}
             toastOptions={{
               style: {
                 background: "rgba(15, 20, 40, 0.95)",
@@ -48,6 +54,7 @@ export default function RootLayout({
               },
             }}
           />
+          <SamWidget />
         </ThemeProvider>
       </body>
     </html>
