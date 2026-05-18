@@ -4,10 +4,8 @@ import * as React from "react";
 import { toast } from "sonner";
 import {
   SAM_MOOD_TOKENS,
-  SYNC_WIDGET_BY_DEFAULT,
   type SamMood,
 } from "@/lib/sam/moods";
-import { samMood } from "@/lib/sam/store";
 import { SamToastContent } from "@/components/avatar/SamToast";
 
 /**
@@ -30,15 +28,20 @@ export interface SamNotifyOptions {
   autoCloseMs?: number;
   /** Speech bubble side relative to Sam. Default "right". */
   bubbleSide?: "right" | "left";
-  /**
-   * Whether to also push the mood to the global SamWidget.
-   * Defaults to true for analysing/thinking/goodjob/error/welcome, false for info.
-   */
-  syncWidget?: boolean;
   /** Stable id to allow updating/dismissing a specific toast. */
   id?: string | number;
 }
 
+/**
+ * Architecture decision (retour 6/7): samNotify creates ONLY the toast. It does
+ * NOT mutate the SamWidget bubble. The widget bubble is reserved for the
+ * ambient page mood set by `<SamPageBinder />` from PAGE_MESSAGES — that way
+ * we never render the same Sam message twice on screen at once.
+ *
+ * If a page needs Sam's face to change in the widget for a long-running event
+ * (e.g. training spinner), call `samMood.set(mood)` explicitly — but skip the
+ * `message` argument so the bubble stays at the ambient text.
+ */
 function fireToast(
   mood: SamMood,
   message: string,
@@ -46,20 +49,6 @@ function fireToast(
 ): string | number {
   const tokens = SAM_MOOD_TOKENS[mood];
   const duration = opts.autoCloseMs ?? tokens.defaultDurationMs;
-
-  const shouldSyncWidget =
-    opts.syncWidget !== undefined
-      ? opts.syncWidget
-      : SYNC_WIDGET_BY_DEFAULT.has(mood);
-
-  if (shouldSyncWidget) {
-    // Non-persistent moods auto-reset the widget after the toast duration.
-    const widgetAutoReset =
-      duration > 0 && mood !== "analysing" && mood !== "thinking"
-        ? duration + 500
-        : undefined;
-    samMood.set(mood, message, widgetAutoReset);
-  }
 
   return toast.custom(
     (t) =>

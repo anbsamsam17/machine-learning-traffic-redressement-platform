@@ -80,7 +80,6 @@ export default function DonneesPage() {
       samNotify.analysing("Je lis ton fichier, ca prend quelques secondes...", {
         id: samToastId,
       });
-      samMood.set("analysing", "Lecture du fichier...");
 
       try {
         // Step 1: Upload file to get session_id
@@ -152,7 +151,6 @@ export default function DonneesPage() {
         samNotify.info(
           `Mapping auto detecte avec confiance ${avgConfidence}%. Verifie et confirme.`
         );
-        samMood.set("based");
         toast.success(`Fichier charge : ${uploadData.rows} lignes, ${srcCols.length} colonnes`);
 
         // Warn if critical columns are missing
@@ -169,7 +167,6 @@ export default function DonneesPage() {
         const message = err instanceof Error ? err.message : "Erreur inconnue";
         samNotify.dismiss(samToastId);
         samNotify.error(`Echec: ${message}`, { title: "Erreur" });
-        samMood.set("error", message, 6000);
         // Fallback: set empty mappings so user can map manually
         setSourceColumns([]);
         const fallbackMappings: ColumnMapping[] = TARGET_COLUMNS.map(
@@ -251,7 +248,6 @@ export default function DonneesPage() {
       }
       toast.success(`Table d'apprentissage generee : ${data.rows} lignes, ${data.columns?.length} colonnes`);
       samNotify.success("Mapping valide. Direction config !");
-      samMood.set("goodjob", "Mapping ok", 3000);
 
       // Success effects: confetti + badge
       setShowStepComplete(true);
@@ -262,7 +258,6 @@ export default function DonneesPage() {
       console.error("Validation error:", err);
       const message = err instanceof Error ? err.message : "Erreur inconnue";
       samNotify.error(`Echec: ${message}`, { title: "Validation echouee" });
-      samMood.set("error", message, 6000);
     }
   }
 

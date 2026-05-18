@@ -197,7 +197,6 @@ export default function TrainingPage() {
             `Entrainement termine — ${data.total_models ?? totalModels} modele(s), meilleure loss: ${lossStr}${outputDir ? ` — ${outputDir}` : ""}`
           );
           samNotify.success("Beau modele ! GEH dans les clous, t'es bon pour livrer.");
-          samMood.set("goodjob", "Training termine", 5000);
 
           // Success effects: ding + card pulse + banner + confetti
           playSuccessDing();
@@ -216,7 +215,6 @@ export default function TrainingPage() {
           addLog(`ERREUR : ${data.error}`, "error");
           toast.error("Entrainement echoue");
           samNotify.error("Training echoue. Console pour les details.", { title: "Erreur" });
-          samMood.set("error", failMsg.slice(0, 80), 6000);
           if (pollingRef.current) clearInterval(pollingRef.current);
         }
       } catch {
@@ -319,7 +317,6 @@ export default function TrainingPage() {
       addLog("Entrainement en cours...", "info");
       setStatus("running");
       samNotify.thinking("On itere sur le grid search. Patience, c'est bientot fini.");
-      samMood.set("thinking", "Training: 0%");
       startPolling(newTaskId);
     } catch (error) {
       const message =
@@ -329,7 +326,6 @@ export default function TrainingPage() {
       addLog(`ERREUR : ${message}`, "error");
       toast.error(`Echec : ${message}`);
       samNotify.error(`Echec: ${message}`, { title: "Training" });
-      samMood.set("error", message, 6000);
     }
   }
 
@@ -340,7 +336,6 @@ export default function TrainingPage() {
       addLog("Annulation demandee...", "info");
       toast.info("Annulation en cours");
       samNotify.info("Training annule.");
-      samMood.set("based");
     } catch {
       toast.error("Impossible d'annuler");
       samNotify.error("Impossible d'annuler le training.");

@@ -17,7 +17,6 @@ export default function ConfigPage() {
 
   // Ambient mood while user configures the grid search
   useEffect(() => {
-    samMood.set("based", "On configure le grid search.");
   }, []);
 
   // Fetch the columns from the learning table in the session
@@ -40,7 +39,6 @@ export default function ConfigPage() {
   function handleSubmit(config: TrainingConfig) {
     if (!sessionId) {
       samNotify.error("Pas de session active. Importez d'abord un fichier.");
-      samMood.set("error", "Pas de session active", 6000);
       return;
     }
 

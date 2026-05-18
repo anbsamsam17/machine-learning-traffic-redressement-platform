@@ -89,7 +89,6 @@ export default function ExtrapolationPage() {
 
   // Ambient mood on mount — invite user to load a model
   useEffect(() => {
-    samMood.set("based", "Charge un modele pour l'extrapolation.");
   }, []);
 
   // --- Upload validation file and get columns ---
@@ -100,7 +99,6 @@ export default function ExtrapolationPage() {
 
     const samToastId = "extrap-validation-upload";
     samNotify.analysing("Je verifie les donnees d'extrapolation...", { id: samToastId });
-    samMood.set("analysing", "Verification du fichier");
 
     try {
       const form = new FormData();
@@ -118,14 +116,12 @@ export default function ExtrapolationPage() {
       setFileColumns(data.columns ?? []);
 
       samNotify.dismiss(samToastId);
-      samMood.set("based");
       toast.success(`Fichier charge : ${f.name}`);
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Erreur inconnue";
       samNotify.dismiss(samToastId);
       samNotify.error(message, { title: "Extrapolation file" });
-      samMood.set("error", message, 6000);
     }
   }, [sessionId, setSessionId, mode]);
 
@@ -275,7 +271,6 @@ export default function ExtrapolationPage() {
 
     const samRunToastId = "extrap-run";
     samNotify.thinking("J'evalue le modele...", { id: samRunToastId });
-    samMood.set("analysing", "Calcul des metrics");
 
     try {
       let sid: string = sessionId ?? "";
@@ -341,7 +336,6 @@ export default function ExtrapolationPage() {
       );
       samNotify.dismiss(samRunToastId);
       samNotify.success(`Eval terminee. GEH<5: ${gehStr}%`);
-      samMood.set("goodjob", "Eval ok", 5000);
 
       setMetricsFlash(true);
       setTimeout(() => setMetricsFlash(false), 2000);
@@ -353,7 +347,6 @@ export default function ExtrapolationPage() {
       toast.error(`Erreur: ${message}`);
       samNotify.dismiss(samRunToastId);
       samNotify.error(message, { title: "Extrapolation" });
-      samMood.set("error", message.slice(0, 80), 6000);
     } finally {
       setRunning(false);
     }

@@ -107,17 +107,10 @@ function autoMap(targetKey: string, sourceColumns: string[]): string | null {
 // ═══════════════════════════════════════════════════════════════════════════
 // Page
 // ═══════════════════════════════════════════════════════════════════════════
-import { samMood } from "@/lib/sam/store";
 
 export default function CompteursPage() {
   const router = useRouter();
   const { reset, setSessionId } = useAppStore();
-
-  // Sam ambient mood for this page
-  useEffect(() => {
-    samMood.set("based", "Charge tes donnees brutes pour generer le fichier compteurs.");
-    return () => samMood.reset();
-  }, []);
 
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
