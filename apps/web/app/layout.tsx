@@ -43,9 +43,9 @@ export default function RootLayout({
             position="bottom-right"
             duration={4000}
             gap={12}
-            // SamWidget lives at fixed bottom-6 right-6 (96px + 24 margin).
+            // SamWidget lives at fixed bottom-6 right-6 (128px + 24 margin).
             // Push toast stack above the widget so they don't overlap.
-            offset={{ bottom: 144, right: 24 }}
+            offset={{ bottom: 176, right: 24 }}
             theme="dark"
             closeButton
             richColors={false}
