@@ -59,8 +59,8 @@ def _scan_models_in_dir(base: Path) -> list[ModelInfo]:
         if config_file.exists():
             try:
                 training_config = json.loads(config_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("Failed to load training_config.json at %s: %s", config_file, exc)
         models.append(ModelInfo(
             name=base.name,
             path=str(base),
@@ -88,8 +88,8 @@ def _scan_models_in_dir(base: Path) -> list[ModelInfo]:
         if config_file.exists():
             try:
                 training_config = json.loads(config_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("Failed to load training_config.json at %s: %s", config_file, exc)
 
         models.append(ModelInfo(
             name=sub.name,

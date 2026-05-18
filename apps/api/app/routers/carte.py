@@ -246,8 +246,8 @@ def _verify_model_structure(model_path: str) -> tuple[bool, list[str], dict | No
     if config_file.exists():
         try:
             config = json.loads(config_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to load training_config.json at %s: %s", config_file, exc)
 
     return len(missing) == 0, missing, config
 

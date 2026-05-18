@@ -1102,8 +1102,8 @@ async def upload_validation(
                         df["lat"] = points.y
                     if "lon" not in df.columns:
                         df["lon"] = points.x
-                except Exception:
-                    pass
+                except (AttributeError, ValueError) as exc:
+                    logger.warning("Could not derive lat/lon from geometry: %s", exc)
                 df = pd.DataFrame(df.drop(columns=["geometry"]))
         else:
             # Try CSV fallback

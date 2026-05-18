@@ -289,18 +289,15 @@ def _training_worker(task: TrainingTask) -> None:
         # These settings can only be applied before TF initializes. On the
         # second training run (or any run after model_builder.py imported TF)
         # they raise "cannot be modified after initialization" — ignore it.
-        try:
-            tf.config.threading.set_intra_op_parallelism_threads(4)
-        except Exception:
-            pass
-        try:
-            tf.config.threading.set_inter_op_parallelism_threads(2)
-        except Exception:
-            pass
-        try:
-            tf.config.optimizer.set_jit(False)  # Disable XLA JIT — prevents 5-10 min freeze
-        except Exception:
-            pass
+        for _setter, _label in (
+            (lambda: tf.config.threading.set_intra_op_parallelism_threads(4), "intra_op_threads"),
+            (lambda: tf.config.threading.set_inter_op_parallelism_threads(2), "inter_op_threads"),
+            (lambda: tf.config.optimizer.set_jit(False), "jit_disable"),
+        ):
+            try:
+                _setter()
+            except RuntimeError as exc:
+                logger.debug("TF setter %s skipped (already initialised): %s", _label, exc)
 
         task.status = "running"
         cfg = task.config
@@ -451,8 +448,8 @@ def _training_worker(task: TrainingTask) -> None:
             if fmask_idx > 0:
                 try:
                     tf.keras.backend.clear_session()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("clear_session between groups failed: %s", exc, exc_info=True)
             if task.cancelled:
                 task.status = "cancelled"
                 return

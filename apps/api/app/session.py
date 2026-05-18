@@ -162,8 +162,8 @@ class _RedisDataProxy(dict):
                 val = self._backend._deserialize_value(raw)
                 self._cache[key] = val
                 return val
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Redis get failed for key %r: %s", key, exc, exc_info=True)
         return default
 
     def __getitem__(self, key: str) -> Any:
@@ -191,8 +191,8 @@ class _RedisDataProxy(dict):
     def pop(self, key: str, *args: Any) -> Any:
         try:
             self._backend._r.delete(self._backend._data_key(self._sid, key))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Redis delete failed for key %r: %s", key, exc, exc_info=True)
         return self._cache.pop(key, *args)
 
     def update(self, *args: Any, **kwargs: Any) -> None:
