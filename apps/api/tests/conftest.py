@@ -3,19 +3,27 @@
 from __future__ import annotations
 
 import json
+import os
+import secrets
 import sys
 from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+# IMPORTANT — A4 fail-fast: settings refuse to load without a real JWT_SECRET.
+# Set a strong test secret BEFORE importing the app, and force the deployment
+# to "development" so /docs stays reachable for the existing health tests.
+os.environ.setdefault("JWT_SECRET", secrets.token_hex(32))
+os.environ.setdefault("ENVIRONMENT", "development")
+
 # Ensure the app package is importable
 api_root = Path(__file__).resolve().parent.parent
 if str(api_root) not in sys.path:
     sys.path.insert(0, str(api_root))
 
-from app.main import app
-from app.session import session_manager
+from app.main import app  # noqa: E402
+from app.session import session_manager  # noqa: E402
 
 
 @pytest.fixture
@@ -29,6 +37,30 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+async def authenticated_client(client):
+    """Async client pre-authenticated with a fresh user — Bearer header attached.
+
+    Registers a unique user per test, logs in, and injects the JWT into all
+    subsequent requests. Used by tests that exercise routers protected by
+    `Depends(get_current_user)` (A1).
+    """
+    suffix = secrets.token_hex(4)
+    email = f"pytest+{suffix}@example.com"
+    password = "test-password-12345"
+    r = await client.post("/api/auth/register", json={"email": email, "password": password})
+    assert r.status_code == 201, r.text
+    r = await client.post("/api/auth/login", json={"email": email, "password": password})
+    assert r.status_code == 200, r.text
+    token = r.json()["access_token"]
+    client.headers.update({"Authorization": f"Bearer {token}"})
+    # Expose user_id for tests that need to assert ownership
+    me = await client.get("/api/auth/me")
+    client.user_id = me.json()["user_id"]  # type: ignore[attr-defined]
+    client.user_email = email  # type: ignore[attr-defined]
+    return client
 
 
 @pytest.fixture
@@ -88,7 +120,18 @@ def geojson_content() -> str:
 
 @pytest.fixture(autouse=True)
 def _cleanup_sessions():
-    """Ensure sessions are cleaned up between tests."""
+    """Ensure sessions are cleaned up between tests.
+
+    Works against the active session backend without poking private attrs of
+    the SessionManager facade. Memory backend exposes `_sessions`; Redis
+    backend handles TTL natively.
+    """
     yield
-    with session_manager._lock:
-        session_manager._sessions.clear()
+    backend = getattr(session_manager, "_backend", None)
+    if backend is None:
+        return
+    sessions = getattr(backend, "_sessions", None)
+    lock = getattr(backend, "_lock", None)
+    if sessions is not None and lock is not None:
+        with lock:
+            sessions.clear()
