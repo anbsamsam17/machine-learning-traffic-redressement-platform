@@ -19,6 +19,45 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AuroraBg } from "@/components/backgrounds/aurora-bg";
+
+// ---------------------------------------------------------------------------
+// Sam notify/mood — fallback stub if agent N's @/lib/sam is not yet delivered.
+// When N ships, replace the locals below with:
+//   import { samNotify } from "@/lib/sam/notify";
+//   import { samMood } from "@/lib/sam/store";
+// ---------------------------------------------------------------------------
+type SamMood =
+  | "based"
+  | "thinking"
+  | "analysing"
+  | "goodjob"
+  | "error"
+  | "welcome"
+  | "info";
+
+const samNotify = {
+  success: (m: string) => toast.success(m),
+  error: (m: string) => toast.error(m),
+  analysing: (m: string) => toast.loading(m),
+  thinking: (m: string) => toast.loading(m),
+  info: (m: string) => toast(m),
+  welcome: (m: string) => toast.success(m),
+  dismiss: (id?: string | number) => toast.dismiss(id),
+  promise: <T,>(
+    p: Promise<T>,
+    msgs: { loading: string; success: string; error: string }
+  ) => toast.promise(p, msgs),
+};
+
+const samMood = {
+  set: (_mood: SamMood, _message?: string, _autoResetMs?: number) => {
+    /* no-op stub until agent N delivers the global mood widget */
+  },
+  reset: () => {
+    /* no-op */
+  },
+};
+
 import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
@@ -186,6 +225,14 @@ export default function CompteursPage() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
 
+  // ---- Sam mood on mount ----
+  useEffect(() => {
+    samMood.set("based", "Charge tes donnees brutes pour generer le fichier compteurs.");
+    return () => {
+      samMood.reset();
+    };
+  }, []);
+
   // Derived: source columns (exclude internal cols)
   const sourceColumns = useMemo(() => {
     if (!uploadResult) return [];
@@ -274,16 +321,21 @@ export default function CompteursPage() {
       setFile(f);
       setUploading(true);
       setResult(null);
+      const analysingId = samNotify.analysing("Je lis ton fichier...");
       try {
         const res = (await uploadFile("/api/upload", f, {
           mode: "TV",
         })) as UploadResult;
         setUploadResult(res);
         setSessionId(res.session_id);
-        toast.success(`${res.rows} lignes chargees depuis ${res.filename}`);
+        samNotify.dismiss(analysingId);
+        samNotify.info(
+          `Fichier charge (${res.rows.toLocaleString("fr-FR")} lignes). Configure le mapping et les colonnes.`
+        );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Erreur inconnue";
-        toast.error(msg);
+        samNotify.dismiss(analysingId);
+        samNotify.error(`Erreur upload : ${msg}`);
         setFile(null);
       } finally {
         setUploading(false);
@@ -306,6 +358,10 @@ export default function CompteursPage() {
   const handleGenerate = useCallback(async () => {
     if (!uploadResult) return;
     setGenerating(true);
+    const thinkingId = samNotify.thinking(
+      "Standardisation des colonnes et export du GeoJSON..."
+    );
+    samMood.set("thinking", "Generation compteurs...");
     try {
       // Build column_mapping (only mapped ones)
       const columnMapping: Record<string, string> = {};
@@ -331,12 +387,15 @@ export default function CompteursPage() {
         }),
       });
       setResult(res);
-      toast.success(
-        `Fichier genere : ${res.geojson_feature_count} boucles de comptage`
-      );
+      samNotify.dismiss(thinkingId);
+      const nbLoops = res.geojson_feature_count.toLocaleString("fr-FR");
+      samNotify.success(`Fichier compteurs genere. ${nbLoops} boucles standardisees.`);
+      samMood.set("goodjob", "Compteurs ok", 5000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erreur inconnue";
-      toast.error(msg);
+      samNotify.dismiss(thinkingId);
+      samNotify.error(`Generation echouee: ${msg}`);
+      samMood.set("error", msg, 6000);
     } finally {
       setGenerating(false);
     }
@@ -356,6 +415,7 @@ export default function CompteursPage() {
 
   const handleDownload = useCallback(() => {
     if (!uploadResult) return;
+    samNotify.info("Telechargement lance.");
     window.open(
       apiUrl(`/api/compteurs/download/${uploadResult.session_id}`),
       "_blank"
