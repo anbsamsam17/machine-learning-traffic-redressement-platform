@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html as _html
 import io
 import json
@@ -1198,7 +1199,9 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
                 detail=f"Dossier modele introuvable : {model_path}",
             )
         try:
-            model, norm_raw, training_config = _load_model_from_dir(model_path)
+            model, norm_raw, training_config = await asyncio.to_thread(
+                _load_model_from_dir, model_path,
+            )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -1308,7 +1311,8 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
     # Normalize and predict
     x_std_safe = np.where(x_std == 0, 1.0, x_std)
     X_norm = (X - x_mean) / x_std_safe
-    y_pred_norm = model.predict(X_norm, verbose=0).flatten()
+    # B4: predict can take seconds on validation data sets - offload
+    y_pred_norm = (await asyncio.to_thread(model.predict, X_norm, verbose=0)).flatten()
     y_pred = y_pred_norm * y_std + y_mean
 
     # Compute basic API metrics

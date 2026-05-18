@@ -7,6 +7,7 @@ Reproduces the full logic from the Streamlit page 8_Generation_Carte_Debits.py:
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -435,12 +436,12 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
 
     # 3. Load both models
     try:
-        model_tv, coeff_tv, config_tv = _load_model(body.model_tv_dir)
+        model_tv, coeff_tv, config_tv = await asyncio.to_thread(_load_model, body.model_tv_dir)
     except (FileNotFoundError, Exception) as e:
         raise HTTPException(status_code=400, detail=f"Erreur chargement modele TV: {e}")
 
     try:
-        model_pl, coeff_pl, config_pl = _load_model(body.model_pl_dir)
+        model_pl, coeff_pl, config_pl = await asyncio.to_thread(_load_model, body.model_pl_dir)
     except (FileNotFoundError, Exception) as e:
         raise HTTPException(status_code=400, detail=f"Erreur chargement modele PL: {e}")
 
@@ -488,7 +489,8 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
     onOffNorm_tv = [1] * len(input_cols_tv)
     xNorm_tv = _my_norm(x1_tv, onOffNorm_tv, muX_tv, SX_tv)
     x_tv = np.array(xNorm_tv).astype(np.float32)
-    yestTNorm_tv = model_tv.predict(x_tv, verbose=0)
+    # B4: TF predict can take several seconds - offload to worker thread
+    yestTNorm_tv = await asyncio.to_thread(model_tv.predict, x_tv, verbose=0)
     yestT_tv = _my_denorm(yestTNorm_tv, muY_tv, SY_tv)
 
     data["TxPenTVpred"] = yestT_tv[:, 0]
@@ -586,7 +588,8 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
     onOffNorm_pl = [1] * len(input_cols_pl)
     xNorm_pl = _my_norm(x1_pl, onOffNorm_pl, muX_pl, SX_pl)
     x_pl = np.array(xNorm_pl).astype(np.float32)
-    yestTNorm_pl = model_pl.predict(x_pl, verbose=0)
+    # B4: TF predict can take several seconds - offload to worker thread
+    yestTNorm_pl = await asyncio.to_thread(model_pl.predict, x_pl, verbose=0)
     yestT_pl = _my_denorm(yestTNorm_pl, muY_pl, SY_pl)
 
     data_pl["TxPenPL"] = yestT_pl[:, 0]
