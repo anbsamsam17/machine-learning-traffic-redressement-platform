@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   ChevronDown,
   Layers,
-  Zap,
   Settings2,
   Calendar,
   Pin,
@@ -13,10 +12,12 @@ import {
   Plus,
   X,
   Hash,
+  Zap,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TagInput } from "@/components/ui/tag-input";
-import { NeonButton } from "@/components/ui/neon-button";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import type { AppMode } from "@/lib/store";
 
@@ -77,6 +78,10 @@ const ARCH_MAP: Record<string, number[]> = {
   "[3, 2, 1, 0.5]": [3.0, 2.0, 1.0, 0.5],
 };
 
+// Rough average seconds per combination — used for the duration estimate in the
+// resume panel. Calibrated against typical grid runs; purely indicative.
+const SECONDS_PER_COMBINATION = 35;
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 export interface TrainingConfig {
   mode: "grid";
@@ -110,18 +115,21 @@ export interface TrainingConfig {
 
 interface ConfigFormProps {
   mode: AppMode;
-  availableColumns?: string[];  // all columns from the mapped learning table
+  availableColumns?: string[];
   onSubmit: (config: TrainingConfig) => void;
 }
 
-// ─── Accordion section ──────────────────────────────────────────────────────
+// ─── Accordion section (custom, no radix) ────────────────────────────────
+// Animates height via `auto` on open, using a measured inner ref.
 function Section({
+  id,
   title,
   icon,
   children,
   defaultOpen = true,
   badge,
 }: {
+  id: string;
   title: string;
   icon: React.ReactNode;
   children: React.ReactNode;
@@ -129,43 +137,58 @@ function Section({
   badge?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const panelId = `section-panel-${id}`;
+  const btnId = `section-trigger-${id}`;
   return (
-    <div
-      className="rounded-xl border border-white/[0.06] bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur-xl overflow-hidden"
-    >
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold text-slate-200 hover:bg-white/[0.03] transition-colors"
-      >
-        <span className="flex items-center gap-2.5">
-          {icon}
-          {title}
-          {badge && (
-            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/20">
-              {badge}
-            </span>
+    <div className="surface-elevated overflow-hidden">
+      <h3 className="m-0">
+        <button
+          id={btnId}
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setOpen((v) => !v)}
+          className={cn(
+            "w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-text",
+            "hover:bg-bg-subtle/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           )}
-        </span>
-        <div
         >
-          <ChevronDown size={16} className="text-slate-500" />
-        </div>
-      </button>
-      
-        {open && (
-          <div
-            className="overflow-hidden"
-          >
-            <div className="px-5 pb-5 space-y-4">{children}</div>
-          </div>
+          <span className="flex items-center gap-2.5">
+            <span className="text-accent [&_svg]:size-4">{icon}</span>
+            {title}
+            {badge && (
+              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-accent-subtle text-accent border border-accent/20 tabular-nums">
+                {badge}
+              </span>
+            )}
+          </span>
+          <ChevronDown
+            size={14}
+            className={cn(
+              "text-text-subtle transition-transform duration-200",
+              open && "rotate-180"
+            )}
+            aria-hidden="true"
+          />
+        </button>
+      </h3>
+      <div
+        id={panelId}
+        role="region"
+        aria-labelledby={btnId}
+        hidden={!open}
+        className={cn(
+          "border-t border-border",
+          open ? "block" : "hidden"
         )}
-      
+      >
+        <div className="px-4 py-4 space-y-4">{children}</div>
+      </div>
     </div>
   );
 }
 
-// ─── Chip toggle ────────────────────────────────────────────────────────────
+// ─── Chip toggle (sober) ────────────────────────────────────────────────────
 function Chip({
   label,
   active,
@@ -184,29 +207,33 @@ function Chip({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200",
+        "inline-flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-medium border transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         active
-          ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30 shadow-[0_0_8px_rgba(99,102,241,0.15)]"
-          : "bg-slate-800/50 text-slate-400 border-slate-700/50 hover:border-slate-600"
+          ? "bg-accent-subtle text-accent border-accent/40"
+          : "bg-bg-elevated text-text-muted border-border hover:border-border-strong hover:text-text"
       )}
     >
       {label}
       {removable && onRemove && (
         <span
+          role="button"
+          tabIndex={-1}
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
           }}
-          className="ml-0.5 hover:text-red-400 cursor-pointer"
+          className="ml-0.5 inline-flex items-center text-text-muted hover:text-danger cursor-pointer"
+          aria-label={`Retirer ${label}`}
         >
-          <X size={12} />
+          <X size={12} aria-hidden="true" />
         </span>
       )}
     </button>
   );
 }
 
-// ─── Checkbox toggle ────────────────────────────────────────────────────────
+// ─── Toggle (switch) ────────────────────────────────────────────────────────
 function Toggle({
   label,
   checked,
@@ -217,19 +244,23 @@ function Toggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2.5 cursor-pointer group">
-      <div
-        onClick={() => onChange(!checked)}
-        className={cn(
-          "w-8 h-[18px] rounded-full relative transition-colors duration-200 cursor-pointer",
-          checked ? "bg-indigo-500" : "bg-slate-700"
-        )}
-      >
-        <div
-          className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm"
+    <label className="flex items-center gap-2.5 cursor-pointer group select-none">
+      <span className="relative inline-flex">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="sr-only peer"
         />
-      </div>
-      <span className="text-xs text-slate-300 group-hover:text-slate-200 transition-colors">
+        <span className="w-8 h-[18px] rounded-full bg-bg-subtle peer-checked:bg-accent transition-colors" />
+        <span
+          className={cn(
+            "absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform duration-200",
+            checked && "translate-x-[14px]"
+          )}
+        />
+      </span>
+      <span className="text-xs text-text-muted group-hover:text-text transition-colors">
         {label}
       </span>
     </label>
@@ -256,7 +287,7 @@ function NumberInput({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium text-slate-400">{label}</label>
+      <label className="text-xs font-medium text-text-muted">{label}</label>
       <input
         type="number"
         value={value}
@@ -264,9 +295,13 @@ function NumberInput({
         max={max}
         step={step}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-full px-3 py-2 text-sm bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+        className={cn(
+          "w-full px-3 h-9 text-sm bg-bg-elevated border border-border rounded text-text",
+          "font-mono tabular-nums",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        )}
       />
-      {help && <p className="text-[10px] text-slate-500">{help}</p>}
+      {help && <p className="text-[10px] text-text-subtle">{help}</p>}
     </div>
   );
 }
@@ -292,8 +327,8 @@ function SliderInput({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-medium text-slate-400">{label}</label>
-        <span className="text-xs font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded">
+        <label className="text-xs font-medium text-text-muted">{label}</label>
+        <span className="text-xs font-mono tabular-nums text-accent bg-accent-subtle px-2 py-0.5 rounded">
           {value.toFixed(2)}
         </span>
       </div>
@@ -304,20 +339,20 @@ function SliderInput({
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1.5 rounded-full appearance-none bg-slate-700 cursor-pointer accent-indigo-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-indigo-300 [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(99,102,241,0.4)]"
+        className="w-full h-1 rounded-full appearance-none bg-bg-subtle cursor-pointer accent-accent"
       />
-      {help && <p className="text-[10px] text-slate-500">{help}</p>}
+      {help && <p className="text-[10px] text-text-subtle">{help}</p>}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Main Form
+// Main Form — 4 accordion sections + sticky resume panel
 // ═══════════════════════════════════════════════════════════════════════════
 export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps) {
   const isTv = mode !== "pl";
 
-  // ── Section 1 : Colonnes d'entree/sortie ────────────────────────────────
+  // ── Colonnes d'entree/sortie ─────────────────────────────────────────────
   const defaultCols = isTv ? DEFAULT_INPUT_COLS_TV : DEFAULT_INPUT_COLS_PL;
   const fallbackExtras = isTv ? EXTRA_INPUT_COLS_TV : EXTRA_INPUT_COLS_PL;
 
@@ -332,31 +367,26 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     isTv ? ["TxPenTVRef"] : ["TxPenPLRef"]
   );
 
-  // Available extras = all columns from the mapped table that are not already selected
-  // If availableColumns is provided (from the learning table), use those; otherwise fallback
   const allCandidates = availableColumns && availableColumns.length > 0
     ? availableColumns
     : [...defaultCols, ...fallbackExtras];
   const availableExtras = allCandidates.filter((c) => !inputCols.includes(c));
 
-  const toggleInputCol = useCallback(
-    (col: string) => {
-      setInputCols((prev) => {
-        if (prev.includes(col)) {
-          const next = prev.filter((c) => c !== col);
-          setOnOffNorm((n) => {
-            const copy = { ...n };
-            delete copy[col];
-            return copy;
-          });
-          return next;
-        }
-        setOnOffNorm((n) => ({ ...n, [col]: true }));
-        return [...prev, col];
-      });
-    },
-    []
-  );
+  const toggleInputCol = useCallback((col: string) => {
+    setInputCols((prev) => {
+      if (prev.includes(col)) {
+        const next = prev.filter((c) => c !== col);
+        setOnOffNorm((n) => {
+          const copy = { ...n };
+          delete copy[col];
+          return copy;
+        });
+        return next;
+      }
+      setOnOffNorm((n) => ({ ...n, [col]: true }));
+      return [...prev, col];
+    });
+  }, []);
 
   const addExtraCol = useCallback(
     (col: string) => {
@@ -377,7 +407,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     });
   }, []);
 
-  // ── Section 2 : Feature annee ───────────────────────────────────────────
+  // ── Feature annee ─────────────────────────────────────────────────────────
   const [useYearFeature, setUseYearFeature] = useState(false);
   const [yearColumnName, setYearColumnName] = useState("Annee");
   const [yearNormalization, setYearNormalization] = useState(false);
@@ -389,7 +419,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     { year: "2025", value: 3 },
   ]);
 
-  // ── Section 3 : Colonnes obligatoires ───────────────────────────────────
+  // ── Colonnes obligatoires ────────────────────────────────────────────────
   const defaultMandatory = isTv
     ? ["TMJAFCDTV", "TMJAFCDPL"]
     : ["TMJAFCDPL"];
@@ -398,7 +428,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   );
   const [minInputCount, setMinInputCount] = useState(isTv ? 3 : 2);
 
-  // ── Section 4 : Hyperparametres ─────────────────────────────────────────
+  // ── Hyperparametres (training) ───────────────────────────────────────────
   const [activations, setActivations] = useState<string[]>(["elu"]);
   const [learningRates, setLearningRates] = useState<string[]>(["0.01"]);
   const [losses, setLosses] = useState<string[]>(["mse"]);
@@ -406,27 +436,41 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [maxEpochs, setMaxEpochs] = useState(2050);
   const [testSize, setTestSize] = useState(0.0);
 
-  // ── Section 5 : Architecture ────────────────────────────────────────────
+  // ── Architecture ─────────────────────────────────────────────────────────
   const [selectedArchs, setSelectedArchs] = useState<string[]>(["[1, 1]"]);
   const [useBatchNorm, setUseBatchNorm] = useState(false);
   const [dropouts, setDropouts] = useState<string[]>(["0.05"]);
   const [batchSizes, setBatchSizes] = useState<string[]>(["256"]);
 
-  // ── Section 6 : Ponderation ─────────────────────────────────────────────
+  // ── Avance (seed, ponderation) ───────────────────────────────────────────
+  const [seed, setSeed] = useState(1750);
   const [useWeighting, setUseWeighting] = useState(false);
   const [flagWeight, setFlagWeight] = useState(4.0);
 
-  // ── Dropdown for extras ─────────────────────────────────────────────────
+  // ── Dropdown for extras ──────────────────────────────────────────────────
   const [showExtraDropdown, setShowExtraDropdown] = useState(false);
+  const extraDropdownRef = useRef<HTMLDivElement>(null);
 
-  // ── Compute combinations ──────────────────────────────────────────────────
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showExtraDropdown) return;
+    function onDocClick(e: MouseEvent) {
+      if (
+        extraDropdownRef.current &&
+        !extraDropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowExtraDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showExtraDropdown]);
+
+  // ── Compute combinations ─────────────────────────────────────────────────
   const combinationsCount = useMemo(() => {
-    const optionalCols = inputCols.filter(
-      (c) => !mandatoryCols.includes(c)
-    );
+    const optionalCols = inputCols.filter((c) => !mandatoryCols.includes(c));
     const minOptional = Math.max(0, minInputCount - mandatoryCols.length);
 
-    // combinations(n, k)
     function comb(n: number, k: number): number {
       if (k > n || k < 0) return 0;
       if (k === 0 || k === n) return 1;
@@ -443,7 +487,6 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     }
     featureSets = Math.max(featureSets, 1);
 
-    // Use 1 when list is empty (matches handleSubmit default fallback behavior)
     const nActivations = activations.length || 1;
     const nLr = learningRates.filter((v) => !isNaN(parseFloat(v))).length || 1;
     const nEpochs = minEpochs.filter((v) => !isNaN(parseInt(v, 10))).length || 1;
@@ -475,7 +518,18 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     batchSizes,
   ]);
 
-  // ── Submit ────────────────────────────────────────────────────────────────
+  // Estimated duration: combinations * SECONDS_PER_COMBINATION, formatted.
+  const estimatedDuration = useMemo(() => {
+    const totalSeconds = combinationsCount * SECONDS_PER_COMBINATION;
+    if (totalSeconds < 60) return `~${totalSeconds}s`;
+    const minutes = Math.round(totalSeconds / 60);
+    if (minutes < 60) return `~${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const remMin = minutes % 60;
+    return `~${hours}h${remMin > 0 ? ` ${remMin}min` : ""}`;
+  }, [combinationsCount]);
+
+  // ── Submit ───────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(() => {
     const finalInputCols = [...inputCols];
     const finalOnOff = inputCols.map((c) => onOffNorm[c] ?? true);
@@ -494,7 +548,6 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       });
     }
 
-    // Parse lists and fallback to defaults if empty
     const lrs = learningRates.map((v) => parseFloat(v)).filter((v) => !isNaN(v));
     const parsedLosses = losses.length > 0 ? losses : ["mse"];
     const eps = minEpochs.map((v) => parseInt(v, 10)).filter((v) => !isNaN(v));
@@ -549,7 +602,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       flag_comptage_col: "flag_comptage",
       flag_priority_weight: flagWeight,
       analysis_scope: "all",
-      seed: 1750,
+      seed,
     };
 
     onSubmit(config);
@@ -575,6 +628,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     batchSizes,
     useWeighting,
     flagWeight,
+    seed,
     isTv,
     onSubmit,
   ]);
@@ -584,28 +638,185 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     setMandatoryCols((prev) => prev.filter((c) => inputCols.includes(c)));
   }, [inputCols]);
 
-  // Auto-adjust minInputCount when mandatoryCols changes so it never goes below mandatoryCols.length
+  // Auto-adjust minInputCount so it never goes below mandatoryCols.length
   useEffect(() => {
     const floor = mandatoryCols.length || 1;
     setMinInputCount((prev) => Math.max(prev, floor));
   }, [mandatoryCols]);
 
   return (
-    <div className="space-y-4">
-      {/* ═══════════ Section 1 : Colonnes d'entree / sortie ═══════════ */}
-      <Section
-        title="Colonnes d'entree et de sortie"
-        icon={<Layers size={16} className="text-indigo-400" />}
-        defaultOpen
-      >
-        {/* INPUT_COLS chips */}
-        <div className="space-y-3">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+      {/* ═══════════ Left column — Accordion sections ═══════════ */}
+      <div className="space-y-3 min-w-0">
+        {/* ───── 1. Architecture ───── */}
+        <Section
+          id="architecture"
+          title="Architecture"
+          icon={<Brain />}
+          defaultOpen
+          badge={`${selectedArchs.length}`}
+        >
+          <div>
+            <label className="text-xs font-medium text-text-muted mb-2 block">
+              Architectures (neurons_factors) — facteurs multiplicateurs de N
+            </label>
+            <p className="text-[11px] text-text-subtle mb-2">
+              Chaque facteur multiplie N (= nombre de features) pour definir le nombre
+              de neurones par couche. Ex: [2, 1, 0.5] → couches de 2N, 1N, 0.5N neurones.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {PREDEFINED_ARCHS.map((arch) => {
+                const active = selectedArchs.includes(arch);
+                return (
+                  <Chip
+                    key={arch}
+                    label={arch}
+                    active={active}
+                    onClick={() =>
+                      setSelectedArchs((prev) =>
+                        active ? prev.filter((a) => a !== arch) : [...prev, arch]
+                      )
+                    }
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-text-muted mb-2 block">
+                Fonctions d&apos;activation
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {ALL_ACTIVATIONS.map((act) => {
+                  const active = activations.includes(act);
+                  return (
+                    <Chip
+                      key={act}
+                      label={act}
+                      active={active}
+                      onClick={() =>
+                        setActivations((prev) =>
+                          active ? prev.filter((a) => a !== act) : [...prev, act]
+                        )
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            <Toggle
+              label="Batch Normalization (apres chaque couche cachee)"
+              checked={useBatchNorm}
+              onChange={setUseBatchNorm}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-text-muted mb-1 block">
+              Dropout(s)
+            </label>
+            <TagInput
+              values={dropouts}
+              onChange={setDropouts}
+              placeholder="0.05, 0.1..."
+            />
+          </div>
+        </Section>
+
+        {/* ───── 2. Training ───── */}
+        <Section
+          id="training"
+          title="Training"
+          icon={<Settings2 />}
+          defaultOpen
+        >
+          <div>
+            <label className="text-xs font-medium text-text-muted mb-2 block">
+              Fonctions de perte (loss)
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {ALL_LOSSES.map((loss) => {
+                const active = losses.includes(loss);
+                return (
+                  <Chip
+                    key={loss}
+                    label={loss}
+                    active={active}
+                    onClick={() =>
+                      setLosses((prev) =>
+                        active ? prev.filter((l) => l !== loss) : [...prev, loss]
+                      )
+                    }
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-text-muted mb-1 block">
+                Learning rates
+              </label>
+              <TagInput
+                values={learningRates}
+                onChange={setLearningRates}
+                placeholder="0.01, 0.001..."
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted mb-1 block">
+                Batch size(s)
+              </label>
+              <TagInput
+                values={batchSizes}
+                onChange={setBatchSizes}
+                placeholder="256, 128..."
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-text-muted mb-1 block">
+              Min. epoques / start_from_epoch
+            </label>
+            <TagInput
+              values={minEpochs}
+              onChange={setMinEpochs}
+              placeholder="500, 1000, 2000..."
+            />
+            <p className="text-[10px] text-text-subtle mt-0.5">
+              EarlyStopping ne demarre qu&apos;apres cette epoque.
+            </p>
+          </div>
+
+          <NumberInput
+            label="Max. epoques"
+            value={maxEpochs}
+            onChange={setMaxEpochs}
+            min={100}
+            step={50}
+          />
+        </Section>
+
+        {/* ───── 3. Feature subsets ───── */}
+        <Section
+          id="features"
+          title="Feature subsets"
+          icon={<Layers />}
+          defaultOpen
+          badge={`${inputCols.length}`}
+        >
+          {/* INPUT_COLS chips */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-slate-400">
-                INPUT_COLS (colonnes d&apos;entree)
+              <label className="text-xs font-medium text-text-muted">
+                INPUT_COLS — colonnes d&apos;entree
               </label>
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-text-subtle font-mono tabular-nums">
                 {inputCols.length} selectionnees
               </span>
             </div>
@@ -620,51 +831,47 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                   onRemove={() => removeInputCol(col)}
                 />
               ))}
-              {/* Bouton Ajouter */}
-              <div className="relative">
+              <div className="relative" ref={extraDropdownRef}>
                 <button
                   type="button"
-                  onClick={() => setShowExtraDropdown(!showExtraDropdown)}
+                  onClick={() => setShowExtraDropdown((v) => !v)}
                   disabled={availableExtras.length === 0}
                   className={cn(
-                    "inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
+                    "inline-flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                     availableExtras.length > 0
-                      ? "bg-cyan-500/10 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20"
-                      : "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                      ? "bg-bg-elevated text-text-muted border-border hover:border-border-strong hover:text-text"
+                      : "bg-bg-elevated text-text-subtle border-border opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <Plus size={12} />
+                  <Plus size={12} aria-hidden="true" />
                   Ajouter
                 </button>
-                
-                  {showExtraDropdown && availableExtras.length > 0 && (
-                    <div
-                      className="absolute z-20 top-full mt-1 left-0 min-w-[220px] max-h-[240px] overflow-y-auto py-1 rounded-lg border border-slate-700/60 bg-slate-900/95 backdrop-blur-lg shadow-xl"
-                    >
-                      {availableExtras.map((col) => (
-                        <button
-                          key={col}
-                          type="button"
-                          onClick={() => {
-                            addExtraCol(col);
-                            setShowExtraDropdown(false);
-                          }}
-                          className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-indigo-500/10 hover:text-indigo-300 transition-colors"
-                        >
-                          {col}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                
+                {showExtraDropdown && availableExtras.length > 0 && (
+                  <div className="absolute z-20 top-full mt-1 left-0 min-w-[220px] max-h-[240px] overflow-y-auto py-1 rounded-md border border-border bg-bg-elevated shadow-lg">
+                    {availableExtras.map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => {
+                          addExtraCol(col);
+                          setShowExtraDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-xs text-text hover:bg-bg-subtle font-mono"
+                      >
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* OUTPUT_COLS */}
           <div>
-            <label className="text-xs font-medium text-slate-400 mb-2 block">
-              OUTPUT_COLS (colonne cible)
+            <label className="text-xs font-medium text-text-muted mb-2 block">
+              OUTPUT_COLS — colonne cible
             </label>
             <div className="flex flex-wrap gap-1.5">
               {OUTPUT_OPTIONS.map((col) => {
@@ -677,7 +884,6 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                     onClick={() =>
                       setOutputCols((prev) => {
                         if (active) {
-                          // Prevent deselecting all — at least one must remain
                           if (prev.length <= 1) return prev;
                           return prev.filter((c) => c !== col);
                         }
@@ -688,330 +894,157 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 );
               })}
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">
+            <p className="text-[10px] text-text-subtle mt-1">
               Selectionnez la ou les colonnes cibles. Au moins une requise.
             </p>
           </div>
 
           {/* Normalisation ON/OFF */}
           <div>
-            <label className="text-xs font-medium text-slate-400 mb-2 block">
+            <label className="text-xs font-medium text-text-muted mb-2 block">
               Normalisation ON/OFF par feature
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {inputCols.map((col) => (
                 <label
                   key={col}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/40 border border-slate-700/30 cursor-pointer hover:border-slate-600/50 transition-colors"
+                  className="flex items-center gap-2 px-2.5 h-8 rounded border border-border bg-bg-elevated cursor-pointer hover:border-border-strong transition-colors"
                 >
                   <input
                     type="checkbox"
                     checked={onOffNorm[col] ?? true}
                     onChange={(e) =>
-                      setOnOffNorm((n) => ({
-                        ...n,
-                        [col]: e.target.checked,
-                      }))
+                      setOnOffNorm((n) => ({ ...n, [col]: e.target.checked }))
                     }
-                    className="w-3.5 h-3.5 rounded accent-indigo-500"
+                    className="w-3.5 h-3.5 accent-accent"
                   />
-                  <span className="text-[11px] text-slate-300 truncate">
+                  <span className="text-[11px] text-text-muted truncate font-mono">
                     {col}
                   </span>
                 </label>
               ))}
             </div>
           </div>
-        </div>
-      </Section>
 
-      {/* ═══════════ Section 2 : Feature annee ═══════════ */}
-      <Section
-        title="Feature annee (optionnel)"
-        icon={<Calendar size={16} className="text-cyan-400" />}
-        defaultOpen={false}
-      >
-        <Toggle
-          label="Activer l'entree Annee"
-          checked={useYearFeature}
-          onChange={setUseYearFeature}
-        />
-
-        
-          {useYearFeature && (
-            <div
-              className="overflow-hidden space-y-3"
-            >
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-400">
-                    Colonne contenant l&apos;annee
-                  </label>
-                  <input
-                    type="text"
-                    value={yearColumnName}
-                    onChange={(e) => setYearColumnName(e.target.value)}
-                    placeholder="Annee"
-                    className="w-full px-3 py-2 text-sm bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 outline-none focus:border-indigo-500/50 transition-all"
-                  />
-                </div>
-                <div className="flex items-end pb-2">
-                  <Toggle
-                    label="Normalisation de l'annee"
-                    checked={yearNormalization}
-                    onChange={setYearNormalization}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-slate-400 mb-2 block">
-                  Mapping annee → valeur
-                </label>
-                <div className="space-y-2">
-                  {yearMapping.map((entry, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={entry.year}
-                        onChange={(e) => {
-                          const copy = [...yearMapping];
-                          copy[idx] = { ...copy[idx], year: e.target.value };
-                          setYearMapping(copy);
-                        }}
-                        placeholder="2023"
-                        className="w-24 px-2.5 py-1.5 text-xs bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 outline-none focus:border-indigo-500/50"
-                      />
-                      <span className="text-slate-500 text-xs">→</span>
-                      <input
-                        type="number"
-                        value={entry.value}
-                        onChange={(e) => {
-                          const copy = [...yearMapping];
-                          copy[idx] = {
-                            ...copy[idx],
-                            value: parseInt(e.target.value) || 0,
-                          };
-                          setYearMapping(copy);
-                        }}
-                        className="w-20 px-2.5 py-1.5 text-xs bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 outline-none focus:border-indigo-500/50"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setYearMapping((m) =>
-                            m.filter((_, i) => i !== idx)
-                          )
-                        }
-                        className="text-slate-500 hover:text-red-400 transition-colors"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setYearMapping((m) => [
-                        ...m,
-                        { year: "", value: m.length + 1 },
-                      ])
-                    }
-                    className="inline-flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
-                  >
-                    <Plus size={12} /> Ajouter une annee
-                  </button>
-                </div>
-              </div>
-
-              <p className="text-[10px] text-slate-500 italic">
-                La feature &quot;year_mapped&quot; sera automatiquement ajoutee aux colonnes
-                d&apos;entree du modele.
-              </p>
+          {/* Mandatory columns */}
+          <div className="pt-3 border-t border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <Pin size={12} className="text-text-muted" aria-hidden="true" />
+              <label className="text-xs font-medium text-text-muted">
+                Colonnes obligatoires (toujours presentes dans chaque combinaison)
+              </label>
             </div>
-          )}
-        
-      </Section>
-
-      {/* ═══════════ Section 3 : Colonnes obligatoires ═══════════ */}
-      <Section
-        title="Colonnes obligatoires grid search"
-        icon={<Pin size={16} className="text-violet-400" />}
-        defaultOpen
-      >
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-slate-400 mb-2 block">
-              Colonnes obligatoires (toujours presentes dans chaque
-              combinaison) — cliquez sur × pour retirer, utilisez le menu pour
-              ajouter
-            </label>
-            {/* Active mandatory cols with remove button */}
             <div className="flex flex-wrap gap-1.5 mb-2">
               {[...new Set(mandatoryCols)].map((col) => (
                 <span
                   key={`mandatory-${col}`}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                  className="inline-flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium font-mono bg-accent-subtle text-accent border border-accent/30"
                 >
                   {col}
                   <button
                     type="button"
                     onClick={() =>
-                      setMandatoryCols((prev) =>
-                        prev.filter((c) => c !== col)
-                      )
+                      setMandatoryCols((prev) => prev.filter((c) => c !== col))
                     }
-                    className="ml-0.5 hover:text-red-400 transition-colors"
+                    className="ml-0.5 text-accent hover:text-danger transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                    aria-label={`Retirer ${col} des obligatoires`}
                   >
-                    ×
+                    <X size={11} aria-hidden="true" />
                   </button>
                 </span>
               ))}
               {mandatoryCols.length === 0 && (
-                <span className="text-xs text-slate-600 italic">
+                <span className="text-xs text-text-subtle italic">
                   Aucune colonne obligatoire
                 </span>
               )}
             </div>
-            {/* Dropdown to add from input_cols */}
             {(() => {
-              const available = inputCols.filter(
-                (c) => !mandatoryCols.includes(c)
-              );
+              const available = inputCols.filter((c) => !mandatoryCols.includes(c));
               if (available.length === 0) return null;
               return (
-                <div className="relative inline-block">
-                  <select
-                    className="px-3 py-1.5 rounded-lg text-xs bg-slate-800/80 border border-white/[0.08] text-cyan-300 focus:outline-none focus:border-indigo-500/50 cursor-pointer appearance-none pr-7"
-                    value=""
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val) {
-                        setMandatoryCols((prev) =>
-                          prev.includes(val) ? prev : [...prev, val]
-                        );
-                      }
-                    }}
-                  >
-                    <option value="" disabled>
-                      + Ajouter une colonne obligatoire
+                <select
+                  className="px-3 h-8 rounded text-xs bg-bg-elevated border border-border text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer font-mono"
+                  value=""
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val) {
+                      setMandatoryCols((prev) =>
+                        prev.includes(val) ? prev : [...prev, val]
+                      );
+                    }
+                  }}
+                >
+                  <option value="" disabled>
+                    + Ajouter une colonne obligatoire
+                  </option>
+                  {available.map((col) => (
+                    <option key={col} value={col}>
+                      {col}
                     </option>
-                    {available.map((col) => (
-                      <option key={col} value={col}>
-                        {col}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  ))}
+                </select>
               );
             })()}
           </div>
 
+          {/* min_input_count */}
           <NumberInput
             label="Nombre minimum d'entrees (min_input_count)"
             value={minInputCount}
             onChange={setMinInputCount}
             min={mandatoryCols.length || 1}
             max={inputCols.length || 10}
-            help={`Minimum = ${mandatoryCols.length || 1} (nombre de colonnes obligatoires). Defaut ${isTv ? "TV" : "PL"} : ${isTv ? 3 : 2}.`}
+            help={`Minimum = ${mandatoryCols.length || 1} (colonnes obligatoires). Defaut ${isTv ? "TV" : "PL"} : ${isTv ? 3 : 2}.`}
           />
-        </div>
-      </Section>
 
-      {/* ═══════════ Section 4 : Hyperparametres ═══════════ */}
-      <Section
-        title="Hyperparametres grid search"
-        icon={<Settings2 size={16} className="text-cyan-400" />}
-        defaultOpen
-      >
-        <div className="space-y-4">
-          {/* Activations */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 mb-2 block">
-              Fonctions d&apos;activation
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_ACTIVATIONS.map((act) => {
-                const active = activations.includes(act);
-                return (
-                  <Chip
-                    key={act}
-                    label={act}
-                    active={active}
-                    onClick={() =>
-                      setActivations((prev) =>
-                        active
-                          ? prev.filter((a) => a !== act)
-                          : [...prev, act]
-                      )
+          {/* Auto grid summary */}
+          <div className="flex items-center gap-2 text-[11px] text-text-subtle pt-2 border-t border-border">
+            <Hash size={11} aria-hidden="true" />
+            <span>
+              Grid de feature subsets active —{" "}
+              <span className="text-text-muted font-mono tabular-nums">
+                {(() => {
+                  const optionalCols = inputCols.filter(
+                    (c) => !mandatoryCols.includes(c)
+                  );
+                  const minOptional = Math.max(0, minInputCount - mandatoryCols.length);
+                  function comb(n: number, k: number): number {
+                    if (k > n || k < 0) return 0;
+                    if (k === 0 || k === n) return 1;
+                    let r = 1;
+                    for (let i = 0; i < Math.min(k, n - k); i++) {
+                      r = (r * (n - i)) / (i + 1);
                     }
-                  />
-                );
-              })}
-            </div>
+                    return Math.round(r);
+                  }
+                  let s = 0;
+                  for (let k = minOptional; k <= optionalCols.length; k++) {
+                    s += comb(optionalCols.length, k);
+                  }
+                  return Math.max(s, 1).toLocaleString("fr-FR");
+                })()}
+              </span>{" "}
+              sous-ensembles generes.
+            </span>
           </div>
+        </Section>
 
-          {/* Learning rates */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 mb-1 block">
-              Learning rates
-            </label>
-            <TagInput
-              values={learningRates}
-              onChange={setLearningRates}
-              placeholder="0.01, 0.001..."
-            />
-          </div>
-
-          {/* Losses */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 mb-2 block">
-              Fonctions de perte (loss)
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_LOSSES.map((loss) => {
-                const active = losses.includes(loss);
-                return (
-                  <Chip
-                    key={loss}
-                    label={loss}
-                    active={active}
-                    onClick={() =>
-                      setLosses((prev) =>
-                        active
-                          ? prev.filter((l) => l !== loss)
-                          : [...prev, loss]
-                      )
-                    }
-                  />
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Min epochs */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 mb-1 block">
-              Min. epoques / start_from_epoch
-            </label>
-            <TagInput
-              values={minEpochs}
-              onChange={setMinEpochs}
-              placeholder="500, 1000, 2000..."
-            />
-            <p className="text-[10px] text-slate-500 mt-0.5">
-              EarlyStopping ne demarre qu&apos;apres cette epoque.
-            </p>
-          </div>
-
-          {/* Max epochs + Test size */}
-          <div className="grid grid-cols-2 gap-4">
+        {/* ───── 4. Avance ───── */}
+        <Section
+          id="advanced"
+          title="Avance"
+          icon={<Scale />}
+          defaultOpen={false}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <NumberInput
-              label="Max. epoques"
-              value={maxEpochs}
-              onChange={setMaxEpochs}
-              min={100}
-              step={50}
+              label="Seed (reproductibilite)"
+              value={seed}
+              onChange={setSeed}
+              min={0}
+              step={1}
+              help="Graine aleatoire pour numpy / TensorFlow."
             />
             <SliderInput
               label="Test size (fraction)"
@@ -1023,96 +1056,111 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               help="0.0 = pas de split test. 0.2 = 20% reserves pour test."
             />
           </div>
-        </div>
-      </Section>
 
-      {/* ═══════════ Section 5 : Architecture reseau ═══════════ */}
-      <Section
-        title="Architecture du reseau"
-        icon={<Brain size={16} className="text-violet-400" />}
-        defaultOpen
-      >
-        <div className="space-y-4">
-          {/* Neurons factors */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 mb-2 block">
-              Architectures (neurons_factors) — facteurs multiplicateurs de N
-            </label>
-            <p className="text-[10px] text-slate-500 mb-2">
-              Chaque facteur multiplie N (= nombre de features) pour definir
-              le nombre de neurones par couche. Ex: [2, 1, 0.5] → couches de
-              2N, 1N, 0.5N neurones.
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {PREDEFINED_ARCHS.map((arch) => {
-                const active = selectedArchs.includes(arch);
-                return (
-                  <Chip
-                    key={arch}
-                    label={arch}
-                    active={active}
-                    onClick={() =>
-                      setSelectedArchs((prev) =>
-                        active
-                          ? prev.filter((a) => a !== arch)
-                          : [...prev, arch]
-                      )
-                    }
-                  />
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Batch norm */}
-          <Toggle
-            label="Batch Normalization (BatchNorm apres chaque couche cachee)"
-            checked={useBatchNorm}
-            onChange={setUseBatchNorm}
-          />
-
-          {/* Dropouts + Batch sizes */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-slate-400 mb-1 block">
-                Dropout(s)
-              </label>
-              <TagInput
-                values={dropouts}
-                onChange={setDropouts}
-                placeholder="0.05, 0.1..."
+          {/* Feature annee */}
+          <div className="pt-3 border-t border-border space-y-3">
+            <div className="flex items-center gap-2">
+              <Calendar size={12} className="text-text-muted" aria-hidden="true" />
+              <Toggle
+                label="Activer l'entree Annee"
+                checked={useYearFeature}
+                onChange={setUseYearFeature}
               />
             </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400 mb-1 block">
-                Batch size(s)
-              </label>
-              <TagInput
-                values={batchSizes}
-                onChange={setBatchSizes}
-                placeholder="256, 128..."
-              />
-            </div>
-          </div>
-        </div>
-      </Section>
+            {useYearFeature && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-text-muted">
+                      Colonne contenant l&apos;annee
+                    </label>
+                    <input
+                      type="text"
+                      value={yearColumnName}
+                      onChange={(e) => setYearColumnName(e.target.value)}
+                      placeholder="Annee"
+                      className="w-full px-3 h-9 text-sm bg-bg-elevated border border-border rounded text-text font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    />
+                  </div>
+                  <div className="flex items-end pb-2">
+                    <Toggle
+                      label="Normalisation de l'annee"
+                      checked={yearNormalization}
+                      onChange={setYearNormalization}
+                    />
+                  </div>
+                </div>
 
-      {/* ═══════════ Section 6 : Ponderation ═══════════ */}
-      <Section
-        title="Ponderation (optionnel)"
-        icon={<Scale size={16} className="text-amber-400" />}
-        defaultOpen={false}
-      >
-        <Toggle
-          label="Activer ponderation flag_comptage"
-          checked={useWeighting}
-          onChange={setUseWeighting}
-        />
-        
-          {useWeighting && (
-            <div
-              className="overflow-hidden"
-            >
+                <div>
+                  <label className="text-xs font-medium text-text-muted mb-2 block">
+                    Mapping annee → valeur
+                  </label>
+                  <div className="space-y-2">
+                    {yearMapping.map((entry, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={entry.year}
+                          onChange={(e) => {
+                            const copy = [...yearMapping];
+                            copy[idx] = { ...copy[idx], year: e.target.value };
+                            setYearMapping(copy);
+                          }}
+                          placeholder="2023"
+                          className="w-24 px-2.5 h-8 text-xs bg-bg-elevated border border-border rounded text-text font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        />
+                        <span className="text-text-subtle text-xs">→</span>
+                        <input
+                          type="number"
+                          value={entry.value}
+                          onChange={(e) => {
+                            const copy = [...yearMapping];
+                            copy[idx] = {
+                              ...copy[idx],
+                              value: parseInt(e.target.value) || 0,
+                            };
+                            setYearMapping(copy);
+                          }}
+                          className="w-20 px-2.5 h-8 text-xs bg-bg-elevated border border-border rounded text-text font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setYearMapping((m) => m.filter((_, i) => i !== idx))
+                          }
+                          className="text-text-subtle hover:text-danger transition-colors"
+                          aria-label="Retirer cette annee"
+                        >
+                          <X size={14} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setYearMapping((m) => [
+                          ...m,
+                          { year: "", value: m.length + 1 },
+                        ])
+                      }
+                      className="inline-flex items-center gap-1 text-xs text-accent hover:underline transition-colors"
+                    >
+                      <Plus size={12} aria-hidden="true" /> Ajouter une annee
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Ponderation */}
+          <div className="pt-3 border-t border-border space-y-3">
+            <Toggle
+              label="Ponderation flag_comptage (capteurs permanents)"
+              checked={useWeighting}
+              onChange={setUseWeighting}
+            />
+            {useWeighting && (
               <NumberInput
                 label="Poids des capteurs permanents (flag=1)"
                 value={flagWeight}
@@ -1120,38 +1168,93 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 min={0}
                 step={0.5}
               />
-            </div>
-          )}
-        
-      </Section>
+            )}
+          </div>
+        </Section>
+      </div>
 
-      {/* ═══════════ Footer : compteur + bouton ═══════════ */}
-      <div
-        className="flex items-center justify-between pt-2"
+      {/* ═══════════ Right column — Sticky resume panel ═══════════ */}
+      <aside
+        className="lg:sticky lg:top-4 lg:self-start space-y-3"
+        aria-label="Resume de la configuration"
       >
-        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 backdrop-blur-sm px-5 py-3 flex items-center gap-3">
-          <Hash size={16} className="text-indigo-400" />
-          <div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">
-              Total configurations
+        <div className="surface-elevated p-4 space-y-4">
+          <div className="space-y-1">
+            <p className="text-[11px] uppercase tracking-wide text-text-muted">
+              Resume
             </p>
-            <p
-              key={combinationsCount}
-              className="text-lg font-bold font-mono text-indigo-200"
-            >
-              {combinationsCount.toLocaleString("fr-FR")}
+            <p className="text-sm text-text">
+              Grille pour le modele{" "}
+              <span className="text-accent font-mono">{isTv ? "TV" : "PL"}</span>
             </p>
           </div>
-        </div>
 
-        <NeonButton
-          type="button"
-          icon={<Zap size={16} />}
-          onClick={handleSubmit}
-        >
-          Sauvegarder &amp; Lancer l&apos;entrainement
-        </NeonButton>
-      </div>
+          <div className="space-y-3">
+            <div className="space-y-0.5">
+              <p className="text-[10px] uppercase tracking-wide text-text-subtle">
+                Combinaisons
+              </p>
+              <p
+                className="font-mono text-2xl font-semibold tabular-nums text-text leading-none"
+                aria-live="polite"
+              >
+                {combinationsCount.toLocaleString("fr-FR")}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-text-subtle">
+                  Duree estimee
+                </p>
+                <p className="font-mono tabular-nums text-text-muted mt-0.5 flex items-center gap-1">
+                  <Clock size={11} aria-hidden="true" />
+                  {estimatedDuration}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-text-subtle">
+                  Features
+                </p>
+                <p className="font-mono tabular-nums text-text-muted mt-0.5">
+                  {inputCols.length}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-text-subtle">
+                  Architectures
+                </p>
+                <p className="font-mono tabular-nums text-text-muted mt-0.5">
+                  {selectedArchs.length || 1}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-text-subtle">
+                  Activations
+                </p>
+                <p className="font-mono tabular-nums text-text-muted mt-0.5">
+                  {activations.length || 1}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            icon={<Zap size={14} />}
+            onClick={handleSubmit}
+            className="w-full"
+          >
+            Lancer le grid search
+          </Button>
+
+          <p className="text-[10px] text-text-subtle italic">
+            La duree depend du materiel et de la taille du dataset — l&apos;estimation est indicative.
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }
