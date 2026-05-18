@@ -6,7 +6,8 @@ env:
   REGISTRY: ghcr.io
   API_IMAGE: ghcr.io/${{ github.repository }}/api
   WEB_IMAGE: ghcr.io/${{ github.repository }}/web
-  WORKER_IMAGE: ghcr.io/${{ github.repository }}/worker
+  # Public production URL — inlined into the Next.js bundle at build time.
+  PROD_API_URL: https://Trafic-Tool.anbri-tools-ia.online
 
 jobs:
   lint-backend:
@@ -48,7 +49,8 @@ jobs:
       - run: cd apps/api && pytest tests/ -v --tb=short --timeout=120
         env:
           REDIS_URL: redis://localhost:6379/0
-          JWT_SECRET: ci-test-secret-key-not-for-production
+          # 32+ chars, does not contain "change-me" (satisfies the config.py validator)
+          JWT_SECRET: ci-test-secret-key-for-pytest-not-prod-do-not-reuse-1234567890
 
   build-and-push:
     runs-on: ubuntu-latest
@@ -58,6 +60,11 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # QEMU is required to build linux/arm64 from an amd64 GitHub runner.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       - uses: docker/setup-buildx-action@v3
 
@@ -69,55 +76,76 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # API image
-      - uses: docker/build-push-action@v5
+      # ----- API image (multi-arch) -----
+      - name: Build and push API (linux/amd64,linux/arm64)
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: infra/Dockerfile.api
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          provenance: false
           tags: |
             ${{ env.API_IMAGE }}:${{ github.sha }}
             ${{ env.API_IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ env.API_IMAGE }}:latest-arm64
+          cache-from: type=gha,scope=api
+          cache-to:   type=gha,mode=max,scope=api
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
 
-      # Web image
-      - uses: docker/build-push-action@v5
+      # ----- Web image (multi-arch) -----
+      - name: Build and push Web (linux/amd64,linux/arm64)
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: infra/Dockerfile.web
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          provenance: false
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ env.PROD_API_URL }}
           tags: |
             ${{ env.WEB_IMAGE }}:${{ github.sha }}
             ${{ env.WEB_IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # Worker image
-      - uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: infra/Dockerfile.worker
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          tags: |
-            ${{ env.WORKER_IMAGE }}:${{ github.sha }}
-            ${{ env.WORKER_IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ env.WEB_IMAGE }}:latest-arm64
+          cache-from: type=gha,scope=web
+          cache-to:   type=gha,mode=max,scope=web
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
 
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: production
+    environment:
+      # Configure a `production` environment in GitHub repo settings with a required reviewer
+      # so each deploy needs manual approval (one click).
+      name: production
+      url: https://Trafic-Tool.anbri-tools-ia.online
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to production
-        run: |
-          echo "Deploying images tagged ${{ github.sha }}"
-          echo "API:    ${{ env.API_IMAGE }}:${{ github.sha }}"
-          echo "Web:    ${{ env.WEB_IMAGE }}:${{ github.sha }}"
-          echo "Worker: ${{ env.WORKER_IMAGE }}:${{ github.sha }}"
-          # Add your deployment commands here, e.g.:
-          # ssh deploy@server "cd /opt/mdl && docker compose pull && docker compose up -d"
+      - name: Deploy via SSH to Oracle VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key:      ${{ secrets.ORACLE_SSH_KEY }}
+          port:     22
+          # Pull fresh images by SHA, then up -d (no rebuild, no downtime for the web service)
+          envs: GITHUB_SHA
+          script: |
+            set -euo pipefail
+            cd /opt/mdl
+            git fetch --quiet origin main
+            git checkout -q "${GITHUB_SHA}"
+            export IMAGE_TAG="${GITHUB_SHA}"
+            docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod pull
+            docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d
+            docker image prune -f
+            docker compose -f infra/docker-compose.prod.yml ps
+        env:
+          GITHUB_SHA: ${{ github.sha }}
