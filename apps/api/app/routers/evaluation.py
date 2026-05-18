@@ -144,7 +144,15 @@ def _fmt(v, digits=2):
 
 
 def _add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute TVrmin, TVrmax, Tolerance_IN_OUT (1=in, 2=near, 3=out) exactly as original."""
+    """Compute TVrmin, TVrmax, Tolerance_IN_OUT — delegates to the
+    unified service implementation (B3).
+    """
+    from ..services.ml.evaluation_pipeline import add_tolerance_columns
+    from ..services.ml.types import TV_CONFIG
+    return add_tolerance_columns(df, TV_CONFIG)
+
+
+def _LEGACY_add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["TVr"] = pd.to_numeric(out["TVr"], errors="coerce")
 
@@ -201,7 +209,13 @@ def _add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _compute_flow_metrics(df: pd.DataFrame) -> dict:
-    """Compute flow metrics from a DataFrame with TVr and TMJABCTV columns."""
+    """Compute flow metrics — delegates to service.evaluation_pipeline (B3)."""
+    from ..services.ml.evaluation_pipeline import compute_flow_metrics
+    from ..services.ml.types import TV_CONFIG
+    return compute_flow_metrics(df, TV_CONFIG)
+
+
+def _LEGACY_compute_flow_metrics(df: pd.DataFrame) -> dict:
     d = df.copy()
     d["TMJABCTV"] = pd.to_numeric(d.get("TMJABCTV"), errors="coerce")
     d["TVr"] = pd.to_numeric(d.get("TVr"), errors="coerce")
@@ -237,14 +251,9 @@ def _compute_flow_metrics(df: pd.DataFrame) -> dict:
 
 
 def _compute_tolerance_counts(df: pd.DataFrame) -> dict:
-    """Count tolerance categories from Tolerance_IN_OUT column."""
-    tol = pd.to_numeric(df.get("Tolerance_IN_OUT"), errors="coerce")
-    return {
-        "tol_total": int(tol.notna().sum()),
-        "tol_in": int((tol == 1).sum()),
-        "tol_near": int((tol == 2).sum()),
-        "tol_out": int((tol == 3).sum()),
-    }
+    """Count Tolerance_IN_OUT — delegates to service.evaluation_pipeline (B3)."""
+    from ..services.ml.evaluation_pipeline import compute_tolerance_counts
+    return compute_tolerance_counts(df)
 
 
 def _make_barplot_html(df: pd.DataFrame, title: str) -> str:
