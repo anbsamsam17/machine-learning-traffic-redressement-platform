@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+import threading  # noqa: F401 -- used in type hint string
 from typing import Any, Callable
 
 # GPU disabled before any TF import
@@ -91,6 +92,7 @@ def _train_single(
     total_models: int,
     model_idx: int,
     test_size: float,
+    cancel_event: "threading.Event | None" = None,
 ) -> TrainedModelArtifact:
     """Train one model and return an in-memory artifact."""
 
@@ -126,6 +128,12 @@ def _train_single(
     )
 
     callbacks_list: list = [early_stop, reduce_lr]
+    if cancel_event is not None:
+        class _CancelCallback(keras.callbacks.Callback):
+            def on_epoch_end(self, epoch, logs=None):
+                if cancel_event.is_set():
+                    self.model.stop_training = True
+        callbacks_list.append(_CancelCallback())
     if progress_callback is not None:
         callbacks_list.append(
             TrainingProgressCallback(
@@ -225,6 +233,7 @@ def run_training(
     config: dict[str, Any],
     type_config: ModelTypeConfig,
     progress_callback: Callable[[ProgressPayload], None] | None = None,
+    cancel_event=None,
 ) -> dict[str, TrainedModelArtifact]:
     """Execute the full grid search training pipeline in memory.
 
@@ -388,6 +397,8 @@ def run_training(
         x_all_norm, _, _ = normalize(x_subset, on_off_subset, mu_x, sigma_x)
 
         for combo in combos:
+            if cancel_event is not None and cancel_event.is_set():
+                return results
             model_idx += 1
             # Reseed before each fit so model-init / shuffles are reproducible
             seed_everything(seed, enable_op_determinism=False)
@@ -418,6 +429,7 @@ def run_training(
                 total_models=total_models,
                 model_idx=model_idx,
                 test_size=test_size,
+                cancel_event=cancel_event,
             )
             results[combo.run_name] = artifact
             # C7: free TF state between every model (not just between feature
