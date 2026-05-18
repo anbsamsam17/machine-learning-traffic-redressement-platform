@@ -1,0 +1,160 @@
+# infra/docker-compose.prod.yml
+# Production compose for Oracle Cloud Always Free ARM Ampere A1 (Ubuntu 22.04 aarch64).
+# - Caddy auto-TLS reverse proxy (only ingress 80/443)
+# - api / web pulled from GHCR (multi-arch linux/amd64,linux/arm64) OR built locally with BUILD_LOCAL=1
+# - Persistent named volumes mapped to /data/mdl_workdir and /data/redis on the host
+# - Strict healthchecks + depends_on conditions
+# - JWT_SECRET enforced (fail-fast if absent), validators reject "change-me" defaults
+#
+# Usage:
+#   cp infra/.env.prod.example infra/.env.prod   # fill JWT_SECRET (openssl rand -hex 32)
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod pull
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d
+#
+# Validate syntax (no docker daemon required if --no-interpolate skipped):
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod config
+
+name: mdl-prod
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - "redis-server"
+      - "--save"
+      - "300"
+      - "10"
+      - "--appendonly"
+      - "no"
+      - "--maxmemory"
+      - "512mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  api:
+    image: ghcr.io/anbsamsam17/anbri-tools-portfolio/api:${IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
+      - TF_CPP_MIN_LOG_LEVEL=${TF_CPP_MIN_LOG_LEVEL:-3}
+      - TF_ENABLE_ONEDNN_OPTS=0
+      - TF_XLA_FLAGS=${TF_XLA_FLAGS:---tf_xla_enable_xla_devices=false}
+      - TF_NUM_INTRAOP_THREADS=2
+      - TF_NUM_INTEROP_THREADS=1
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      # JWT_SECRET required — compose fails to start if missing
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required (32+ chars, must NOT contain change-me)}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - WORKSPACE_ROOT=${WORKSPACE_ROOT:-/data/mdl_workdir}
+      - SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS:-7200}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-500}
+      - MDL_MAX_TRAINING_MINUTES=${MAX_TRAINING_MINUTES:-60}
+      - MAX_TRAINING_MINUTES=${MAX_TRAINING_MINUTES:-60}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://Trafic-Tool.anbri-tools-ia.online}
+    volumes:
+      - type: bind
+        source: ${HOST_WORKSPACE_ROOT:-/data/mdl_workdir}
+        target: /data/mdl_workdir
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging: *default-logging
+    mem_limit: 16g
+    cpus: 3.0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  web:
+    image: ghcr.io/anbsamsam17/anbri-tools-portfolio/web:${IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      - NEXT_TELEMETRY_DISABLED=1
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
+    networks:
+      - internal
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck:
+      # Use node + http instead of curl/wget (node:alpine standalone has neither pre-installed reliably)
+      test:
+        - "CMD-SHELL"
+        - "node -e \"require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\""
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    networks:
+      - internal
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2019/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  caddy_logs:
+    driver: local
