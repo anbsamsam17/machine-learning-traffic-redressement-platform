@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl } from "@/lib/api-url";
 import { FileSpreadsheet, Wand2, Table2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { samNotify, samMood } from "@/lib/sam-fallback";
 import { DropZone } from "@/components/upload/drop-zone";
 import {
   ColumnMapper,
@@ -52,6 +53,14 @@ export default function DonneesPage() {
   const [isAutoMapping, setIsAutoMapping] = useState(false);
   const [showStepComplete, setShowStepComplete] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const welcomeShownRef = useRef(false);
+
+  // Sam welcomes the user once on mount (idempotent across HMR)
+  useEffect(() => {
+    if (welcomeShownRef.current) return;
+    welcomeShownRef.current = true;
+    samNotify.info("Glisse ton fichier ici pour commencer.");
+  }, []);
 
   const mappedCriticalCount = useMemo(() => {
     return mappings.filter(
@@ -70,6 +79,12 @@ export default function DonneesPage() {
       setFile(f);
       setFileName(f.name);
       setIsAutoMapping(true);
+
+      const samToastId = "donnees-upload";
+      samNotify.analysing("Je lis ton fichier, ca prend quelques secondes...", {
+        id: samToastId,
+      });
+      samMood.set("analysing", "Lecture du fichier...");
 
       try {
         // Step 1: Upload file to get session_id
@@ -125,6 +140,23 @@ export default function DonneesPage() {
         setMappings(autoMappings);
         setPreviewRows(uploadData.preview ?? []);
         setStep("mapping");
+
+        // Compute auto-mapping confidence
+        const totalMapped = autoMappings.filter((m) => m.source !== null).length;
+        const avgConfidence =
+          totalMapped > 0
+            ? Math.round(
+                autoMappings
+                  .filter((m) => m.source !== null)
+                  .reduce((s, m) => s + m.confidence, 0) / totalMapped
+              )
+            : 0;
+
+        samNotify.dismiss(samToastId);
+        samNotify.info(
+          `Mapping auto detecte avec confiance ${avgConfidence}%. Verifie et confirme.`
+        );
+        samMood.set("based");
         toast.success(`Fichier charge : ${uploadData.rows} lignes, ${srcCols.length} colonnes`);
 
         // Warn if critical columns are missing
@@ -138,9 +170,10 @@ export default function DonneesPage() {
         }
       } catch (err) {
         console.error("Auto-mapping error:", err);
-        toast.error(
-          "Erreur lors de l'auto-mapping. Verifiez que le backend est accessible."
-        );
+        const message = err instanceof Error ? err.message : "Erreur inconnue";
+        samNotify.dismiss(samToastId);
+        samNotify.error(`Echec: ${message}`, { title: "Erreur" });
+        samMood.set("error", message, 6000);
         // Fallback: set empty mappings so user can map manually
         setSourceColumns([]);
         const fallbackMappings: ColumnMapping[] = TARGET_COLUMNS.map(
@@ -221,6 +254,8 @@ export default function DonneesPage() {
         data.warnings.forEach((w: string) => toast.warning(w));
       }
       toast.success(`Table d'apprentissage generee : ${data.rows} lignes, ${data.columns?.length} colonnes`);
+      samNotify.success("Mapping valide. Direction config !");
+      samMood.set("goodjob", "Mapping ok", 3000);
 
       // Success effects: confetti + badge
       setShowStepComplete(true);
@@ -229,9 +264,9 @@ export default function DonneesPage() {
       }, 200);
     } catch (err) {
       console.error("Validation error:", err);
-      toast.error(
-        "Erreur lors de la validation du mapping. Verifiez que le backend est accessible."
-      );
+      const message = err instanceof Error ? err.message : "Erreur inconnue";
+      samNotify.error(`Echec: ${message}`, { title: "Validation echouee" });
+      samMood.set("error", message, 6000);
     }
   }
 
