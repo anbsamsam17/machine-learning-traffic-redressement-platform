@@ -2,51 +2,67 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { Brain, Truck, Map, Activity, Menu, X, Home, LogOut, User } from "lucide-react";
+import {
+  Brain,
+  Truck,
+  Map,
+  Activity,
+  Menu,
+  X,
+  Home,
+  LogOut,
+  User,
+  Moon,
+  Sun,
+} from "lucide-react";
+import { useTheme } from "next-themes";
 import { useAppStore, type AppMode } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { getToken, removeToken } from "@/lib/auth";
-import { apiUrl } from "@/lib/api-url";
-
+import { apiClient } from "@/lib/api";
+import type { AuthMeResponse } from "@/lib/types/api";
 
 const MODES = [
-  { key: "tv" as AppMode, label: "Modele TV", icon: Brain, path: "/donnees", color: "text-violet-400" },
-  { key: "pl" as AppMode, label: "Modele PL", icon: Truck, path: "/donnees", color: "text-cyan-400" },
-  { key: "carte" as AppMode, label: "Carte Debits", icon: Map, path: "/carte", color: "text-blue-400" },
-  { key: "compteurs" as AppMode, label: "Compteurs", icon: Activity, path: "/compteurs", color: "text-emerald-400" },
+  { key: "tv" as AppMode, label: "Modele TV", icon: Brain, path: "/donnees" },
+  { key: "pl" as AppMode, label: "Modele PL", icon: Truck, path: "/donnees" },
+  { key: "carte" as AppMode, label: "Carte", icon: Map, path: "/carte" },
+  { key: "compteurs" as AppMode, label: "Compteurs", icon: Activity, path: "/compteurs" },
 ] as const;
 
 export function AppHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const { mode, setMode, reset } = useAppStore();
+  const { theme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  const isLanding = pathname === "/";
   const isAuthPage = pathname === "/login" || pathname === "/register";
 
-  // Fetch current user email
+  useEffect(() => setMounted(true), []);
+
+  // Fetch current user email — single call per pathname change.
+  // The full TanStack migration of this hook is a follow-up; for now we
+  // gate the call behind a token check so anonymous visitors don't hit
+  // /api/auth/me on every navigation.
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
+    if (!getToken()) {
       setUserEmail(null);
       return;
     }
-    // Fetch user info — don't auto-redirect on failure (soft check)
-    const headers: HeadersInit = { Authorization: `Bearer ${token}` };
-    fetch(apiUrl("/api/auth/me"), { headers })
-      .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json();
-          setUserEmail(data.email);
-        } else {
-          setUserEmail(null);
-          // Don't remove token here — let the user stay logged in
-        }
+    let cancelled = false;
+    apiClient
+      .get<AuthMeResponse>("/api/auth/me")
+      .then((data) => {
+        if (!cancelled) setUserEmail(data.email ?? null);
       })
-      .catch(() => setUserEmail(null));
+      .catch(() => {
+        if (!cancelled) setUserEmail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   function handleModeClick(m: AppMode, path: string) {
@@ -72,25 +88,32 @@ export function AppHeader() {
     router.push("/login");
   }
 
-  // Don't show header on auth pages
+  function toggleTheme() {
+    setTheme(theme === "dark" ? "light" : "dark");
+  }
+
   if (isAuthPage) return null;
 
   return (
-    <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[rgba(8,8,18,0.92)] backdrop-blur-xl">
-      <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center justify-between gap-4">
-        {/* Logo */}
+    <header
+      role="banner"
+      className="sticky top-0 z-50 border-b border-border bg-bg/95 backdrop-blur supports-[backdrop-filter]:bg-bg/80"
+    >
+      <div className="max-w-[1600px] mx-auto px-4 h-12 flex items-center justify-between gap-3">
+        {/* Logo + breadcrumb */}
         <button
           onClick={goHome}
-          className="flex items-center gap-2 text-white hover:text-white/90 transition-colors shrink-0"
+          className="flex items-center gap-2 text-text hover:text-accent transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded px-1"
+          aria-label="Retour a l'accueil"
         >
-          <Home size={18} className="text-indigo-400" />
-          <span className="font-semibold text-sm hidden sm:block text-slate-100">
+          <Home size={16} className="text-accent" aria-hidden="true" />
+          <span className="font-semibold text-sm hidden sm:block">
             MDL Redressement
           </span>
         </button>
 
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-1">
+        <nav aria-label="Navigation principale" className="hidden md:flex items-center gap-0.5">
           {MODES.map((m) => {
             const active = mode === m.key;
             const Icon = m.icon;
@@ -98,44 +121,53 @@ export function AppHeader() {
               <button
                 key={m.key}
                 onClick={() => handleModeClick(m.key, m.path)}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                  "flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-medium transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                   active
-                    ? "bg-indigo-500/25 text-white border border-indigo-400/40"
-                    : "text-slate-300 hover:text-white hover:bg-white/[0.06]"
+                    ? "bg-accent-subtle text-accent"
+                    : "text-text-muted hover:text-text hover:bg-bg-subtle"
                 )}
               >
-                <Icon size={14} className={active ? "text-indigo-300" : m.color} />
+                <Icon size={14} aria-hidden="true" />
                 {m.label}
               </button>
             );
           })}
         </nav>
 
-        {/* Right side: mode badge + user info */}
-        <div className="hidden md:flex items-center gap-3">
-          {/* Mode badge */}
-          {!isLanding && mode && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 uppercase">
-              {mode}
-            </span>
+        {/* Right side */}
+        <div className="hidden md:flex items-center gap-2">
+          {mounted && (
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 rounded text-text-muted hover:text-text hover:bg-bg-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              aria-label={theme === "dark" ? "Activer le mode clair" : "Activer le mode sombre"}
+            >
+              {theme === "dark" ? (
+                <Sun size={14} aria-hidden="true" />
+              ) : (
+                <Moon size={14} aria-hidden="true" />
+              )}
+            </button>
           )}
 
-          {/* User email + logout */}
           {userEmail && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08]">
-                <User size={12} className="text-slate-400" />
-                <span className="text-[11px] text-slate-300 max-w-[160px] truncate">
+            <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5 px-2 h-7 rounded bg-bg-elevated border border-border">
+                <User size={12} className="text-text-muted" aria-hidden="true" />
+                <span className="text-xs text-text-muted max-w-[180px] truncate">
                   {userEmail}
                 </span>
               </div>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                className="p-1.5 rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 title="Se deconnecter"
+                aria-label="Se deconnecter"
               >
-                <LogOut size={14} />
+                <LogOut size={14} aria-hidden="true" />
               </button>
             </div>
           )}
@@ -144,66 +176,69 @@ export function AppHeader() {
         {/* Mobile burger */}
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
-          className="md:hidden text-slate-300 hover:text-white"
+          className="md:hidden p-1.5 rounded text-text-muted hover:text-text hover:bg-bg-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          aria-expanded={mobileOpen}
+          aria-label="Menu"
         >
-          {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+          {mobileOpen ? <X size={18} aria-hidden="true" /> : <Menu size={18} aria-hidden="true" />}
         </button>
       </div>
 
       {/* Mobile menu */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="md:hidden border-t border-white/[0.08] bg-[rgba(8,8,18,0.95)]"
-          >
-            <div className="p-3 space-y-1">
-              {MODES.map((m) => {
-                const active = mode === m.key;
-                const Icon = m.icon;
-                return (
-                  <button
-                    key={m.key}
-                    onClick={() => handleModeClick(m.key, m.path)}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                      active
-                        ? "bg-indigo-500/25 text-white"
-                        : "text-slate-300 hover:text-white hover:bg-white/[0.06]"
-                    )}
-                  >
-                    <Icon size={16} className={active ? "text-indigo-300" : m.color} />
-                    {m.label}
-                  </button>
-                );
-              })}
-
-              {/* Mobile user info + logout */}
-              {userEmail && (
-                <div className="pt-2 mt-2 border-t border-white/[0.08]">
-                  <div className="flex items-center justify-between px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <User size={14} className="text-slate-400" />
-                      <span className="text-xs text-slate-300 truncate max-w-[200px]">
-                        {userEmail}
-                      </span>
-                    </div>
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-red-400 hover:bg-red-500/10 transition"
-                    >
-                      <LogOut size={14} />
-                      <span>Deconnexion</span>
-                    </button>
+      {mobileOpen && (
+        <div className="md:hidden border-t border-border bg-bg-elevated">
+          <div className="p-3 space-y-1">
+            {MODES.map((m) => {
+              const active = mode === m.key;
+              const Icon = m.icon;
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => handleModeClick(m.key, m.path)}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 h-9 rounded text-sm font-medium transition-colors",
+                    active
+                      ? "bg-accent-subtle text-accent"
+                      : "text-text-muted hover:text-text hover:bg-bg-subtle"
+                  )}
+                >
+                  <Icon size={14} aria-hidden="true" />
+                  {m.label}
+                </button>
+              );
+            })}
+            {mounted && (
+              <button
+                onClick={toggleTheme}
+                className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm font-medium text-text-muted hover:text-text hover:bg-bg-subtle transition-colors"
+              >
+                {theme === "dark" ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
+                {theme === "dark" ? "Mode clair" : "Mode sombre"}
+              </button>
+            )}
+            {userEmail && (
+              <div className="pt-2 mt-2 border-t border-border">
+                <div className="flex items-center justify-between px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <User size={14} className="text-text-muted" aria-hidden="true" />
+                    <span className="text-xs text-text-muted truncate max-w-[200px]">
+                      {userEmail}
+                    </span>
                   </div>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-1 px-2 h-7 rounded text-xs text-danger hover:bg-danger/10 transition-colors"
+                  >
+                    <LogOut size={14} aria-hidden="true" />
+                    <span>Deconnexion</span>
+                  </button>
                 </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </header>
   );
 }
