@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { AppHeader } from "@/components/layout/app-header";
+import { SamPageBinder } from "@/components/avatar/SamPageBinder";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -34,6 +35,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AppHeader />
+          <SamPageBinder />
           <main className="flex-1">{children}</main>
           <Toaster
             theme="dark"
