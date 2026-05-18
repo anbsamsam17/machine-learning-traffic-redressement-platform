@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   CircleDot,
@@ -430,12 +429,9 @@ export default function CompteursPage() {
           )}
 
           {/* Upload result info */}
-          <AnimatePresence>
+          
             {uploadResult && !uploading && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
+              <div
                 className="mt-4 space-y-3"
               >
                 <div className="flex items-center gap-3 flex-wrap">
@@ -482,20 +478,17 @@ export default function CompteursPage() {
                     </span>
                   </label>
                 )}
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
+          
         </GlowCard>
 
         {/* ================================================================
             SECTION 2 : Mapping des colonnes
             ================================================================ */}
-        <AnimatePresence>
+        
           {uploadResult && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
+            <div
               className="space-y-4"
             >
               <GlowCard>
@@ -517,11 +510,7 @@ export default function CompteursPage() {
 
                 {/* Progress bar */}
                 <div className="h-1.5 rounded-full bg-surface-light overflow-hidden mb-4">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{
-                      width: `${(mappedCount / TARGET_COLUMNS.length) * 100}%`,
-                    }}
+                  <div
                     className="h-full rounded-full bg-gradient-to-r from-accent to-cyan"
                   />
                 </div>
@@ -536,11 +525,8 @@ export default function CompteursPage() {
                   {TARGET_COLUMNS.map((col, idx) => {
                     const mapped = mappings[col.key];
                     return (
-                      <motion.div
+                      <div
                         key={col.key}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.03 }}
                         className={cn(
                           "grid grid-cols-[1fr_auto_1fr] items-center gap-3 p-3 rounded-lg transition-colors",
                           mapped
@@ -604,7 +590,7 @@ export default function CompteursPage() {
                             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
                           />
                         </div>
-                      </motion.div>
+                      </div>
                     );
                   })}
                 </div>
@@ -806,19 +792,16 @@ export default function CompteursPage() {
                   </div>
                 </GlowCard>
               )}
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        
 
         {/* ================================================================
             SECTION 3 : Generation
             ================================================================ */}
-        <AnimatePresence>
+        
           {uploadResult && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
+            <div
             >
               <GlowCard>
                 <div className="flex items-center gap-2 mb-4">
@@ -873,18 +856,16 @@ export default function CompteursPage() {
                   </NeonButton>
                 </div>
               </GlowCard>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        
 
         {/* ================================================================
             RESULTS
             ================================================================ */}
-        <AnimatePresence>
+        
           {result && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+            <div
             >
               <GlowCard glowColor="accent">
                 <div className="text-center py-6 space-y-4">
@@ -973,9 +954,9 @@ export default function CompteursPage() {
                   </div>
                 </div>
               </GlowCard>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        
       </div>
     </div>
   );
