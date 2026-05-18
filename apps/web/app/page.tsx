@@ -40,153 +40,74 @@ import { HeroLanding } from "@/components/landing/HeroLanding";
 import { ModesGrid } from "@/components/landing/ModesGrid";
 import { QuickStats } from "@/components/landing/QuickStats";
 import { RecentActivity } from "@/components/landing/RecentActivity";
-import { SamZone, type SamAvatarProps } from "@/components/landing/SamZone";
+import { SamZone } from "@/components/landing/SamZone";
 import type {
   LandingContent,
   LandingMode,
   LandingModeContent,
 } from "@/components/landing/types";
+import { SamAvatar } from "@/components/avatar/SamAvatar";
+import { LandingBg } from "@/components/landing/animations/LandingBg";
+import { landingContent as R } from "@/lib/content/landing";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FALLBACK STUBS — to be replaced once sibling agents merge their modules.
-// Keep this block tightly scoped so the swap is a single import line each.
+// Adapter — bridges R's content shape with UI's component contracts.
+// R: { hero.{title,subtitle,...}, modes[].id, footer.helpLink, activity.kind }
+// UI: { title/subtitle flat, modes[].key+accent+icon, footer.helpLabel/Href, activity.id+kind }
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Stub for `@/components/avatar/SamAvatar` (agent SAM). */
-function SamAvatarStub({ message, subtitle }: SamAvatarProps) {
-  return (
-    <div className="flex items-start gap-3">
-      <div
-        aria-hidden
-        className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-indigo-400 to-cyan-400 flex items-center justify-center font-mono text-xs font-bold text-zinc-900"
-      >
-        S
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-zinc-100">{message}</p>
-        {subtitle && (
-          <p className="mt-0.5 text-[10px] text-zinc-400">{subtitle}</p>
-        )}
-      </div>
-    </div>
-  );
-}
+const MODE_VISUAL: Record<
+  string,
+  { accent: LandingModeContent["accent"]; icon: LucideIcon }
+> = {
+  tv: { accent: "indigo", icon: Brain as LucideIcon },
+  pl: { accent: "amber", icon: Truck as LucideIcon },
+  carte: { accent: "cyan", icon: MapIcon as LucideIcon },
+  compteurs: { accent: "emerald", icon: Activity as LucideIcon },
+};
 
-/** Stub for `@/components/landing/animations/LandingBg` (agent BG-LANDING). */
-function LandingBgStub() {
-  return (
-    <div
-      aria-hidden
-      className="bg-landing pointer-events-none fixed inset-0 -z-10"
-    />
-  );
-}
+const KIND_MAP: Record<string, "training" | "map" | "compteurs" | "report"> = {
+  training: "training",
+  carte: "map",
+  compteurs: "compteurs",
+  eval: "report",
+};
 
-/** Stub for `@/lib/content/landing` (agent R). */
-function buildFallbackContent(): LandingContent {
-  const modes: LandingModeContent[] = [
-    {
-      key: "tv",
-      shortTitle: "TV",
-      title: "Modele TV",
-      tagline: "Tous Vehicules",
-      description:
-        "Pipeline complet d'entrainement et d'evaluation du modele de redressement pour les vehicules legers.",
-      keyMetrics: ["MLP · XGB · RF", "Grid-search", "5-fold CV"],
-      accent: "indigo",
-      icon: Brain as LucideIcon,
-      cta: "Lancer l'analyse",
-    },
-    {
-      key: "pl",
-      shortTitle: "PL",
-      title: "Modele PL",
-      tagline: "Poids Lourds",
-      description:
-        "Meme pipeline calibre pour les flux poids-lourds — moins de stations, plus de variance.",
-      keyMetrics: ["MLP · XGB · RF", "Stratifie", "5-fold CV"],
-      accent: "amber",
-      icon: Truck as LucideIcon,
-      cta: "Lancer l'analyse",
-    },
-    {
-      key: "carte",
-      shortTitle: "CARTE",
-      title: "Carte de debits",
-      tagline: "Visualisation reseau",
-      description:
-        "Generation cartographique des debits redresses sur le reseau routier — export GeoJSON / tuiles.",
-      keyMetrics: ["MapLibre", "GeoJSON", "Tuiles MBTiles"],
-      accent: "cyan",
-      icon: MapIcon as LucideIcon,
-      cta: "Ouvrir la carte",
-    },
-    {
-      key: "compteurs",
-      shortTitle: "CPTRS",
-      title: "Boucles de comptage",
-      tagline: "Compteurs virtuels",
-      description:
-        "Construction des boucles de comptage virtuelles a partir des modeles entraines.",
-      keyMetrics: ["Sectionnement", "Agregation H", "Export CSV"],
-      accent: "emerald",
-      icon: Activity as LucideIcon,
-      cta: "Generer les boucles",
-    },
-  ];
+function buildContent(): LandingContent {
+  const modes: LandingModeContent[] = R.modes.map((m) => ({
+    key: m.id as LandingMode,
+    shortTitle: m.shortTitle,
+    title: m.title,
+    tagline: m.tagline,
+    description: m.description,
+    keyMetrics: [...m.keyMetrics],
+    accent: MODE_VISUAL[m.id].accent,
+    icon: MODE_VISUAL[m.id].icon,
+    cta: m.cta,
+  }));
 
   return {
-    eyebrow: "Plateforme interne · v2.0",
-    title: "Outils Data Engineering · Etudes Trafic",
-    subtitle:
-      "Une station de travail unifiee pour le redressement FCD : import, calibration, evaluation multi-modeles et livrables cartographiques.",
-    tagline:
-      "Tous les calculs s'executent sur le serveur. Vos donnees restent dans votre espace.",
+    eyebrow: R.hero.eyebrow,
+    title: R.hero.title,
+    subtitle: R.hero.subtitle,
+    tagline: R.hero.tagline,
     modes,
-    quickStats: [
-      { label: "Modeles", value: "3", hint: "MLP · XGB · RF" },
-      { label: "Sessions", value: "12", hint: "30 derniers jours" },
-      { label: "Stations", value: "248", hint: "TV + PL confondus" },
-      { label: "Uptime API", value: "99.9%", hint: "Rolling 7j" },
-    ],
-    recentActivity: [
-      {
-        id: "a1",
-        kind: "training",
-        title: "Entrainement TV · grid-search complet",
-        status: "success",
-        time: "il y a 12 min",
-      },
-      {
-        id: "a2",
-        kind: "map",
-        title: "Carte de debits · export GeoJSON",
-        status: "success",
-        time: "il y a 1 h",
-      },
-      {
-        id: "a3",
-        kind: "compteurs",
-        title: "Boucles virtuelles · departement 75",
-        status: "pending",
-        time: "il y a 3 h",
-      },
-      {
-        id: "a4",
-        kind: "report",
-        title: "Rapport d'evaluation PL",
-        status: "success",
-        time: "hier",
-      },
-    ],
+    quickStats: R.quickStats.map((s) => ({ ...s })),
+    recentActivity: R.recentActivity.map((a, i) => ({
+      id: `r${i + 1}`,
+      kind: KIND_MAP[a.kind] ?? "training",
+      title: a.title,
+      status: a.status as "success" | "pending" | "error",
+      time: a.time,
+    })),
     sam: {
-      welcomeBubble: "Content de te revoir, on attaque par quoi ?",
-      welcomeSubtitle: "Choisis un module a droite pour demarrer.",
+      welcomeBubble: R.sam.welcomeBubble,
+      welcomeSubtitle: R.sam.welcomeSubtitle,
     },
     footer: {
-      legal:
-        "MDL Redressement Tool · Plateforme interne · Les donnees restent confinees a votre espace.",
-      helpLabel: "Aide",
+      legal: R.footer.legal,
+      helpLabel: R.footer.helpLink.label,
+      helpHref: R.footer.helpLink.href,
     },
   };
 }
@@ -213,7 +134,7 @@ export default function HomePage() {
 
   // Re-build the fallback content once per mount. Stable identity is enough
   // for the children — no expensive transforms here.
-  const content = useMemo<LandingContent>(() => buildFallbackContent(), []);
+  const content = useMemo<LandingContent>(() => buildContent(), []);
 
   function handleModeSelect(key: LandingMode) {
     reset();
@@ -224,7 +145,7 @@ export default function HomePage() {
   return (
     <>
       {/* Animated background (full-viewport, behind everything) */}
-      <LandingBgStub />
+      <LandingBg />
 
       <main
         id="landing"
@@ -270,7 +191,7 @@ export default function HomePage() {
 
       {/* Sam floating card (fixed bottom-right) */}
       <SamZone
-        SamAvatar={SamAvatarStub}
+        SamAvatar={SamAvatar}
         message={content.sam.welcomeBubble}
         subtitle={content.sam.welcomeSubtitle}
       />
