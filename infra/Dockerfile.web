@@ -1,25 +1,44 @@
+# infra/Dockerfile.web
+# Multi-stage Next.js standalone image. Buildable for linux/amd64 AND linux/arm64.
+#
+# Base image pinned to a manifest-list digest (resolves per-arch automatically).
+# To bump:  docker buildx imagetools inspect node:20-alpine
+#
+# NEXT_PUBLIC_API_URL is inlined at build time by Next.js, so the CI must pass
+# the production URL via --build-arg (see .github/workflows/ci.yml).
+
 # ============ Stage 1: deps ============
-FROM node:20-alpine AS deps
+FROM node:20-alpine@sha256:c628bdc7ebb07d2fdaf6e1f9c2dcf9b80a0e15bbe98b06fce8d0c1f9e89f5d6c AS deps
 WORKDIR /app
 COPY apps/web/package.json apps/web/package-lock.json* ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --no-audit --no-fund
 
 # ============ Stage 2: build ============
-FROM node:20-alpine AS builder
+FROM node:20-alpine@sha256:c628bdc7ebb07d2fdaf6e1f9c2dcf9b80a0e15bbe98b06fce8d0c1f9e89f5d6c AS builder
 WORKDIR /app
+
+# NEXT_PUBLIC_* must be present at build time so Next.js inlines them into the JS bundle.
+# Default points at the production domain; CI overrides via --build-arg when needed.
+ARG NEXT_PUBLIC_API_URL=https://Trafic-Tool.anbri-tools-ia.online
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
+    NEXT_TELEMETRY_DISABLED=1 \
+    NODE_ENV=production
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY apps/web/ .
-ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ============ Stage 3: runtime ============
-FROM node:20-alpine AS runner
+FROM node:20-alpine@sha256:c628bdc7ebb07d2fdaf6e1f9c2dcf9b80a0e15bbe98b06fce8d0c1f9e89f5d6c AS runner
 WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0 \
+    PORT=3000
 
 RUN addgroup --system --gid 1001 nodejs \
-    && adduser --system --uid 1001 nextjs
+    && adduser  --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
@@ -27,5 +46,4 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 EXPOSE 3000
-ENV PORT=3000
 CMD ["node", "server.js"]
