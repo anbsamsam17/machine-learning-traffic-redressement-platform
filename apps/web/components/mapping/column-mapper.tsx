@@ -63,6 +63,11 @@ export function ColumnMapper({
     );
   }, [mappings, search]);
 
+  const progressPct =
+    targetColumns.length > 0
+      ? Math.round((mappedCount / targetColumns.length) * 100)
+      : 0;
+
   function updateMapping(target: string, source: string | null) {
     const next = mappings.map((m) =>
       m.target === target
@@ -77,21 +82,25 @@ export function ColumnMapper({
     <div className="space-y-4">
       {/* Header stats */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="glass-light px-3 py-1.5 rounded-lg text-xs font-medium">
-            <span className="text-accent">{mappedCount}</span>
-            <span className="text-muted">
-              {" "}/ {targetColumns.length} mappees
+        <div className="flex items-center gap-2">
+          <div className="bg-bg-elevated border border-border px-2.5 py-1 rounded text-xs font-medium">
+            <span className="text-accent font-mono tabular-nums">
+              {mappedCount}
+            </span>
+            <span className="text-text-muted">
+              {" "}
+              / {targetColumns.length} mappees
             </span>
             {criticalColumns.length > 0 && (
-              <span className="text-muted">
-                {" "}(dont{" "}
+              <span className="text-text-muted">
+                {" "}
+                (dont{" "}
                 <span
                   className={cn(
-                    "font-semibold",
+                    "font-mono tabular-nums font-semibold",
                     mappedCriticalCount === criticalColumns.length
-                      ? "text-emerald-400"
-                      : "text-amber-400"
+                      ? "text-success"
+                      : "text-warning"
                   )}
                 >
                   {mappedCriticalCount}/{criticalColumns.length}
@@ -100,123 +109,125 @@ export function ColumnMapper({
               </span>
             )}
           </div>
-          <div className="glass-light px-3 py-1.5 rounded-lg text-xs font-medium">
-            <span className="text-cyan">{avgConfidence}%</span>
-            <span className="text-muted"> confiance</span>
+          <div className="bg-bg-elevated border border-border px-2.5 py-1 rounded text-xs font-medium">
+            <span className="text-accent font-mono tabular-nums">
+              {avgConfidence}%
+            </span>
+            <span className="text-text-muted"> confiance</span>
           </div>
         </div>
         <div className="relative">
           <Search
             size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+            aria-hidden="true"
           />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Rechercher..."
-            className="pl-8 pr-3 py-1.5 text-xs bg-surface-light border border-border rounded-lg text-foreground placeholder:text-muted outline-none focus:border-accent/40 w-48"
+            className="pl-8 pr-3 h-8 text-xs bg-bg-elevated border border-border rounded text-text placeholder:text-text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent w-48"
           />
         </div>
       </div>
 
       {/* Progress bar */}
-      <div className="h-1.5 rounded-full bg-surface-light overflow-hidden">
+      <div
+        className="h-1 rounded-full bg-bg-subtle overflow-hidden"
+        role="progressbar"
+        aria-valuenow={progressPct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
         <div
-          className="h-full rounded-full bg-gradient-to-r from-accent to-cyan"
+          className="h-full bg-accent transition-[width] duration-300"
+          style={{ width: `${progressPct}%` }}
         />
       </div>
 
       {/* Mapping rows */}
-      <div className="space-y-1.5 max-h-[400px] overflow-y-auto pr-1">
-        
-          {filteredMappings.map((mapping, idx) => {
-            const isCritical = criticalSet.has(mapping.target);
-            const isCriticalUnmapped = isCritical && !mapping.source;
+      <div className="space-y-1 max-h-[420px] overflow-y-auto pr-1">
+        {filteredMappings.map((mapping) => {
+          const isCritical = criticalSet.has(mapping.target);
+          const isCriticalUnmapped = isCritical && !mapping.source;
 
-            return (
-              <div
-                key={mapping.target}
-                className={cn(
-                  "grid grid-cols-[1fr_auto_1fr] items-center gap-3 p-2.5 rounded-lg transition-colors",
-                  isCriticalUnmapped
-                    ? "bg-red-500/5 border border-red-500/30"
-                    : mapping.source
-                      ? "bg-accent/5 border border-accent/10"
-                      : "bg-surface-light/50 border border-transparent"
-                )}
-              >
-                {/* Target column */}
-                <div className="flex items-center gap-2 min-w-0">
-                  <div
-                    className={cn(
-                      "w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0",
-                      mapping.source
-                        ? "bg-emerald-500/20 text-emerald-400"
-                        : isCritical
-                          ? "bg-red-500/20 text-red-400"
-                          : "bg-surface-light text-muted"
-                    )}
-                  >
-                    {mapping.source ? (
-                      <Check size={10} />
-                    ) : (
-                      <AlertCircle size={10} />
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      "text-xs font-mono truncate",
-                      isCriticalUnmapped
-                        ? "text-red-400 font-semibold"
-                        : "text-foreground"
-                    )}
-                  >
-                    {mapping.target}
-                  </span>
-                  {isCritical && (
-                    <Star
-                      size={12}
-                      className={cn(
-                        "flex-shrink-0",
-                        mapping.source
-                          ? "text-amber-400 fill-amber-400"
-                          : "text-red-400 fill-red-400"
-                      )}
-                    />
-                  )}
-                </div>
-
-                {/* Arrow */}
-                <span className="text-muted text-xs">&larr;</span>
-
-                {/* Source dropdown */}
-                <select
-                  value={mapping.source ?? ""}
-                  onChange={(e) =>
-                    updateMapping(
-                      mapping.target,
-                      e.target.value || null
-                    )
-                  }
+          return (
+            <div
+              key={mapping.target}
+              className={cn(
+                "grid grid-cols-[1fr_auto_1fr] items-center gap-3 p-2 rounded border transition-colors",
+                isCriticalUnmapped
+                  ? "bg-danger/5 border-danger/30"
+                  : mapping.source
+                    ? "bg-bg-elevated border-border"
+                    : "bg-bg-elevated/50 border-transparent"
+              )}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <div
                   className={cn(
-                    "text-xs bg-surface border rounded-lg px-2 py-1.5 text-foreground outline-none focus:border-accent/40 cursor-pointer truncate",
-                    isCriticalUnmapped
-                      ? "border-red-500/40"
-                      : "border-border"
+                    "w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0",
+                    mapping.source
+                      ? "bg-success/15 text-success"
+                      : isCritical
+                        ? "bg-danger/15 text-danger"
+                        : "bg-bg-subtle text-text-muted"
                   )}
                 >
-                  <option value="">-- Non mappe --</option>
-                  {sourceColumns.map((col) => (
-                    <option key={col} value={col}>
-                      {col}
-                    </option>
-                  ))}
-                </select>
+                  {mapping.source ? (
+                    <Check size={10} aria-hidden="true" />
+                  ) : (
+                    <AlertCircle size={10} aria-hidden="true" />
+                  )}
+                </div>
+                <span
+                  className={cn(
+                    "text-xs font-mono truncate",
+                    isCriticalUnmapped
+                      ? "text-danger font-semibold"
+                      : "text-text"
+                  )}
+                >
+                  {mapping.target}
+                </span>
+                {isCritical && (
+                  <Star
+                    size={11}
+                    className={cn(
+                      "flex-shrink-0",
+                      mapping.source
+                        ? "text-warning fill-warning"
+                        : "text-danger fill-danger"
+                    )}
+                    aria-hidden="true"
+                  />
+                )}
               </div>
-            );
-          })}
-        
+
+              <span className="text-text-subtle text-xs">&larr;</span>
+
+              <select
+                value={mapping.source ?? ""}
+                onChange={(e) =>
+                  updateMapping(mapping.target, e.target.value || null)
+                }
+                className={cn(
+                  "text-xs h-8 bg-bg-elevated border rounded px-2 text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer truncate font-mono",
+                  isCriticalUnmapped ? "border-danger/40" : "border-border"
+                )}
+                aria-label={`Source pour ${mapping.target}`}
+              >
+                <option value="">-- Non mappe --</option>
+                {sourceColumns.map((col) => (
+                  <option key={col} value={col}>
+                    {col}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
