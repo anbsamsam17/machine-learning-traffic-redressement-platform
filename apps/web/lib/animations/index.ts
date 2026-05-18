@@ -5,10 +5,12 @@
  * module so we have a single migration point if the helpers are split further.
  */
 export {
+  samAppear,
   samBounce,
   samCleanup,
   samFloat,
   samMoodEnter,
+  samPulse,
   samShake,
   samWave,
   samWorkingFocus,

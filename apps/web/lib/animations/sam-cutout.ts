@@ -268,6 +268,65 @@ export function samMoodEnter(el: SamTarget, mood: SamMood): SamMoodHandle {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Bonus: samPulse — Attention pulse                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `samPulse` — soft "look at me" pulse for notifications / pending state.
+ *
+ * Animates scale 1 → 1.05 → 1 alongside opacity 1 → 0.85 → 1 in a 1.4s loop. Cheap,
+ * looped, doubles as a discreet "Sam has something to say" signal. Combine with a
+ * dot/badge in the UI if a stronger affordance is needed.
+ *
+ * @param el  GSAP target
+ * @returns   MatchMedia handle — `.revert()` to stop and reset
+ */
+export function samPulse(el: SamTarget): SamAnim {
+  return withMotion(() => {
+    gsap.to(el, {
+      scale: 1.05,
+      opacity: 0.85,
+      transformOrigin: "50% 50%",
+      duration: 0.7,
+      ease: "sine.inOut",
+      yoyo: true,
+      repeat: -1,
+    });
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Bonus: samAppear — Initial mount apparition                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `samAppear` — entrance animation when Sam first mounts into the DOM.
+ *
+ * Slides in from the right (+24px → 0) while fading + scaling up (0.9 → 1) with a
+ * `back.out(1.5)` ease over 800ms. Plays once. Combine with a subsequent
+ * `samMoodEnter` (e.g. via `gsap.delayedCall` or onComplete on the returned handle).
+ *
+ * @param el  GSAP target
+ * @returns   MatchMedia handle
+ */
+export function samAppear(el: SamTarget): SamAnim {
+  return withMotion(() => {
+    gsap.fromTo(
+      el,
+      { x: 24, opacity: 0, scale: 0.9 },
+      {
+        x: 0,
+        opacity: 1,
+        scale: 1,
+        transformOrigin: "50% 100%",
+        duration: 0.8,
+        ease: "back.out(1.5)",
+      },
+    );
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /* 7. samCleanup — Kill all tweens on a target                                 */
 /* -------------------------------------------------------------------------- */
 
