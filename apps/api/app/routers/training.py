@@ -745,6 +745,16 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
 
     combos = _build_combinations(config_dict)
     total = len(combos)
+    if total > settings.MAX_GRID_COMBINATIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Grid search demanderait {total} combinaisons, "
+                f"limite serveur MAX_GRID_COMBINATIONS={settings.MAX_GRID_COMBINATIONS}. "
+                "Reduisez les axes (activations, learning_rates, neurons_factors_list, batch_sizes, ...) "
+                "ou desactivez feature_subset_grid."
+            ),
+        )
 
     task_id = uuid.uuid4().hex[:12]
     task = TrainingTask(

@@ -353,6 +353,12 @@ def run_training(
     total_models = len(combinations)
     if total_models == 0:
         return {}
+    _hard_cap = int(config.get("_max_grid_combinations", 100))
+    if total_models > _hard_cap:
+        raise ValueError(
+            f"Grid search would expand to {total_models} combinations; "
+            f"refuse to launch (hard cap = {_hard_cap})."
+        )
 
     results: dict[str, TrainedModelArtifact] = {}
 
@@ -414,5 +420,17 @@ def run_training(
                 test_size=test_size,
             )
             results[combo.run_name] = artifact
+            # C7: free TF state between every model (not just between feature
+            # groups) — long grids otherwise leak ~hundreds of MB on CPU.
+            import gc as _gc
+            del artifact
+            _gc.collect()
+            try:
+                tf.keras.backend.clear_session()
+            except Exception as exc:  # noqa: BLE001 — defensive
+                import logging as _l
+                _l.getLogger(__name__).warning(
+                    "clear_session after model failed: %s", exc,
+                )
 
     return results

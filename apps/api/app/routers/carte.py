@@ -497,6 +497,16 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
     data["TxPenTVpred"] = yestT_tv[:, 0]
     data["TMJATVred"] = data["TMJATV"] / np.abs(yestT_tv[:, 0]) * 100
 
+    # C7: release TV model resources before loading the PL model
+    del model_tv, x_tv, yestTNorm_tv
+    import gc as _gc
+    _gc.collect()
+    try:
+        import tensorflow as _tf
+        _tf.keras.backend.clear_session()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("clear_session after TV predict failed: %s", exc)
+
     # Format intermediates
     data["TMJAVL"] = pd.to_numeric(data.get("TMJAVL", 0), errors="coerce").round(1)
     data["TMJAPL"] = pd.to_numeric(data["TMJAPL"], errors="coerce").round(1)
@@ -584,6 +594,15 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
 
     data_pl["TxPenPL"] = yestT_pl[:, 0]
     data_pl["TMJAPLred"] = data_pl["TMJAPL"] / yestT_pl[:, 0] * 100
+
+    # C7: release PL model resources after predict
+    del model_pl, x_pl, yestTNorm_pl
+    _gc.collect()
+    try:
+        import tensorflow as _tf2
+        _tf2.keras.backend.clear_session()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("clear_session after PL predict failed: %s", exc)
 
     # Add PL results
     prod["DPL"] = data_pl["TMJAPLred"].round(0).values
