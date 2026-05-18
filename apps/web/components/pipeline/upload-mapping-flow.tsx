@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
 import { useAppStore } from "@/lib/store";
 import { apiClient, ApiError } from "@/lib/api";
+import { useUploadFile } from "@/lib/hooks";
 
 export interface UploadMappingFlowProps {
   /** Pipeline mode — passed to /api/upload */
@@ -91,6 +92,7 @@ export function UploadMappingFlow({
   headerSlot,
 }: UploadMappingFlowProps) {
   const { setFileName } = useAppStore();
+  const uploadMut = useUploadFile<UploadResponse>();
   const [file, setFile] = useState<File | null>(null);
   const [sourceColumns, setSourceColumns] = useState<string[]>([]);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
@@ -122,14 +124,12 @@ export function UploadMappingFlow({
       setIsAutoMapping(true);
 
       try {
-        // 1. Upload
-        const form = new FormData();
-        form.append("file", f);
-        form.append("mode", mode);
-        const uploadData = await apiClient.postForm<UploadResponse>(
-          "/api/upload",
-          form
-        );
+        // 1. Upload via TanStack mutation
+        const uploadData = await uploadMut.mutateAsync({
+          file: f,
+          path: "/api/upload",
+          extra: { mode },
+        });
         const sessionId = uploadData.session_id;
         useAppStore.getState().setSessionId(sessionId);
 
@@ -183,7 +183,7 @@ export function UploadMappingFlow({
         setIsAutoMapping(false);
       }
     },
-    [mode, criticalColumns, targetColumns, setFileName]
+    [mode, criticalColumns, targetColumns, setFileName, uploadMut]
   );
 
   const handleClear = useCallback(() => {

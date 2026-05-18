@@ -17,17 +17,22 @@ import {
 import { GlowCard as Card } from "@/components/ui/glow-card";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAppStore } from "@/lib/store";
 import { apiClient } from "@/lib/api";
 import { apiUrl } from "@/lib/api-url";
+import { useTrainingStatus } from "@/lib/hooks";
 import type { TrainingStartResponse, TrainingStatus } from "@/lib/types/api";
 
-import { Skeleton } from "@/components/ui/skeleton";
-
-const LossChart = dynamic(() => import("@/components/charts/loss-chart").then((m) => m.LossChart), {
-  ssr: false,
-  loading: () => <Skeleton className="h-[220px] w-full" aria-label="Chargement du graphique" />,
-});
+const LossChart = dynamic(
+  () => import("@/components/charts/loss-chart").then((m) => m.LossChart),
+  {
+    ssr: false,
+    loading: () => (
+      <Skeleton className="h-[220px] w-full" aria-label="Chargement du graphique" />
+    ),
+  }
+);
 
 interface LossPoint {
   epoch: number;
@@ -43,8 +48,16 @@ interface LogEntry {
 
 export default function TrainingPage() {
   const router = useRouter();
-  const { sessionId, taskId, setTaskId, nextStep, mode, outputDir, setOutputDir, trainingConfig } =
-    useAppStore();
+  const {
+    sessionId,
+    taskId,
+    setTaskId,
+    nextStep,
+    mode,
+    outputDir,
+    setOutputDir,
+    trainingConfig,
+  } = useAppStore();
   const [localOutputDir, setLocalOutputDir] = useState(outputDir ?? "");
 
   const [status, setStatus] = useState<
@@ -62,11 +75,10 @@ export default function TrainingPage() {
   const [modelName, setModelName] = useState<string>("");
 
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const prevModelIndexRef = useRef<number>(-1);
+  const lastLoggedEpochRef = useRef<number>(-1);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -96,100 +108,92 @@ export default function TrainingPage() {
     []
   );
 
-  const startPolling = useCallback(
-    (tid: string) => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
+  // TanStack Query: poll training status with adaptive backoff.
+  // Enabled whenever we have a taskId AND the local status is not terminal.
+  const isPollingEnabled =
+    Boolean(taskId) && status !== "completed" && status !== "failed";
+  const statusQuery = useTrainingStatus(taskId, { enabled: isPollingEnabled });
 
-      let backoffMs = 1000;
-      const tick = async () => {
-        try {
-          const data = await apiClient.get<TrainingStatus>(
-            `/api/training/status/${tid}`,
-            { signal: ctrl.signal, timeoutMs: 15_000 }
-          );
-          backoffMs = 1000; // reset backoff on success
+  // Fold incoming status updates back into the local UI state (logs, lossData,
+  // best_val_loss, etc.). This stays here rather than inside the hook because
+  // these reducers are page-specific (multi-model log narration).
+  useEffect(() => {
+    const data = statusQuery.data;
+    if (!data) return;
 
-          setCurrentEpoch(data.current_epoch);
-          setTotalEpochs(data.total_epochs);
-          if (data.current_model !== undefined) setCurrentModel(data.current_model);
-          if (data.total_models !== undefined) setTotalModels(data.total_models);
-          if (data.best_val_loss !== null && data.best_val_loss !== undefined) {
-            setBestLoss(data.best_val_loss);
-          }
+    setCurrentEpoch(data.current_epoch);
+    setTotalEpochs(data.total_epochs);
+    if (data.current_model !== undefined) setCurrentModel(data.current_model);
+    if (data.total_models !== undefined) setTotalModels(data.total_models);
+    if (data.best_val_loss !== null && data.best_val_loss !== undefined) {
+      setBestLoss(data.best_val_loss);
+    }
 
-          const incomingModelIndex = data.current_model ?? 0;
-          const incomingModelName =
-            data.current_model_name || `Modele ${incomingModelIndex + 1}`;
-          setModelName(incomingModelName);
+    const incomingModelIndex = data.current_model ?? 0;
+    const incomingModelName =
+      data.current_model_name || `Modele ${incomingModelIndex + 1}`;
+    setModelName(incomingModelName);
 
-          if (
-            prevModelIndexRef.current !== -1 &&
-            incomingModelIndex !== prevModelIndexRef.current
-          ) {
-            addLog(`[Nouveau modele] ${incomingModelName}`, "info");
-            setLossData([]);
-          }
-          prevModelIndexRef.current = incomingModelIndex;
+    if (
+      prevModelIndexRef.current !== -1 &&
+      incomingModelIndex !== prevModelIndexRef.current
+    ) {
+      addLog(`[Nouveau modele] ${incomingModelName}`, "info");
+      setLossData([]);
+      lastLoggedEpochRef.current = -1;
+    }
+    prevModelIndexRef.current = incomingModelIndex;
 
-          if (data.loss !== null && data.val_loss !== null && data.current_epoch > 0) {
-            setLossData((prev) => {
-              if (prev.length > 0 && prev[prev.length - 1].epoch === data.current_epoch) {
-                return prev;
-              }
-              return [
-                ...prev,
-                {
-                  epoch: data.current_epoch,
-                  loss: data.loss as number,
-                  val_loss: data.val_loss as number,
-                },
-              ];
-            });
-            if (data.current_epoch % 50 === 0 || data.current_epoch === data.total_epochs) {
-              addLog(
-                `[${incomingModelName}] Epoch ${data.current_epoch}/${data.total_epochs} — loss: ${(data.loss as number).toFixed(4)} | val_loss: ${(data.val_loss as number).toFixed(4)}`,
-                "epoch"
-              );
-            }
-          }
-
-          if (data.status === "completed") {
-            setStatus("completed");
-            addLog("Entrainement termine avec succes !", "success");
-            if (outputDir) addLog(`Modeles sauvegardes dans : ${outputDir}`, "success");
-            const lossStr =
-              data.best_val_loss != null ? data.best_val_loss.toFixed(6) : "N/A";
-            toast.success(
-              `Entrainement termine — ${data.total_models ?? totalModels} modele(s), meilleure loss: ${lossStr}`
-            );
-            return; // stop loop
-          }
-
-          if (data.status === "failed") {
-            setStatus("failed");
-            setErrorMsg(data.error || "Erreur inconnue");
-            addLog(`ERREUR : ${data.error}`, "error");
-            toast.error("Entrainement echoue");
-            return;
-          }
-        } catch (err) {
-          if (ctrl.signal.aborted) return;
-          // Exponential backoff up to 30 s on network blips
-          backoffMs = Math.min(backoffMs * 2, 30_000);
+    if (data.loss !== null && data.val_loss !== null && data.current_epoch > 0) {
+      setLossData((prev) => {
+        if (prev.length > 0 && prev[prev.length - 1].epoch === data.current_epoch) {
+          return prev;
         }
-        if (!ctrl.signal.aborted) {
-          pollingRef.current = setTimeout(tick, backoffMs);
-        }
-      };
-      tick();
-    },
-    [addLog, outputDir, totalModels]
-  );
+        return [
+          ...prev,
+          {
+            epoch: data.current_epoch,
+            loss: data.loss as number,
+            val_loss: data.val_loss as number,
+          },
+        ];
+      });
+      const shouldLog =
+        data.current_epoch !== lastLoggedEpochRef.current &&
+        (data.current_epoch % 50 === 0 ||
+          data.current_epoch === data.total_epochs);
+      if (shouldLog) {
+        addLog(
+          `[${incomingModelName}] Epoch ${data.current_epoch}/${data.total_epochs} — loss: ${(data.loss as number).toFixed(4)} | val_loss: ${(data.val_loss as number).toFixed(4)}`,
+          "epoch"
+        );
+        lastLoggedEpochRef.current = data.current_epoch;
+      }
+    }
 
-  // Resume polling if we have a taskId on mount
+    if (data.status === "completed" && status !== "completed") {
+      setStatus("completed");
+      addLog("Entrainement termine avec succes !", "success");
+      if (outputDir) {
+        addLog(`Modeles sauvegardes dans : ${outputDir}`, "success");
+      }
+      const lossStr =
+        data.best_val_loss != null ? data.best_val_loss.toFixed(6) : "N/A";
+      toast.success(
+        `Entrainement termine — ${data.total_models ?? totalModels} modele(s), meilleure loss: ${lossStr}`
+      );
+    }
+
+    if (data.status === "failed" && status !== "failed") {
+      setStatus("failed");
+      setErrorMsg(data.error || "Erreur inconnue");
+      addLog(`ERREUR : ${data.error}`, "error");
+      toast.error("Entrainement echoue");
+    }
+  }, [statusQuery.data, addLog, outputDir, totalModels, status]);
+
+  // Resume polling if we have a taskId on mount — TanStack Query auto-fetches
+  // when `enabled` flips to true. We just need to set local status correctly.
   useEffect(() => {
     if (!taskId || status !== "idle") return;
     apiClient
@@ -198,7 +202,6 @@ export default function TrainingPage() {
         if (data.status === "running" || data.status === "pending") {
           setStatus("running");
           setTotalEpochs(data.total_epochs);
-          startPolling(taskId);
         } else if (data.status === "completed") {
           setStatus("completed");
           setCurrentEpoch(data.total_epochs);
@@ -208,13 +211,6 @@ export default function TrainingPage() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
-
-  useEffect(() => {
-    return () => {
-      if (pollingRef.current) clearTimeout(pollingRef.current);
-      abortRef.current?.abort();
-    };
-  }, []);
 
   async function handleStartTraining() {
     if (!sessionId) {
@@ -230,13 +226,13 @@ export default function TrainingPage() {
     setBestLoss(null);
     setCurrentEpoch(0);
     setErrorMsg(null);
+    lastLoggedEpochRef.current = -1;
     addLog("Lancement de l'entrainement...", "info");
 
     try {
       if (taskId) {
         addLog(`Reprise de la tache ${taskId}`, "info");
         setStatus("running");
-        startPolling(taskId);
         return;
       }
 
@@ -295,7 +291,6 @@ export default function TrainingPage() {
       );
       addLog("Entrainement en cours...", "info");
       setStatus("running");
-      startPolling(newTaskId);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erreur inconnue";
       setStatus("failed");

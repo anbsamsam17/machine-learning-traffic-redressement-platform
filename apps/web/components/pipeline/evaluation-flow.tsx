@@ -24,9 +24,13 @@ import { DropZone } from "@/components/upload/drop-zone";
 import { useAppStore } from "@/lib/store";
 import { apiClient, ApiError } from "@/lib/api";
 import { staggerIn } from "@/lib/animations/gsap";
+import {
+  useEvalRun,
+  useModelsList,
+  useUploadFile,
+} from "@/lib/hooks";
 import type {
   EvalMetrics,
-  EvalRunResponse,
   EvalReportResponse,
   ModelInfo,
   ModelsListResponse,
@@ -80,7 +84,6 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [requiredCols, setRequiredCols] = useState<string[]>([]);
   const [colMapping, setColMapping] = useState<Record<string, string>>({});
-  const [loadingModels, setLoadingModels] = useState(false);
   const [running, setRunning] = useState(false);
   const [metrics, setMetrics] = useState<EvalMetrics | null>(null);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
@@ -109,7 +112,50 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
 
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  /* Upload validation file -> session_id + columns */
+  // TanStack mutations
+  const uploadFileMut = useUploadFile<UploadResponse>();
+  const evalRunMut = useEvalRun();
+
+  // TanStack Query: models for the current session (only used when
+  // modelSource === "session" to avoid wasted fetches when the user is
+  // uploading a folder).
+  const modelsQuery = useModelsList(
+    modelSource === "session" ? sessionId : null
+  );
+  // Toast / select-first sync from the query data.
+  const lastModelsToastSidRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (modelSource !== "session") return;
+    if (modelsQuery.isError) {
+      toast.error("Impossible de lister les modeles de la session.");
+      return;
+    }
+    const data = modelsQuery.data;
+    if (!data) return;
+    const list = data.models ?? [];
+    setModels(list);
+    if (list.length > 0 && !selectedModel) {
+      setSelectedModel(list[0].name);
+      const firstPath = list[0].path;
+      const parentDir =
+        firstPath.substring(0, firstPath.lastIndexOf("/")) ||
+        firstPath.substring(0, firstPath.lastIndexOf("\\"));
+      setResolvedModelDir(parentDir);
+    }
+    // Avoid toast spam on every refetch — toast once per sessionId.
+    const sid = sessionId ?? "";
+    if (sid && lastModelsToastSidRef.current !== sid) {
+      lastModelsToastSidRef.current = sid;
+      if (list.length > 0) {
+        toast.success(`${list.length} modele(s) de la session`);
+      } else {
+        toast.warning("Aucun modele trouve dans cette session.");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelsQuery.data, modelsQuery.isError, modelSource, sessionId]);
+
+  /* Upload validation file -> session_id + columns (TanStack mutation) */
   const handleValidationFile = useCallback(
     async (f: File) => {
       setValidationFile(f);
@@ -117,10 +163,11 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
       setReportHtml(null);
 
       try {
-        const form = new FormData();
-        form.append("file", f);
-        form.append("mode", mode === "pl" ? "PL" : "TV");
-        const data = await apiClient.postForm<UploadResponse>("/api/upload", form);
+        const data = await uploadFileMut.mutateAsync({
+          file: f,
+          path: "/api/upload",
+          extra: { mode: mode === "pl" ? "PL" : "TV" },
+        });
         setSessionId(data.session_id);
         setFileColumns(data.columns ?? []);
         toast.success(`Fichier charge : ${f.name}`);
@@ -129,37 +176,13 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
         toast.error(`Erreur lors du chargement : ${detail}`);
       }
     },
-    [mode, setSessionId]
+    [mode, setSessionId, uploadFileMut]
   );
 
-  /* Load models from session */
-  const loadModelsFromSession = useCallback(async () => {
-    const sid = sessionId;
-    if (!sid) return;
-    setLoadingModels(true);
-    try {
-      const data = await apiClient.get<ModelsListResponse>(
-        `/api/models/list?session_id=${encodeURIComponent(sid)}`
-      );
-      const modelList = data.models ?? [];
-      setModels(modelList);
-      if (modelList.length > 0) {
-        setSelectedModel(modelList[0].name);
-        const firstPath = modelList[0].path;
-        const parentDir =
-          firstPath.substring(0, firstPath.lastIndexOf("/")) ||
-          firstPath.substring(0, firstPath.lastIndexOf("\\"));
-        setResolvedModelDir(parentDir);
-        toast.success(`${modelList.length} modele(s) de la session`);
-      } else {
-        toast.warning("Aucun modele trouve dans cette session.");
-      }
-    } catch {
-      toast.error("Impossible de lister les modeles de la session.");
-    } finally {
-      setLoadingModels(false);
-    }
-  }, [sessionId]);
+  const loadModelsFromSession = useCallback(() => {
+    // Manual refresh — invalidate to refetch.
+    modelsQuery.refetch();
+  }, [modelsQuery]);
 
   /* Upload model folder (webkitdirectory) */
   const handleFolderSelect = useCallback(
@@ -223,13 +246,6 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
     if (folderInputRef.current) folderInputRef.current.value = "";
   }, []);
 
-  /* Auto-load session models on mount */
-  useEffect(() => {
-    if (sessionId && modelSource === "session") {
-      loadModelsFromSession();
-    }
-  }, [sessionId, modelSource, loadModelsFromSession]);
-
   /* Selected model -> derive required columns + auto-map */
   useEffect(() => {
     const model = models.find((m) => m.name === selectedModel);
@@ -281,15 +297,17 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
     try {
       let sid = sessionId ?? "";
       if (!sid) {
-        const fd = new FormData();
-        fd.append("file", validationFile);
-        fd.append("mode", mode === "pl" ? "PL" : "TV");
-        const r = await apiClient.postForm<UploadResponse>("/api/upload", fd);
+        const r = await uploadFileMut.mutateAsync({
+          file: validationFile,
+          path: "/api/upload",
+          extra: { mode: mode === "pl" ? "PL" : "TV" },
+        });
         sid = r.session_id;
         setSessionId(sid);
       }
 
-      // Re-upload with column mapping for validation_df
+      // Re-upload with column mapping for validation_df (best-effort —
+      // backend falls back to raw_df on 413/network failure).
       try {
         const form = new FormData();
         form.append("file", validationFile);
@@ -297,12 +315,11 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
         form.append("column_mapping", JSON.stringify(colMapping));
         await apiClient.postForm("/api/evaluation/upload-validation", form);
       } catch {
-        // 413 / network — backend falls back to raw_df
         // eslint-disable-next-line no-console
         console.warn("Re-upload validation failed, will use raw_df fallback");
       }
 
-      const evalData = await apiClient.post<EvalRunResponse>("/api/evaluation/run", {
+      const evalData = await evalRunMut.mutateAsync({
         session_id: sid,
         model_name: selectedModel,
         model_dir: resolvedModelDir.trim(),
@@ -343,6 +360,8 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
     mode,
     setSessionId,
     copy.toastDone,
+    uploadFileMut,
+    evalRunMut,
   ]);
 
   const downloadReport = useCallback(() => {
@@ -465,8 +484,8 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
               variant="secondary"
               size="sm"
               onClick={loadModelsFromSession}
-              disabled={!sessionId || loadingModels}
-              icon={loadingModels ? <Loader2 size={12} className="animate-spin" /> : undefined}
+              disabled={!sessionId || modelsQuery.isFetching}
+              icon={modelsQuery.isFetching ? <Loader2 size={12} className="animate-spin" /> : undefined}
             >
               Rafraichir les modeles
             </Button>
