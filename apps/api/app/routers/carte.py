@@ -189,30 +189,23 @@ def _calculer_DPLmax(JOr: float) -> float:
 
 
 def _load_model(model_path: str):
-    """Load a TensorFlow model with weights, norm coefficients, and training config."""
+    """Load a TensorFlow model with weights, norm coefficients, and training config.
+
+    Accepts both legacy (.h5 weights + JSON arch) and new (model.keras) layouts
+    via services.ml.packaging.load_model_compat (C4).
+    """
     import os
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-    from tensorflow.keras.models import model_from_json
+
+    from ..services.ml.packaging import load_model_compat
 
     p = Path(model_path)
-
-    arch_file = p / "NNarchitecture.json"
-    weights_file = p / "NNweights.h5"
-    if not weights_file.exists():
-        weights_file = p / "NNweights.weights.h5"
     norm_file = p / "NNnormCoefficients.json"
-
-    if not arch_file.exists():
-        raise FileNotFoundError(f"NNarchitecture.json introuvable dans {model_path}")
-    if not weights_file.exists():
-        raise FileNotFoundError(f"NNweights.h5 introuvable dans {model_path}")
     if not norm_file.exists():
         raise FileNotFoundError(f"NNnormCoefficients.json introuvable dans {model_path}")
 
-    with open(arch_file, "r") as f:
-        model = model_from_json(f.read())
-    model.load_weights(str(weights_file))
+    model = load_model_compat(p)
 
     with open(norm_file, "r") as f:
         norm_coefficients = json.load(f)
@@ -227,19 +220,23 @@ def _load_model(model_path: str):
 
 
 def _verify_model_structure(model_path: str) -> tuple[bool, list[str], dict | None]:
-    """Verify model directory has all required files. Returns (valid, missing, config)."""
+    """Verify model directory has all required files. Returns (valid, missing, config).
+
+    C4: accept either the new model.keras artefact or the legacy
+    NNarchitecture.json + NNweights{.weights}.h5 pair.
+    """
     p = Path(model_path)
-    required = ["NNarchitecture.json", "NNnormCoefficients.json"]
-    weight_files = ["NNweights.h5", "NNweights.weights.h5"]
+    has_native = (p / "model.keras").exists()
 
-    missing = []
-    for f in required:
-        if not (p / f).exists():
-            missing.append(f)
+    missing: list[str] = []
+    if not (p / "NNnormCoefficients.json").exists():
+        missing.append("NNnormCoefficients.json")
 
-    has_weights = any((p / w).exists() for w in weight_files)
-    if not has_weights:
-        missing.append("NNweights.h5")
+    if not has_native:
+        if not (p / "NNarchitecture.json").exists():
+            missing.append("NNarchitecture.json")
+        if not any((p / w).exists() for w in ("NNweights.h5", "NNweights.weights.h5")):
+            missing.append("NNweights.h5")
 
     config = None
     config_file = p / "training_config.json"

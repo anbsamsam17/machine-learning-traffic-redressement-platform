@@ -619,6 +619,13 @@ def _training_worker(task: TrainingTask) -> None:
                     model_dir = Path(output_dir) / run_name
                     model_dir.mkdir(parents=True, exist_ok=True)
 
+                    # C4 - primary save = native .keras
+                    try:
+                        model.save(str(model_dir / "model.keras"))
+                    except Exception as save_exc:  # noqa: BLE001
+                        logger.warning(
+                            "model.save(.keras) failed (%s) - falling back to legacy h5", save_exc,
+                        )
                     (model_dir / "NNarchitecture.json").write_text(
                         model.to_json(), encoding="utf-8"
                     )
@@ -667,6 +674,20 @@ def _training_worker(task: TrainingTask) -> None:
                     (model_dir / "training_metrics.json").write_text(
                         metrics_json, encoding="utf-8"
                     )
+
+                    # C5 - versioned meta.json next to every model
+                    try:
+                        from ..services.ml.packaging import build_meta, data_sha256_of
+                        _meta = build_meta(
+                            seed=seed,
+                            data_sha256=data_sha256_of(sub),
+                            extra={"format": "keras-native+legacy-h5"},
+                        )
+                        (model_dir / "meta.json").write_text(
+                            json.dumps(_meta, indent=2), encoding="utf-8",
+                        )
+                    except Exception as meta_exc:  # noqa: BLE001
+                        logger.warning("meta.json write failed: %s", meta_exc)
 
                     logger.info(
                         "Model %d/%d saved: %s (NNarchitecture.json, NNweights.weights.h5, "

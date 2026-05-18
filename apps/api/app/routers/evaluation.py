@@ -1014,28 +1014,18 @@ $(document).ready(function(){{
 # ---------------------------------------------------------------------------
 
 def _load_model_from_dir(model_path: Path) -> tuple[Any, dict]:
-    """Load a Keras model + norm coefficients from a model directory on disk."""
+    """Load a Keras model + norm coefficients from a model directory on disk.
+
+    Uses services.ml.packaging.load_model_compat so both the new
+    .keras format and the legacy NNarchitecture.json + .weights.h5 layout
+    are supported transparently (C4).
+    """
     import os
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
-    from tensorflow.keras.models import model_from_json
-
-    arch_file = model_path / "NNarchitecture.json"
-    if not arch_file.exists():
-        raise FileNotFoundError(f"NNarchitecture.json introuvable dans {model_path}")
-
-    model_json = arch_file.read_text(encoding="utf-8")
-    model = model_from_json(model_json)
-
-    # Try both naming conventions for weights
-    weights_file = model_path / "NNweights.weights.h5"
-    if not weights_file.exists():
-        weights_file = model_path / "NNweights.h5"
-    if not weights_file.exists():
-        raise FileNotFoundError(f"Fichier de poids introuvable dans {model_path}")
-
-    model.load_weights(str(weights_file))
+    from ..services.ml.packaging import load_model_compat
+    model = load_model_compat(model_path)
 
     # Load norm coefficients
     norm_file = model_path / "NNnormCoefficients.json"
