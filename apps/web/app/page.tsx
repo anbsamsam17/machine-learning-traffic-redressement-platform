@@ -189,12 +189,7 @@ export default function HomePage() {
         </footer>
       </main>
 
-      {/* Sam floating card (fixed bottom-right) */}
-      <SamZone
-        SamAvatar={SamAvatar}
-        message={content.sam.welcomeBubble}
-        subtitle={content.sam.welcomeSubtitle}
-      />
+      {/* SamWidget is mounted globally in app/layout.tsx, no per-page SamZone. */}
     </>
   );
 }

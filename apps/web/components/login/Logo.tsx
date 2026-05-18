@@ -49,9 +49,6 @@ export function Logo({ className }: { className?: string }) {
           opacity="0.35"
         />
       </svg>
-      <span className="font-mono text-sm font-semibold tracking-tight text-zinc-100">
-        MDL Trafic
-      </span>
     </div>
   );
 }

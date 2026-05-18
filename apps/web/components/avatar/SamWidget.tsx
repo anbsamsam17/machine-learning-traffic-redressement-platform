@@ -31,12 +31,20 @@ const PERSISTENT_MOODS = new Set(["analysing", "thinking"]);
  * the soft glow follows Sam's silhouette instead of a square frame.
  */
 const MOOD_DROP_SHADOW: Record<string, string> = {
-  based: "drop-shadow(0 6px 18px rgba(113, 113, 122, 0.32))",
-  welcome: "drop-shadow(0 6px 22px rgba(251, 191, 36, 0.36))",
-  analysing: "drop-shadow(0 6px 22px rgba(34, 211, 238, 0.36))",
-  thinking: "drop-shadow(0 6px 22px rgba(129, 140, 248, 0.36))",
-  goodjob: "drop-shadow(0 6px 22px rgba(52, 211, 153, 0.36))",
-  error: "drop-shadow(0 6px 22px rgba(248, 113, 113, 0.36))",
+  // Subtle mood auras: blue family for thinking/analysing, green for success, red for error.
+  // Two stacked drop-shadows (close + far) for a soft halo without a hard ring.
+  based:
+    "drop-shadow(0 4px 14px rgba(113, 113, 122, 0.28)) drop-shadow(0 0 28px rgba(113, 113, 122, 0.18))",
+  welcome:
+    "drop-shadow(0 4px 14px rgba(251, 191, 36, 0.30)) drop-shadow(0 0 28px rgba(251, 191, 36, 0.18))",
+  analysing:
+    "drop-shadow(0 4px 14px rgba(34, 211, 238, 0.34)) drop-shadow(0 0 32px rgba(34, 211, 238, 0.22))",
+  thinking:
+    "drop-shadow(0 4px 14px rgba(129, 140, 248, 0.34)) drop-shadow(0 0 32px rgba(129, 140, 248, 0.22))",
+  goodjob:
+    "drop-shadow(0 4px 14px rgba(52, 211, 153, 0.36)) drop-shadow(0 0 32px rgba(52, 211, 153, 0.24))",
+  error:
+    "drop-shadow(0 4px 14px rgba(248, 113, 113, 0.36)) drop-shadow(0 0 32px rgba(248, 113, 113, 0.24))",
 };
 
 export function SamWidget() {
@@ -102,10 +110,10 @@ export function SamWidget() {
               tokens.border,
             )}
           >
-            <p className={cn("text-[10px] font-semibold uppercase tracking-wide", tokens.title)}>
-              Sam
+            <p className="text-xs leading-snug text-zinc-100">
+              <span className={cn("font-semibold", tokens.title)}>Sam :</span>{" "}
+              {message}
             </p>
-            <p className="text-xs leading-snug text-zinc-100">{message}</p>
           </motion.div>
         ) : null}
       </AnimatePresence>

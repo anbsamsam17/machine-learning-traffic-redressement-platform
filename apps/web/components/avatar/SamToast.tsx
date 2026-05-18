@@ -1,12 +1,10 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
   SAM_MOOD_TOKENS,
-  samMoodImage,
   type SamMood,
 } from "@/lib/sam/moods";
 
@@ -21,12 +19,15 @@ export interface SamToastContentProps {
 
 /**
  * Custom layout used inside `sonner.toast.custom(...)`.
- * Horizontal: Sam avatar (round, holographic frame) + speech bubble.
+ *
+ * Sam's persistent avatar lives in the bottom-right `<SamWidget />`. Toasts
+ * are intentionally avatar-less to avoid the "two Sams on screen" effect —
+ * they read as text messages from Sam, prefixed with "Sam : " so the speaker
+ * is unambiguous.
  *
  * a11y:
  *  - `role="alert"` for `error`, `role="status"` for everything else.
  *  - `aria-live` driven by mood tokens.
- *  - Bubble linked to title via `aria-describedby`.
  *
  * Motion:
  *  - slide-in / scale-up via framer-motion.
@@ -70,38 +71,13 @@ export function SamToastContent({
           ? { duration: 0 }
           : { duration: 0.25, ease: [0.34, 1.56, 0.64, 1] /* back.out(1.2) approx */ }
       }
-      className={cn(
-        "flex items-start gap-3",
-        bubbleSide === "left" && "flex-row-reverse",
-        "pointer-events-auto",
-      )}
+      className="pointer-events-auto"
     >
-      {/* Avatar — holographic cyan/indigo frame */}
-      <div
-        className={cn(
-          "relative flex-shrink-0 size-14 rounded-full overflow-hidden",
-          "ring-2 ring-offset-2 ring-offset-zinc-950",
-          tokens.ring,
-          "bg-gradient-to-br from-cyan-500/20 via-indigo-500/20 to-violet-500/20",
-        )}
-        aria-hidden="true"
-      >
-        <Image
-          src={samMoodImage(mood)}
-          alt=""
-          fill
-          sizes="56px"
-          className="object-cover"
-          priority={false}
-          unoptimized
-        />
-      </div>
-
-      {/* Bubble */}
+      {/* Bubble — Sam speaks via text, no avatar (the floating SamWidget shows Sam) */}
       <div
         id={bubbleId}
         className={cn(
-          "relative max-w-[320px] rounded-lg px-3 py-3",
+          "relative max-w-[360px] rounded-lg px-3.5 py-3",
           "bg-zinc-900/95 backdrop-blur-md",
           "border",
           tokens.border,
@@ -118,7 +94,10 @@ export function SamToastContent({
             {title}
           </div>
         ) : null}
-        <div className="text-sm leading-snug text-zinc-100">{message}</div>
+        <div className="text-sm leading-snug text-zinc-100">
+          <span className={cn("font-semibold", tokens.title)}>Sam :</span>{" "}
+          {message}
+        </div>
 
         {/* Subtle accent tint stripe */}
         <span

@@ -1,5 +1,3 @@
-import { SamAvatar } from "@/components/avatar/SamAvatar";
-import { SamBubble } from "@/components/avatar/SamBubble";
 import { Logo } from "@/components/login/Logo";
 import { HeroSection } from "@/components/login/HeroSection";
 import { FeaturesPills } from "@/components/login/FeaturesPills";
@@ -70,26 +68,8 @@ export default function LoginPage() {
               </div>
             </section>
 
-            {/* RIGHT — 2/5 ≈ 40%, sticky-centered on desktop.
-                Sam (xl, welcome mood) greets the user above the form. */}
+            {/* RIGHT — 2/5 ≈ 40%, sticky-centered on desktop. */}
             <section className="flex flex-col items-center justify-center gap-6 lg:col-span-2 lg:sticky lg:top-10 lg:self-start">
-              <div
-                data-enter="sam"
-                className="flex w-full max-w-md flex-col items-center gap-3"
-              >
-                <SamAvatar
-                  mood="welcome"
-                  placement="inline"
-                  size="xl"
-                />
-                <SamBubble
-                  message="Salut, content de te revoir !"
-                  subtitle="Connecte-toi pour acceder a tes outils."
-                  size="lg"
-                  side="top"
-                  className="ml-0 mb-0 text-center"
-                />
-              </div>
               <div className="w-full max-w-md">
                 <LoginForm />
               </div>
@@ -101,7 +81,7 @@ export default function LoginPage() {
             data-enter="footer"
             className="mt-12 border-t border-white/[0.04] pt-4 text-xs text-zinc-600"
           >
-            © MDL · usage interne
+            © Outils a usage interne uniquement
           </footer>
         </div>
       </PageEnter>
