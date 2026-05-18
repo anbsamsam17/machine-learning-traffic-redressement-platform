@@ -4,9 +4,13 @@
  *
  * Sam is the data-engineer companion that follows the user through the
  * redressement pipeline. He surfaces six contextual moods. Each mood maps
- * to a 256x256 PNG (background baked into the image — no transparency on
- * the subject), a sensible default message, and a set of visual tokens
- * consumed by SamToast / SamWidget / samNotify.
+ * to a PNG asset (cutout / RGBA — transparent background so Sam blends
+ * directly into the surrounding UI), a sensible default message, and a set
+ * of visual tokens consumed by SamToast / SamWidget / samNotify.
+ *
+ * `working.png` is shared between the `analysing` and `thinking` moods
+ * since both share the same posture (Sam focused on screens). Visual tokens
+ * (border / ring color) still differentiate them.
  */
 
 export type SamMood =
@@ -30,8 +34,29 @@ export const SAM_MOODS: readonly SamMood[] = [
 // Image assets
 // ---------------------------------------------------------------------------
 
-/** Public PNG asset paths (served from `apps/web/public/sam/`). */
+/**
+ * Public PNG asset paths (served from `apps/web/public/sam/cutout/`).
+ *
+ * All assets are detoured / transparent (RGBA) — Sam is rendered as a
+ * silhouette without any baked background, so the surrounding UI shines
+ * through naturally. `analysing` and `thinking` share `working.png` since
+ * they depict the same posture (focused on screens).
+ */
 export const SAM_IMAGES: Record<SamMood, string> = {
+  welcome: "/sam/cutout/welcome.png",
+  based: "/sam/cutout/based.png",
+  analysing: "/sam/cutout/working.png", // shared with thinking
+  thinking: "/sam/cutout/working.png", // shared with analysing
+  goodjob: "/sam/cutout/goodjob.png",
+  error: "/sam/cutout/error.png",
+};
+
+/**
+ * Legacy (pre-cutout) image paths — kept for backward compatibility in case
+ * an external caller still references them. These point to the historical
+ * PNGs with a baked-in background. Prefer `SAM_IMAGES` for all new code.
+ */
+export const SAM_IMAGES_LEGACY: Record<SamMood, string> = {
   welcome: "/sam/sam-welcome.png",
   based: "/sam/sam-based.png",
   analysing: "/sam/sam-analysing.png",
