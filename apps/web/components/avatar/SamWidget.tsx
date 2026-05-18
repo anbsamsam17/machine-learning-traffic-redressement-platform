@@ -7,6 +7,8 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useSamStore } from "@/lib/sam/store";
 import { SAM_MOOD_TOKENS, samMoodImage } from "@/lib/sam/moods";
+// Note: detail panel + reset button removed — Sam is a passive companion,
+// users should not be able to override his contextual mood.
 
 /**
  * SamWidget — persistent avatar in the bottom-right corner, present on every
@@ -52,11 +54,8 @@ export function SamWidget() {
   const mood = useSamStore((s) => s.mood);
   const message = useSamStore((s) => s.message);
   const visible = useSamStore((s) => s.visible);
-  const clearMessage = useSamStore((s) => s.clearMessage);
-  const reset = useSamStore((s) => s.reset);
 
   const prefersReducedMotion = useReducedMotion();
-  const [open, setOpen] = React.useState(false);
   const [showBubble, setShowBubble] = React.useState(false);
 
   const bubbleId = React.useId();
@@ -118,63 +117,15 @@ export function SamWidget() {
         ) : null}
       </AnimatePresence>
 
-      {/* Detail panel — toggled by click */}
-      <AnimatePresence>
-        {open ? (
-          <motion.div
-            key="sam-detail"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 6 }}
-            transition={{ duration: 0.18 }}
-            className={cn(
-              "pointer-events-auto rounded-lg p-3 min-w-[180px]",
-              "bg-zinc-900/95 backdrop-blur-md border shadow-lg shadow-black/40",
-              tokens.border,
-            )}
-          >
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <span className={cn("text-[10px] font-semibold uppercase tracking-wide", tokens.title)}>
-                Humeur
-              </span>
-              <span className="text-xs text-zinc-300">{mood}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                reset();
-                clearMessage();
-                setOpen(false);
-              }}
-              className={cn(
-                "w-full text-xs px-2 py-1.5 rounded-md",
-                "bg-zinc-800 hover:bg-zinc-700 text-zinc-100 transition-colors",
-                "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-zinc-950",
-                "focus:ring-indigo-400/50",
-              )}
-            >
-              Reset Sam
-            </button>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      {/* Avatar — cutout silhouette (~128px) with mood-tinted glow */}
-      <motion.button
-        type="button"
-        aria-label={`Sam avatar (humeur courante: ${mood})`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
+      {/* Avatar — cutout silhouette (~128px) with mood-tinted glow.
+          Non-interactive: Sam is a passive companion, no click-to-reset. */}
+      <motion.div
+        role="img"
+        aria-label={`Sam (humeur courante: ${mood})`}
         aria-describedby={message ? bubbleId : undefined}
-        onClick={() => setOpen((o) => !o)}
         animate={floatAnim}
         style={{ filter: MOOD_DROP_SHADOW[mood] ?? MOOD_DROP_SHADOW.based }}
-        className={cn(
-          "pointer-events-auto relative size-32 rounded-full bg-transparent",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-          "focus-visible:ring-offset-zinc-950 focus-visible:ring-indigo-400/70",
-          "transition-transform hover:scale-105",
-        )}
+        className="pointer-events-none relative size-32"
       >
         <Image
           src={samMoodImage(mood)}
@@ -184,7 +135,7 @@ export function SamWidget() {
           className="object-contain"
           priority={false}
         />
-      </motion.button>
+      </motion.div>
     </div>
   );
 }

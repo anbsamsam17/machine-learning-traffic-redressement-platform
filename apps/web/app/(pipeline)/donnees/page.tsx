@@ -53,14 +53,10 @@ export default function DonneesPage() {
   const [isAutoMapping, setIsAutoMapping] = useState(false);
   const [showStepComplete, setShowStepComplete] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement>(null);
-  const welcomeShownRef = useRef(false);
 
-  // Sam welcomes the user once on mount (idempotent across HMR)
-  useEffect(() => {
-    if (welcomeShownRef.current) return;
-    welcomeShownRef.current = true;
-    samNotify.info("Glisse ton fichier ici pour commencer.");
-  }, []);
+  // Welcome message is delivered by SamPageBinder via PAGE_MESSAGES['/donnees'].
+  // We deliberately skip a mount-time samNotify.info here so the toast doesn't
+  // duplicate the SamWidget bubble.
 
   const mappedCriticalCount = useMemo(() => {
     return mappings.filter(
