@@ -93,9 +93,17 @@ const REQUIRED_COLUMNS: ColumnDef[] = [
 // Component
 // ---------------------------------------------------------------------------
 
+import { samMood } from "@/lib/sam/store";
+
 export default function CartePage() {
   const router = useRouter();
   const { reset } = useAppStore();
+
+  // Sam ambient mood for this page
+  useEffect(() => {
+    samMood.set("based", "Charge tes modeles et tes donnees FCD.");
+    return () => samMood.reset();
+  }, []);
 
   // ----- Pipeline state (server-side) -----
   const [tvFolderName, setTvFolderName] = useState<string | null>(null);
