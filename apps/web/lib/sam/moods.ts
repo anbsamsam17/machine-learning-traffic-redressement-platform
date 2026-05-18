@@ -1,16 +1,17 @@
 /**
- * Sam mascot — mood definitions, image assets, and default messages.
+ * Sam mascot — single source of truth for moods, image assets, default copy,
+ * and visual tokens (toast border colors, aria-live, durations).
  *
  * Sam is the data-engineer companion that follows the user through the
  * redressement pipeline. He surfaces six contextual moods. Each mood maps
  * to a 256x256 PNG (background baked into the image — no transparency on
- * the subject) and a sensible default message that any component can use
- * when no custom copy is provided.
+ * the subject), a sensible default message, and a set of visual tokens
+ * consumed by SamToast / SamWidget / samNotify.
  */
 
 export type SamMood =
-  | "welcome"
   | "based"
+  | "welcome"
   | "analysing"
   | "thinking"
   | "goodjob"
@@ -25,6 +26,10 @@ export const SAM_MOODS: readonly SamMood[] = [
   "error",
 ] as const;
 
+// ---------------------------------------------------------------------------
+// Image assets
+// ---------------------------------------------------------------------------
+
 /** Public PNG asset paths (served from `apps/web/public/sam/`). */
 export const SAM_IMAGES: Record<SamMood, string> = {
   welcome: "/sam/sam-welcome.png",
@@ -35,7 +40,17 @@ export const SAM_IMAGES: Record<SamMood, string> = {
   error: "/sam/sam-error.png",
 };
 
-/** Sober French copy used when no `message` prop / store value is set. */
+export const SAM_DEFAULT_AVATAR = SAM_IMAGES.based;
+
+/** Resolve the image path for a mood (callers can override). */
+export function samMoodImage(mood: SamMood): string {
+  return SAM_IMAGES[mood] ?? SAM_DEFAULT_AVATAR;
+}
+
+// ---------------------------------------------------------------------------
+// Default copy (used when no message prop / store value is set)
+// ---------------------------------------------------------------------------
+
 export const SAM_DEFAULT_MESSAGES: Record<SamMood, string> = {
   welcome: "Salut ! Content de te revoir.",
   based: "Pret quand tu l'es.",
@@ -45,7 +60,6 @@ export const SAM_DEFAULT_MESSAGES: Record<SamMood, string> = {
   error: "Quelque chose a coince.",
 };
 
-/** Optional secondary line, used when the caller wants a slightly richer bubble. */
 export const SAM_DEFAULT_SUBTITLES: Record<SamMood, string | undefined> = {
   welcome: "Choisis un mode pour commencer.",
   based: undefined,
@@ -55,11 +69,97 @@ export const SAM_DEFAULT_SUBTITLES: Record<SamMood, string | undefined> = {
   error: "Verifie le detail puis reessaie.",
 };
 
-/**
- * Trigger event vocabulary used by `useSamMood({ trigger })` and downstream
- * code that wants to map a domain event to a mood without hard-coding the
- * `SamMood` strings everywhere.
- */
+// ---------------------------------------------------------------------------
+// Visual tokens (toast border, ring, aria-live, default duration)
+// ---------------------------------------------------------------------------
+
+export interface SamMoodTokens {
+  /** Tailwind border color class for the toast bubble + widget halo. */
+  border: string;
+  /** Tailwind text color class for the title line. */
+  title: string;
+  /** Tailwind background tint (very subtle, used on the bubble accent). */
+  accentBg: string;
+  /** Tailwind glow/ring color for the avatar frame. */
+  ring: string;
+  /** aria-live level for assistive tech. */
+  aria: "polite" | "assertive";
+  /** Default duration in ms for sonner. 0 = persistent. */
+  defaultDurationMs: number;
+  /** Fallback prose tone — used when no message is provided. */
+  defaultMessage: string;
+}
+
+export const SAM_MOOD_TOKENS: Record<SamMood, SamMoodTokens> = {
+  based: {
+    border: "border-zinc-700",
+    title: "text-zinc-200",
+    accentBg: "bg-zinc-500/10",
+    ring: "ring-zinc-500/40",
+    aria: "polite",
+    defaultDurationMs: 4000,
+    defaultMessage: SAM_DEFAULT_MESSAGES.based,
+  },
+  welcome: {
+    border: "border-amber-400/60",
+    title: "text-amber-200",
+    accentBg: "bg-amber-500/10",
+    ring: "ring-amber-400/50",
+    aria: "polite",
+    defaultDurationMs: 5000,
+    defaultMessage: SAM_DEFAULT_MESSAGES.welcome,
+  },
+  analysing: {
+    border: "border-cyan-400/60",
+    title: "text-cyan-200",
+    accentBg: "bg-cyan-500/10",
+    ring: "ring-cyan-400/50",
+    aria: "polite",
+    defaultDurationMs: 8000,
+    defaultMessage: SAM_DEFAULT_MESSAGES.analysing,
+  },
+  thinking: {
+    border: "border-indigo-400/60",
+    title: "text-indigo-200",
+    accentBg: "bg-indigo-500/10",
+    ring: "ring-indigo-400/50",
+    aria: "polite",
+    defaultDurationMs: 8000,
+    defaultMessage: SAM_DEFAULT_MESSAGES.thinking,
+  },
+  goodjob: {
+    border: "border-emerald-400/60",
+    title: "text-emerald-200",
+    accentBg: "bg-emerald-500/10",
+    ring: "ring-emerald-400/50",
+    aria: "polite",
+    defaultDurationMs: 4000,
+    defaultMessage: SAM_DEFAULT_MESSAGES.goodjob,
+  },
+  error: {
+    border: "border-red-400/60",
+    title: "text-red-200",
+    accentBg: "bg-red-500/10",
+    ring: "ring-red-400/50",
+    aria: "assertive",
+    defaultDurationMs: 6000,
+    defaultMessage: SAM_DEFAULT_MESSAGES.error,
+  },
+};
+
+/** Moods that should auto-sync to the global SamWidget by default. */
+export const SYNC_WIDGET_BY_DEFAULT: ReadonlySet<SamMood> = new Set<SamMood>([
+  "analysing",
+  "thinking",
+  "goodjob",
+  "error",
+  "welcome",
+]);
+
+// ---------------------------------------------------------------------------
+// Domain-event vocabularies (consumed by useSamMood / setters in pages)
+// ---------------------------------------------------------------------------
+
 export type SamTrigger =
   | "page-landing"
   | "page-login"
@@ -97,10 +197,8 @@ export const SAM_TRIGGER_TO_MOOD: Record<SamTrigger, SamMood> = {
   "generic-error": "error",
 };
 
-/** Pathname -> mood mapping used by `useSamMood({ pathname })`. */
 export function moodForPathname(pathname: string | null | undefined): SamMood {
   if (!pathname) return "based";
-  // Strip query/hash, normalise trailing slash.
   const path = pathname.split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
 
   if (path === "/" || path === "/landing") return "welcome";
@@ -114,10 +212,6 @@ export function moodForPathname(pathname: string | null | undefined): SamMood {
   return "based";
 }
 
-/**
- * Stage vocabulary — convenient shortcuts used by `useSamMood({ stage })`.
- * Less specific than triggers; intended for long-lived UI sections.
- */
 export type SamStage =
   | "idle"
   | "uploading"
