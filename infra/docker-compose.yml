@@ -53,23 +53,10 @@ services:
       timeout: 10s
       retries: 3
 
-  worker:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.worker
-    environment:
-      - CUDA_VISIBLE_DEVICES=-1
-      - TF_CPP_MIN_LOG_LEVEL=3
-      - TF_ENABLE_ONEDNN_OPTS=0
-      - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
-      - WORKSPACE_ROOT=/tmp/mdl_workdir
-    volumes:
-      - tmp_data:/tmp/mdl_workdir
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
+  # NOTE: the `worker` (Celery) service has been removed.
+  # Celery was never wired up correctly and the API runs training inline.
+  # The corresponding Python code (apps/api/app/celery_app.py, tasks.py)
+  # and infra/Dockerfile.worker are removed by the API workstream (E2).
 
   nginx:
     image: nginx:alpine

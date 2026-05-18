@@ -1,0 +1,118 @@
+# infra/Caddyfile
+# Production reverse proxy for MDL Redressement Tool v2.
+# Auto-TLS via Let's Encrypt for Trafic-Tool.anbri-tools-ia.online.
+#
+# Key features:
+#   - HTTP/2 + HTTP/3 (UDP 443)
+#   - Body upload up to 500MB (training datasets)
+#   - SSE stream no-buffer on /api/training/stream/*  (flush_interval -1)
+#   - Long timeouts (1h) on API routes — training jobs run up to 60 min
+#   - HSTS + CSP + X-Frame-Options DENY + X-Content-Type-Options nosniff
+#   - /metrics restricted to private LAN (Oracle VCN 10.0.0.0/16 + loopback)
+#   - JSON access logs with rotation
+#
+# Validate locally:  caddy validate --config infra/Caddyfile --adapter caddyfile
+
+{
+	email admin@anbri-tools-ia.online
+	# Uncomment for ACME staging during tests (avoids LE prod rate limits):
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+
+	# Admin endpoint stays on localhost:2019 inside the container (default).
+	# Useful for the caddy container healthcheck.
+
+	servers {
+		timeouts {
+			read_body   10m
+			read_header 30s
+			write       1h
+			idle        2m
+		}
+	}
+
+	log default {
+		output stderr
+		format json
+		level INFO
+	}
+}
+
+Trafic-Tool.anbri-tools-ia.online {
+	encode zstd gzip
+
+	# ---- Body size for dataset uploads (~500 MB max) ----
+	request_body {
+		max_size 500MB
+	}
+
+	# ---- Security headers ----
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "DENY"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		Permissions-Policy        "geolocation=(), microphone=(), camera=(), payment=()"
+		# CSP — allow OSM/Carto tiles for the Folium map (carte page).
+		Content-Security-Policy   "default-src 'self'; img-src 'self' data: https: blob: https://*.tile.openstreetmap.org https://basemaps.cartocdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self' https://*.tile.openstreetmap.org https://basemaps.cartocdn.com; frame-ancestors 'none'"
+		# Hide proxy identity
+		-Server
+	}
+
+	# ---- /metrics restricted to private LAN + loopback ----
+	# Matchers are evaluated top-down; @metrics_internal succeeds only inside Oracle VCN.
+	@metrics_internal {
+		path /metrics
+		remote_ip private_ranges
+	}
+	handle @metrics_internal {
+		reverse_proxy api:8000
+	}
+	@metrics_external path /metrics
+	handle @metrics_external {
+		respond "Forbidden" 403
+	}
+
+	# ---- SSE stream training (flush each event, no buffering) ----
+	@sse path /api/training/stream/*
+	handle @sse {
+		reverse_proxy api:8000 {
+			flush_interval -1
+			transport http {
+				read_timeout  1h
+				write_timeout 1h
+			}
+		}
+	}
+
+	# ---- API (FastAPI) ----
+	handle /api/* {
+		reverse_proxy api:8000 {
+			transport http {
+				read_timeout  1h
+				write_timeout 1h
+				dial_timeout  10s
+			}
+		}
+	}
+
+	# ---- Public healthcheck (used by Healthchecks.io) ----
+	handle /health {
+		reverse_proxy api:8000
+	}
+
+	# ---- Frontend Next.js (catch-all) ----
+	handle {
+		reverse_proxy web:3000
+	}
+
+	# ---- Access logs (JSON, rotated) ----
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size     50mb
+			roll_keep     5
+			roll_keep_for 168h
+		}
+		format json
+		level  INFO
+	}
+}

@@ -1,36 +1,61 @@
+# infra/Dockerfile.api
+# Multi-stage FastAPI image. Buildable for linux/amd64 AND linux/arm64 via buildx/QEMU.
+#
+# Base image is pinned to a specific manifest-list digest for reproducibility
+# (the manifest list resolves to the correct per-arch image automatically).
+# To bump, run:
+#   docker buildx imagetools inspect python:3.11-slim-bookworm
+# and copy the top-level digest (sha256:...).
+#
+# NOTE: pyproject.toml is owned by the API workstream (E2). TensorFlow on ARM64
+# requires `tensorflow>=2.16` (the `tensorflow-cpu` alias is amd64-only on
+# recent versions). Coordinate with E2 to ensure the pinned dependency works
+# on aarch64 before publishing the first multi-arch image.
+
 # ============ Stage 1: builder ============
-FROM python:3.11-slim AS builder
+# python:3.11-slim-bookworm  (Debian 12, multi-arch manifest list)
+FROM python:3.11-slim-bookworm@sha256:7a3ed1226224bcc1fe5443262363d42f48cf832a540c1836ba8ccbeaadf8637c AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential gdal-bin libgdal-dev libgeos-dev libproj-dev \
+        build-essential \
+        gdal-bin libgdal-dev libgeos-dev libproj-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY apps/api/pyproject.toml .
-RUN pip install --no-cache-dir --prefix=/install ".[prod]"
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir --prefix=/install ".[prod]"
 
 # ============ Stage 2: runtime ============
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim-bookworm@sha256:7a3ed1226224bcc1fe5443262363d42f48cf832a540c1836ba8ccbeaadf8637c AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgdal32 libgeos-c1v5 libproj25 curl \
-    && rm -rf /var/lib/apt/lists/*
+        libgdal32 libgeos-c1v5 libproj25 curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 COPY --from=builder /install /usr/local
 
-ENV CUDA_VISIBLE_DEVICES=-1
-ENV TF_CPP_MIN_LOG_LEVEL=3
-ENV PYTHONUNBUFFERED=1
+# ARM CPU-only TF tuning (also re-exported by docker-compose.prod.yml env section)
+ENV CUDA_VISIBLE_DEVICES=-1 \
+    TF_CPP_MIN_LOG_LEVEL=3 \
+    TF_ENABLE_ONEDNN_OPTS=0 \
+    TF_XLA_FLAGS=--tf_xla_enable_xla_devices=false \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 COPY apps/api/ .
 
-RUN mkdir -p /tmp/mdl_workdir \
-    && useradd -m appuser && chown -R appuser:appuser /app /tmp/mdl_workdir
+# Persistent workspace lives on /data (bind-mounted from host /data/mdl_workdir).
+# This replaces the legacy /tmp/mdl_workdir which Linux can purge at any time.
+RUN mkdir -p /data/mdl_workdir \
+    && useradd -m -u 1000 appuser \
+    && chown -R appuser:appuser /app /data/mdl_workdir
 USER appuser
 
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -fsS http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
