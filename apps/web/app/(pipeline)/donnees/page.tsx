@@ -60,7 +60,7 @@ const CRITICAL_COLS = [
 ];
 
 export default function DonneesPage() {
-  const { mode, setFileName } = useAppStore();
+  const { mode, setFileName, setMappingValidated, setPreviewReady } = useAppStore();
   const [file, setFile] = useState<File | null>(null);
   const [sourceColumns, setSourceColumns] = useState<string[]>([]);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
@@ -217,6 +217,8 @@ export default function DonneesPage() {
     setTotalRows(0);
     setStep("upload");
     setShowStepComplete(false);
+    setMappingValidated(false);
+    setPreviewReady(false);
   }
 
   async function handleValidateMapping() {
@@ -270,6 +272,9 @@ export default function DonneesPage() {
         setTotalRows(data.rows);
       }
       setStep("preview");
+      // APP-P1-6: mark pipeline guard flags so Continuer button unlocks
+      setMappingValidated(true);
+      setPreviewReady(true);
 
       if (data.missing_critical?.length > 0) {
         toast.warning(

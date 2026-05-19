@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 import { Stepper } from "@/components/pipeline/stepper";
 import { NeonButton } from "@/components/ui/neon-button";
 import { useAppStore, PIPELINE_STEPS } from "@/lib/store";
@@ -22,7 +23,15 @@ export default function PipelineLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { currentStep, goToStep, sessionId, restoreFromBackend } = useAppStore();
+  const {
+    currentStep,
+    goToStep,
+    sessionId,
+    restoreFromBackend,
+    mappingValidated,
+    previewReady,
+    trainingConfig,
+  } = useAppStore();
 
   // APP-P0-4: on first mount, ask the backend whether the user already has
   // an active session and hydrate the store accordingly. Without this, F5
@@ -56,12 +65,39 @@ export default function PipelineLayout({
     }
   }
 
-  function handleNext() {
-    if (activeStep < PIPELINE_STEPS.length - 1) {
-      const next = activeStep + 1;
-      goToStep(next);
-      router.push(PIPELINE_STEPS[next].path);
+  // APP-P1-6: per-step guards. Returns a message if we should NOT advance.
+  function getNextBlockReason(step: number): string | null {
+    if (step === 0) {
+      // /donnees -> /config : require a validated mapping + preview
+      if (!sessionId) return "Charge un fichier d'abord";
+      if (!mappingValidated || !previewReady)
+        return "Valide le mapping des colonnes avant de continuer";
     }
+    if (step === 1) {
+      // /config -> /training : require a saved training config
+      if (!trainingConfig) return "Configure l'entrainement avant de continuer";
+    }
+    if (step === 2) {
+      // /training -> /evaluation : require a session at minimum
+      if (!sessionId) return "Aucune session active";
+    }
+    return null;
+  }
+
+  const nextBlockReason = getNextBlockReason(activeStep);
+  const nextDisabled =
+    activeStep === PIPELINE_STEPS.length - 1 || nextBlockReason !== null;
+
+  function handleNext() {
+    if (activeStep >= PIPELINE_STEPS.length - 1) return;
+    const reason = getNextBlockReason(activeStep);
+    if (reason) {
+      toast.error(reason);
+      return;
+    }
+    const next = activeStep + 1;
+    goToStep(next);
+    router.push(PIPELINE_STEPS[next].path);
   }
 
   return (
@@ -98,8 +134,9 @@ export default function PipelineLayout({
           </NeonButton>
           <NeonButton
             onClick={handleNext}
-            disabled={activeStep === PIPELINE_STEPS.length - 1}
+            disabled={nextDisabled}
             icon={<ArrowRight size={14} />}
+            title={nextBlockReason ?? undefined}
           >
             Continuer
           </NeonButton>

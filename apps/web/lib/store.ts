@@ -65,6 +65,9 @@ interface AppState {
   fileName: string | null;
   outputDir: string | null;
   trainingConfig: Record<string, unknown> | null;
+  // Guard flags for pipeline navigation (APP-P1-6)
+  mappingValidated: boolean;
+  previewReady: boolean;
 
   setMode: (mode: AppMode) => void;
   setFileName: (name: string) => void;
@@ -72,6 +75,8 @@ interface AppState {
   setTaskId: (id: string | null) => void;
   setOutputDir: (dir: string) => void;
   setTrainingConfig: (config: Record<string, unknown>) => void;
+  setMappingValidated: (v: boolean) => void;
+  setPreviewReady: (v: boolean) => void;
   nextStep: () => void;
   prevStep: () => void;
   goToStep: (step: number) => void;
@@ -100,6 +105,8 @@ export const useAppStore = create<AppState>()(
       fileName: null,
       outputDir: null,
       trainingConfig: null,
+      mappingValidated: false,
+      previewReady: false,
 
       setMode: (mode) => set({ mode }),
       setFileName: (name) => set({ fileName: name }),
@@ -107,6 +114,8 @@ export const useAppStore = create<AppState>()(
       setTaskId: (id) => set({ taskId: id }),
       setOutputDir: (dir) => set({ outputDir: dir }),
       setTrainingConfig: (config) => set({ trainingConfig: config }),
+      setMappingValidated: (v) => set({ mappingValidated: v }),
+      setPreviewReady: (v) => set({ previewReady: v }),
       nextStep: () =>
         set((s) => ({
           currentStep: Math.min(s.currentStep + 1, PIPELINE_STEPS.length - 1),
@@ -123,6 +132,8 @@ export const useAppStore = create<AppState>()(
           fileName: null,
           outputDir: null,
           trainingConfig: null,
+          mappingValidated: false,
+          previewReady: false,
         }),
       restoreFromBackend: async () => {
         if (typeof window === "undefined") return false;
