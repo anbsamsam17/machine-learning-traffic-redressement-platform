@@ -4,8 +4,9 @@
  * LoginBg — animated full-bleed background for /login.
  *
  * Layers (z-stacked, deepest first):
- *   1. <next/image> fill priority — cartoon-style futuristic cityscape (/bg/login.jpg
- *      with a graceful fallback to /bg-traffic-night.jpg which matches the same theme).
+ *   1. <next/image> fill priority — cartoon-style futuristic cityscape (/bg/login.jpg).
+ *      A neon dark-blue CSS gradient sits beneath so the layer degrades gracefully
+ *      if the image ever fails to load — keeps the page on-brand without a 400/404.
  *   2. Dark overlay gradient to preserve foreground readability.
  *   3. SVG layer with stylized "cars" (12x6 rounded rects + cyan/indigo/warm-white headlight glows)
  *      following hand-tuned Bézier paths that approximate the roads visible in the image.
@@ -147,10 +148,19 @@ export function LoginBg() {
     <div
       aria-hidden="true"
       className="absolute inset-0 -z-10 pointer-events-none overflow-hidden"
+      // CSS gradient acts as a brand-coherent fallback: if /bg/login.jpg
+      // ever 404s (or Next/image rejects its profile), the layout still
+      // reads as "cyber night" instead of a blank flash. Replaces the old
+      // /bg-traffic-night.jpg reference, which was returning 400 from
+      // /_next/image (see APP-P1-3 / QA_B5).
+      style={{
+        background:
+          "linear-gradient(180deg, #0b1230 0%, #0a0e22 45%, #050714 100%)",
+      }}
     >
       {/* Cartoon cityscape backdrop */}
       <Image
-        src="/bg-traffic-night.jpg"
+        src="/bg/login.jpg"
         alt=""
         fill
         priority
