@@ -297,7 +297,7 @@ export default function DonneesPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <GradientText as="h2" className="text-2xl">
+        <GradientText as="h1" className="text-2xl">
           Donnees
         </GradientText>
         <p className="text-sm text-slate-300">

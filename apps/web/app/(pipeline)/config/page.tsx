@@ -102,7 +102,7 @@ export default function ConfigPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <GradientText as="h2" className="text-2xl">
+        <GradientText as="h1" className="text-2xl">
           Configuration {mode === "pl" ? "PL" : "TV"}
         </GradientText>
         <p className="text-sm text-slate-300">

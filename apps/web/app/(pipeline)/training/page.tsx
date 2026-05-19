@@ -380,7 +380,7 @@ export default function TrainingPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="space-y-2">
-          <GradientText as="h2" className="text-2xl">
+          <GradientText as="h1" className="text-2xl">
             Entrainement {mode === "pl" ? "PL" : "TV"}
           </GradientText>
           <p className="text-sm text-slate-300">

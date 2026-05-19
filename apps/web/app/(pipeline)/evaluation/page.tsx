@@ -376,7 +376,7 @@ export default function EvaluationPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <GradientText as="h2" className="text-2xl">Evaluation</GradientText>
+        <GradientText as="h1" className="text-2xl">Evaluation</GradientText>
         <p className="text-sm text-slate-300">
           Evaluez un modele {mode === "pl" ? "PL" : "TV"} sur un fichier de validation.
           Cette etape peut etre lancee independamment.

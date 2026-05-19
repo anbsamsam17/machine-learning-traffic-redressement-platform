@@ -376,7 +376,7 @@ export default function ExtrapolationPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <GradientText as="h2" className="text-2xl">Extrapolation</GradientText>
+        <GradientText as="h1" className="text-2xl">Extrapolation</GradientText>
         <p className="text-sm text-slate-300">
           Testez un modele {mode === "pl" ? "PL" : "TV"} sur un fichier d'extrapolation.
           Validez la generalisation du modele sur des donnees externes.
