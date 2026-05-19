@@ -2,6 +2,8 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { apiUrl } from "./api-url";
+import { fetchWithAuth } from "./auth";
 
 export type AppMode = "tv" | "pl" | "carte" | "compteurs" | null;
 
@@ -18,6 +20,43 @@ export const PIPELINE_STEPS: PipelineStep[] = [
   { id: "evaluation", label: "Evaluation", path: "/evaluation" },
   { id: "extrapolation", label: "Extrapolation", path: "/extrapolation" },
 ];
+
+/** Shape returned by the backend GET /api/sessions/current endpoint. */
+export interface BackendSessionState {
+  session_id: string;
+  mode: string; // "tv" | "pl"
+  step:
+    | "upload"
+    | "mapping"
+    | "preview"
+    | "config"
+    | "training"
+    | "evaluation";
+  file_name: string | null;
+  rows: number | null;
+  columns_count: number | null;
+  mapping_validated: boolean;
+  training_task_id: string | null;
+  output_dir: string | null;
+}
+
+/**
+ * Map a backend "step" name to the index of the stepper we want the
+ * user to land on. The "upload" / "mapping" / "preview" sub-steps all
+ * live inside /donnees (step 0), so they collapse to 0.
+ */
+function backendStepToStepperIndex(step: BackendSessionState["step"]): number {
+  switch (step) {
+    case "config":
+      return 1;
+    case "training":
+      return 2;
+    case "evaluation":
+      return 3;
+    default:
+      return 0;
+  }
+}
 
 interface AppState {
   mode: AppMode;
@@ -38,6 +77,12 @@ interface AppState {
   prevStep: () => void;
   goToStep: (step: number) => void;
   reset: () => void;
+  /**
+   * Pull the user's active session from the backend and hydrate the store.
+   * Idempotent — safe to call on every page mount. Returns true if a session
+   * was restored, false otherwise (no auth, no session, or fetch failure).
+   */
+  restoreFromBackend: () => Promise<boolean>;
 }
 
 const noopStorage = {
@@ -80,6 +125,36 @@ export const useAppStore = create<AppState>()(
           outputDir: null,
           trainingConfig: null,
         }),
+      restoreFromBackend: async () => {
+        if (typeof window === "undefined") return false;
+        try {
+          const res = await fetchWithAuth(apiUrl("/api/sessions/current"));
+          if (res.status === 404) return false;
+          if (!res.ok) return false;
+          const data = (await res.json()) as BackendSessionState;
+          if (!data || !data.session_id) return false;
+
+          const currentStep = backendStepToStepperIndex(data.step);
+          const normalizedMode = (data.mode === "pl" ? "pl" : "tv") as AppMode;
+
+          set((s) => ({
+            // Always trust the backend session id over whatever is in sessionStorage
+            sessionId: data.session_id,
+            // Only fill mode if not already chosen by the user (e.g. carte/compteurs)
+            mode: s.mode ?? normalizedMode,
+            // Restore filename if we have one and the local store is empty
+            fileName: s.fileName ?? data.file_name,
+            taskId: s.taskId ?? data.training_task_id,
+            outputDir: s.outputDir ?? data.output_dir,
+            // Don't downgrade the stepper if the user has already navigated
+            // further than what the backend reports.
+            currentStep: Math.max(s.currentStep, currentStep),
+          }));
+          return true;
+        } catch {
+          return false;
+        }
+      },
     }),
     {
       name: "mdl-pipeline-store",

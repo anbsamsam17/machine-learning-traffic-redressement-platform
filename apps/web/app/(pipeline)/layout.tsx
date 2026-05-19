@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight } from "lucide-react";
@@ -22,7 +23,24 @@ export default function PipelineLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { currentStep, goToStep } = useAppStore();
+  const { currentStep, goToStep, sessionId, restoreFromBackend } = useAppStore();
+
+  // APP-P0-4: on first mount, ask the backend whether the user already has
+  // an active session and hydrate the store accordingly. Without this, F5
+  // on /donnees (or any pipeline page) drops the user back to step 0 even
+  // though the backend session is still alive.
+  const restoredOnceRef = useRef(false);
+  useEffect(() => {
+    if (restoredOnceRef.current) return;
+    if (sessionId) {
+      // Store already has a session — sessionStorage survived, no need to
+      // round-trip the backend.
+      restoredOnceRef.current = true;
+      return;
+    }
+    restoredOnceRef.current = true;
+    void restoreFromBackend();
+  }, [sessionId, restoreFromBackend]);
 
   const activeStep = pathToStep[pathname] ?? currentStep;
 
