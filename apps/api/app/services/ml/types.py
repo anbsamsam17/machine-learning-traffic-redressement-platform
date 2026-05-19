@@ -57,35 +57,59 @@ class ModelTypeConfig:
 TV_CONFIG = ModelTypeConfig(
     name="TV",
 
+    # Nouveau schema FCD HERE (cf. Etape1_MDL_TV.txt).
+    # Inputs : 2 FCD + 4 distances (VL min/total + PL min/total) + 2 vitesses
+    # + functional_class (categoriel).
     input_cols=[
-        "TMJAFCDTV",
-        "TMJAFCDPL",
-        "car_average_distance_km",
-        "car_average_speed_kmh",
-        "truck_min_average_distance_km",
-        "truck_average_speed_kmh",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "avg_distance_m",
+        "avg_speed_kmh",
+        "truck_avg_min_distance_m",
+        "truck_avg_speed_kmh",
+        "functional_class",
     ],
-    output_cols=["TxPenTVRef"],
-    on_off_norm=[True, True, True, True, True, True],
+    output_cols=["TxPen"],
+    on_off_norm=[True, True, True, True, True, True, False],   # functional_class categoriel : pas de norm
 
+    # Retrocompat des datasets historiques (Bordeaux : TMJATV/TMJAFCDTV/car_*/km).
+    # Note unite : car_*_distance_km est en km, la cible m. La conversion est
+    # supposee deja appliquee en amont (data_prep) si applicable.
     column_aliases={
-        "TMJATV":  "TMJAFCDTV",
-        "TMJFCDTV": "TMJAFCDTV",
-        "TMJAPL":  "TMJAFCDPL",
-        "TMJAVL":  "TMJAFCDVL",
-        "TxPen":   "TxPenTVRef",
+        # FCD
+        "TMJATV":    "TMJOFCDTV",
+        "TMJAFCDTV": "TMJOFCDTV",
+        "TMJFCDTV":  "TMJOFCDTV",
+        "TMJAPL":    "TMJOFCDPL",
+        "TMJAFCDPL": "TMJOFCDPL",
+        "TMJFCDPL":  "TMJOFCDPL",
+        # Capteurs (target)
+        "TMJABCTV":  "TMJOBCTV",
+        "TMJABCPL":  "TMJOBCPL",
+        # TxPen
+        "TxPenTVRef": "TxPen",
+        # Vitesses
+        "car_average_speed_kmh":   "avg_speed_kmh",
+        "truck_average_speed_kmh": "truck_avg_speed_kmh",
+        # Distances (unite : Lyon en m, Bordeaux en km — voir data_prep)
+        "car_average_distance_km":       "avg_distance_m",
+        "truck_min_average_distance_km": "truck_avg_min_distance_m",
+        "truck_average_distance_km":     "truck_avg_distance_m",
+        # Reseau
+        "linkFC": "functional_class",
+        "FC":     "functional_class",
     },
 
-    target_col="TxPenTVRef",
-    target_numerator_fcd="TMJAFCDTV",
-    target_denominator_bc="TMJABCTV",
+    target_col="TxPen",
+    target_numerator_fcd="TMJOFCDTV",
+    target_denominator_bc="TMJOBCTV",
     target_alias="TxPen",
 
     eval_predicted_col="TVr",
-    eval_reference_col="TMJABCTV",
-    eval_numerator_fcd="TMJAFCDTV",
+    eval_reference_col="TMJOBCTV",
+    eval_numerator_fcd="TMJOFCDTV",
 
-    mandatory_input_cols=["TMJAFCDTV", "TMJAFCDPL"],
+    mandatory_input_cols=["TMJOFCDTV", "TMJOFCDPL"],
     min_input_count=3,
     default_high_flow_threshold=1000.0,
 )
@@ -97,31 +121,39 @@ PL_CONFIG = ModelTypeConfig(
     name="PL",
 
     input_cols=[
-        "TMJAFCDPL",
-        "car_average_distance_km",
-        "car_average_speed_kmh",
-        "truck_min_average_distance_km",
-        "truck_average_speed_kmh",
+        "TMJOFCDPL",
+        "avg_distance_m",
+        "avg_speed_kmh",
+        "truck_avg_min_distance_m",
+        "truck_avg_speed_kmh",
+        "functional_class",
     ],
-    output_cols=["TxPenPLRef"],
-    on_off_norm=[True, True, True, True, True],
+    output_cols=["TxPenPL"],
+    on_off_norm=[True, True, True, True, True, False],
 
     column_aliases={
-        "TMJAPL": "TMJAFCDPL",
-        "TMJAVL": "TMJAFCDVL",
-        "TxPenPL": "TxPenPLRef",
+        "TMJAPL":    "TMJOFCDPL",
+        "TMJAFCDPL": "TMJOFCDPL",
+        "TMJABCPL":  "TMJOBCPL",
+        "TxPenPLRef": "TxPenPL",
+        "car_average_speed_kmh":   "avg_speed_kmh",
+        "truck_average_speed_kmh": "truck_avg_speed_kmh",
+        "car_average_distance_km":       "avg_distance_m",
+        "truck_min_average_distance_km": "truck_avg_min_distance_m",
+        "linkFC": "functional_class",
+        "FC":     "functional_class",
     },
 
-    target_col="TxPenPLRef",
-    target_numerator_fcd="TMJAFCDPL",
-    target_denominator_bc="TMJABCPL",
+    target_col="TxPenPL",
+    target_numerator_fcd="TMJOFCDPL",
+    target_denominator_bc="TMJOBCPL",
     target_alias="TxPenPL",
 
     eval_predicted_col="DPL",
-    eval_reference_col="TMJABCPL",
-    eval_numerator_fcd="TMJAFCDPL",
+    eval_reference_col="TMJOBCPL",
+    eval_numerator_fcd="TMJOFCDPL",
 
-    mandatory_input_cols=["TMJAFCDPL"],
+    mandatory_input_cols=["TMJOFCDPL"],
     min_input_count=2,
     default_high_flow_threshold=500.0,
 )

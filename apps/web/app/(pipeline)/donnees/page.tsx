@@ -19,28 +19,44 @@ import { SuccessBanner } from "@/components/ui/success-banner";
 import { useAppStore } from "@/lib/store";
 import { spawnConfetti } from "@/lib/success-effects";
 
-// ── Real 36 target columns from column_mapper.py (35 + geometry) ──────────
+// ── 26 target columns (Etape1_MDL_TV refonte FCD HERE) ────────────────────
+// Mirrored from apps/api/app/routers/mapping.py:TARGET_COLUMNS.
 const TARGET_COLUMNS = [
-  "Type", "Identifiant", "Commune", "Route", "PRD",
-  "MJA TV 2023", "MJA PL 2023", "MJA TV 2024", "MJA PL 2024",
-  "MJA TV 2025", "MJA PL 2025",
-  "TMJABCTV", "TMJABCPL", "Annee", "Road", "TMJAVL", "TMJAPL", "TMJATV",
-  "TxPen", "TxPenPL", "variabilite_FCD",
-  "car_count", "car_average_speed_kmh", "car_average_distance_km",
-  "truck_count", "truck_average_speed_kmh", "truck_min_average_distance_km",
-  "REF_IN_ID", "NREF_IN_ID", "TUNNEL", "status", "RAMP", "ROUNDABOUT",
-  "ST_NAME", "flag_comptage", "geometry",
+  // Identification (4)
+  "Identifiant", "Annee", "Adresse", "Type Compteur",
+  // Comptage capteur (4)
+  "TMJOBCTV", "TMJOBCPL", "TMJOBCTV_HPM", "TMJOBCTV_HPS",
+  // FCD HERE (2)
+  "TMJOFCDTV", "TMJOFCDPL",
+  // Taux de penetration (2)
+  "TxPen", "TxPenPL",
+  // Mapping (2)
+  "segment_id_match", "mapmatch_status",
+  // Reseau (1)
+  "functional_class",
+  // Vitesses (2)
+  "avg_speed_kmh", "truck_avg_speed_kmh",
+  // Distances VL (4)
+  "avg_distance_m", "avg_distance_before_m",
+  "avg_distance_after_m", "avg_min_distance_m",
+  // Distances PL (4)
+  "truck_avg_distance_m", "truck_avg_distance_before_m",
+  "truck_avg_distance_after_m", "truck_avg_min_distance_m",
+  // Geometrie (1)
+  "geometry",
 ];
 
-// ── Critical columns required for model training (from df_builder.py) ─────
+// ── Critical columns required for model training ──────────────────────────
 const CRITICAL_COLS = [
-  "TMJATV",
-  "TMJAPL",
-  "TxPen",
-  "car_average_distance_km",
-  "car_average_speed_kmh",
-  "truck_min_average_distance_km",
-  "truck_average_speed_kmh",
+  "TMJOBCTV",          // target principale TV
+  "TMJOFCDTV",         // feature principale FCD TV
+  "TMJOFCDPL",         // feature FCD PL
+  "TxPen",             // cible derivable
+  "avg_distance_m",
+  "avg_speed_kmh",
+  "truck_avg_min_distance_m",
+  "truck_avg_speed_kmh",
+  "functional_class",
 ];
 
 export default function DonneesPage() {

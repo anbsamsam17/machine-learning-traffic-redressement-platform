@@ -21,36 +21,43 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import type { AppMode } from "@/lib/store";
 
-// ─── Constants TV ───────────────────────────────────────────────────────────
+// ─── Constants TV (Etape1_MDL_TV refonte FCD HERE) ─────────────────────────
 const DEFAULT_INPUT_COLS_TV = [
-  "TMJAFCDTV",
-  "TMJAFCDPL",
-  "car_average_distance_km",
-  "car_average_speed_kmh",
-  "truck_min_average_distance_km",
-  "truck_average_speed_kmh",
+  "TMJOFCDTV",
+  "TMJOFCDPL",
+  "avg_distance_m",
+  "avg_speed_kmh",
+  "truck_avg_min_distance_m",
+  "truck_avg_speed_kmh",
+  "functional_class",
 ];
 const EXTRA_INPUT_COLS_TV = [
-  "variabilite_FCD",
-  "car_count",
-  "truck_count",
-  "TMJAVL",
+  "TMJOBCTV_HPM",
+  "TMJOBCTV_HPS",
+  "avg_distance_before_m",
+  "avg_distance_after_m",
+  "avg_min_distance_m",
+  "truck_avg_distance_m",
+  "truck_avg_distance_before_m",
+  "truck_avg_distance_after_m",
 ];
 
 // ─── Constants PL ───────────────────────────────────────────────────────────
 const DEFAULT_INPUT_COLS_PL = [
-  "TMJAFCDPL",
-  "car_average_distance_km",
-  "car_average_speed_kmh",
-  "truck_min_average_distance_km",
-  "truck_average_speed_kmh",
+  "TMJOFCDPL",
+  "avg_distance_m",
+  "avg_speed_kmh",
+  "truck_avg_min_distance_m",
+  "truck_avg_speed_kmh",
+  "functional_class",
 ];
 const EXTRA_INPUT_COLS_PL = [
-  "TMJAFCDTV",
-  "TMJAFCDVL",
-  "variabilite_FCD",
-  "truck_count",
-  "car_count",
+  "TMJOFCDTV",
+  "avg_distance_before_m",
+  "avg_distance_after_m",
+  "truck_avg_distance_m",
+  "truck_avg_distance_before_m",
+  "truck_avg_distance_after_m",
 ];
 
 // ─── Shared constants ───────────────────────────────────────────────────────
@@ -361,10 +368,10 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     () => Object.fromEntries(defaultCols.map((c) => [c, true]))
   );
   const OUTPUT_OPTIONS = isTv
-    ? ["TxPenTVRef", "TxPen"]
-    : ["TxPenPLRef", "TxPenPL"];
+    ? ["TxPen", "TMJOBCTV"]
+    : ["TxPenPL", "TMJOBCPL"];
   const [outputCols, setOutputCols] = useState<string[]>(
-    isTv ? ["TxPenTVRef"] : ["TxPenPLRef"]
+    isTv ? ["TxPen"] : ["TxPenPL"]
   );
 
   const allCandidates = availableColumns && availableColumns.length > 0
@@ -421,8 +428,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
   // ── Colonnes obligatoires ────────────────────────────────────────────────
   const defaultMandatory = isTv
-    ? ["TMJAFCDTV", "TMJAFCDPL"]
-    : ["TMJAFCDPL"];
+    ? ["TMJOFCDTV", "TMJOFCDPL"]
+    : ["TMJOFCDPL"];
   const [mandatoryCols, setMandatoryCols] = useState<string[]>(
     defaultMandatory.filter((c) => defaultCols.includes(c))
   );

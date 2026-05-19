@@ -22,8 +22,8 @@ export const landingContent = {
     {
       id: "tv",
       shortTitle: "TV",
-      title: "Modele Tous Vehicules",
-      tagline: "Reseau neuronal calibre sur compteurs permanents et FCD apparies.",
+      title: "Machine Learning : Redressement FCD Tous Vehicules",
+      tagline: "Reseau neuronal calibre sur FCD HERE et compteurs locaux.",
       description:
         "Pipeline complet : import des releves, mapping des features, grid search adaptatif sur l'architecture et les hyperparametres, evaluation GEH et export du modele .keras. Rapports d'erreur par classe TMJA livres en fin de run.",
       keyMetrics: [

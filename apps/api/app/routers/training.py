@@ -78,12 +78,16 @@ class TrainingConfig(BaseModel):
     output_dir: str | None = None
 
     model_type: str = "TV"
+    # Defaults aligned with the 26-column standardised schema (Etape1_MDL_TV).
+    # Retrocompat names (TMJAFCDTV / car_* / km) are resolved transparently
+    # by services/ml/data_prep.py via TV_CONFIG.column_aliases.
     input_cols: list[str] = [
-        "TMJAFCDTV", "TMJAFCDPL",
-        "car_average_distance_km", "car_average_speed_kmh",
-        "truck_min_average_distance_km", "truck_average_speed_kmh",
+        "TMJOFCDTV", "TMJOFCDPL",
+        "avg_distance_m", "avg_speed_kmh",
+        "truck_avg_min_distance_m", "truck_avg_speed_kmh",
+        "functional_class",
     ]
-    output_cols: list[str] = ["TxPenTVRef"]
+    output_cols: list[str] = ["TxPen"]
     on_off_norm: list[bool] = []
     activations: list[str] = ["elu"]
     learning_rates: list[float] = [0.01]

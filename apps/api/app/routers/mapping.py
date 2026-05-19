@@ -1,4 +1,18 @@
-"""Mapping router — auto-detect columns + validate/build learning DataFrame."""
+"""Mapping router — auto-detect columns + validate/build learning DataFrame.
+
+Schema cible : 26 colonnes standardisees pour le pipeline TV/PL (FCD HERE +
+compteurs locaux). Voir Etape1_MDL_TV.txt pour le breakdown par categorie.
+
+Retrocompat : les datasets historiques (Bordeaux : TMJATV/TMJAFCDTV/car_*/km)
+sont auto-mappes vers le nouveau schema via SYNONYMS. Les distances en km
+restent en km a ce niveau ; la conversion m<->km est geree au niveau du
+service ML si necessaire pour les modeles deja entraines sur les anciens
+noms.
+
+L'utilisateur peut ajouter des colonnes additionnelles libres de sa table
+source via `ValidateRequest.extra_cols` — elles sont copiees telles quelles
+dans le learning_df, en plus des 26 colonnes cibles.
+"""
 
 from __future__ import annotations
 
@@ -18,33 +32,120 @@ router = APIRouter(prefix="/api/mapping", tags=["mapping"])
 
 
 # ---------------------------------------------------------------------------
-# 35 target columns (mirrored from column_mapper.py)
+# Cible : 26 colonnes standardisees (refonte Etape1_MDL_TV)
 # ---------------------------------------------------------------------------
 
 TARGET_COLUMNS: list[str] = [
-    "Type", "Identifiant", "Commune", "Route", "PRD",
-    "MJA TV 2023", "MJA PL 2023", "MJA TV 2024", "MJA PL 2024",
-    "MJA TV 2025", "MJA PL 2025",
-    "TMJABCTV", "TMJABCPL", "Annee", "Road", "TMJAVL", "TMJAPL", "TMJATV",
-    "TxPen", "TxPenPL", "variabilite_FCD",
-    "car_count", "car_average_speed_kmh", "car_average_distance_km",
-    "truck_count", "truck_average_speed_kmh", "truck_min_average_distance_km",
-    "REF_IN_ID", "NREF_IN_ID", "TUNNEL", "status", "RAMP", "ROUNDABOUT",
-    "ST_NAME", "flag_comptage", "geometry",
+    # Identification (4)
+    "Identifiant", "Annee", "Adresse", "Type Compteur",
+    # Comptage capteur (BC = Boucle Comptage) (4)
+    "TMJOBCTV", "TMJOBCPL", "TMJOBCTV_HPM", "TMJOBCTV_HPS",
+    # FCD HERE (2)
+    "TMJOFCDTV", "TMJOFCDPL",
+    # Taux de penetration (2)
+    "TxPen", "TxPenPL",
+    # Mapping & qualite (2)
+    "segment_id_match", "mapmatch_status",
+    # Reseau HERE (1)
+    "functional_class",
+    # Vitesses FCD lissees (2)
+    "avg_speed_kmh", "truck_avg_speed_kmh",
+    # Distances VL (4)
+    "avg_distance_m", "avg_distance_before_m",
+    "avg_distance_after_m", "avg_min_distance_m",
+    # Distances PL (4)
+    "truck_avg_distance_m", "truck_avg_distance_before_m",
+    "truck_avg_distance_after_m", "truck_avg_min_distance_m",
+    # Geometrie (1)
+    "geometry",
 ]
 
+
+# Categories utilisees par le frontend pour grouper l'affichage des targets.
+TARGET_GROUPS: dict[str, list[str]] = {
+    "Identification": ["Identifiant", "Annee", "Adresse", "Type Compteur"],
+    "Comptage capteur": ["TMJOBCTV", "TMJOBCPL", "TMJOBCTV_HPM", "TMJOBCTV_HPS"],
+    "FCD HERE": ["TMJOFCDTV", "TMJOFCDPL"],
+    "Taux de penetration": ["TxPen", "TxPenPL"],
+    "Mapping & qualite": ["segment_id_match", "mapmatch_status"],
+    "Reseau HERE": ["functional_class"],
+    "Vitesses FCD": ["avg_speed_kmh", "truck_avg_speed_kmh"],
+    "Distances VL": [
+        "avg_distance_m", "avg_distance_before_m",
+        "avg_distance_after_m", "avg_min_distance_m",
+    ],
+    "Distances PL": [
+        "truck_avg_distance_m", "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m", "truck_avg_min_distance_m",
+    ],
+    "Geometrie": ["geometry"],
+}
+
+
+# Synonymes : pour chaque cible, liste de noms source acceptes (auto-mapping).
+# Inclut la retro-compatibilite des datasets Bordeaux (TMJATV, car_*, etc.).
 SYNONYMS: dict[str, list[str]] = {
-    "TxPen": ["TxPenTVRef", "TxPenRef", "TXPENTV", "TXPENTVREF", "txpen", "TxPen"],
+    # Identification
+    "Identifiant": ["NO_DU_POSTE", "no_du_poste", "id_poste", "ID", "id", "Poste"],
+    "Annee": ["annee", "ANNEE", "year", "Year", "an"],
+    "Adresse": ["adresse compteur", "Adresse compteur", "ADRESSE", "adresse", "Route", "route"],
+    "Type Compteur": ["type compteur", "TypeCompteur", "type_compteur", "Type"],
+
+    # Comptage (TMJO = TMJ Ouvre, BC = Boucle Comptage)
+    "TMJOBCTV": ["TMJABCTV", "tmjabctv", "TMJOBCTV", "TMJABCTOTAL"],
+    "TMJOBCPL": ["TMJABCPL", "tmjabcpl", "TMJOBCPL"],
+    "TMJOBCTV_HPM": ["TMJABCTV_HPM", "tmjabctv_hpm"],
+    "TMJOBCTV_HPS": ["TMJABCTV_HPS", "tmjabctv_hps"],
+
+    # FCD HERE (TMJO = TMJ Ouvre, FCD = Floating Car Data)
+    "TMJOFCDTV": ["TMJAFCDTV", "TMJFCDTV", "TMJATV", "tmjafcdtv", "tmjatv"],
+    "TMJOFCDPL": ["TMJAFCDPL", "TMJFCDPL", "TMJAPL", "tmjafcdpl", "tmjapl"],
+
+    # Taux de penetration
+    "TxPen": ["TxPen_brut", "TxPenTVRef", "TxPenRef", "TXPENTV", "TXPENTVREF", "txpen"],
     "TxPenPL": ["TxPenPLRef", "TXPENPL", "TXPENPLREF", "txpenpl"],
-    "TMJATV": ["TMJAFCDTV", "TMJFCDTV", "tmjatv"],
-    "TMJAPL": ["TMJAFCDPL", "TMJFCDPL", "tmjapl"],
+
+    # Mapping HERE
+    "segment_id_match": ["LINK_ID", "link_id", "segmentId", "segmentid", "ref_in_id", "REF_IN_ID"],
+    "mapmatch_status": ["match_status", "mapmatch", "mapmatch_state", "status"],
+
+    # Reseau
+    "functional_class": ["linkFC", "FC", "fc", "FUNCTIONAL_CLASS"],
+
+    # Vitesses FCD
+    "avg_speed_kmh": ["car_average_speed_kmh", "avg_speed", "car_speed", "vitesse_voitures_kmh"],
+    "truck_avg_speed_kmh": ["truck_average_speed_kmh", "truck_speed", "vitesse_camions_kmh"],
+
+    # Distances VL (m). Note : les anciens datasets Bordeaux sont en km, le
+    # synonyme est conserve pour le matching mais l'unite doit etre verifiee.
+    "avg_distance_m": ["car_average_distance_km", "car_avg_distance", "avg_distance"],
+    "avg_distance_before_m": ["car_distance_before", "avg_dist_before"],
+    "avg_distance_after_m": ["car_distance_after", "avg_dist_after"],
+    "avg_min_distance_m": ["car_min_average_distance_km", "avg_min_dist", "car_min_distance"],
+
+    # Distances PL (m)
+    "truck_avg_distance_m": ["truck_average_distance_km", "truck_avg_distance"],
+    "truck_avg_distance_before_m": ["truck_distance_before"],
+    "truck_avg_distance_after_m": ["truck_distance_after"],
+    "truck_avg_min_distance_m": ["truck_min_average_distance_km", "truck_min_avg_distance"],
+
+    # Geometrie
     "geometry": ["__geometry_json", "geom", "the_geom", "shape", "SHAPE"],
 }
 
+
+# Colonnes critiques pour le training TV (features + target principale).
+# Si l'une de ces colonnes est manquante apres validation, on warn fort.
 CRITICAL_COLS: list[str] = [
-    "TMJATV", "TMJAPL", "TxPen",
-    "car_average_distance_km", "car_average_speed_kmh",
-    "truck_min_average_distance_km", "truck_average_speed_kmh",
+    "TMJOBCTV",          # target principale TV
+    "TMJOFCDTV",         # feature principale FCD TV
+    "TMJOFCDPL",         # feature FCD PL (pour le mix)
+    "TxPen",             # cible derivable
+    "avg_distance_m",
+    "avg_speed_kmh",
+    "truck_avg_min_distance_m",
+    "truck_avg_speed_kmh",
+    "functional_class",
 ]
 
 
@@ -67,11 +168,14 @@ class AutoMapResponse(BaseModel):
     mappings: list[ColumnMapping]
     source_columns: list[str]
     unmapped_count: int
+    groups: dict[str, list[str]] = {}     # categories d'affichage frontend
+    extra_candidates: list[str] = []      # colonnes source non mappees (proposees comme variables additionnelles)
 
 
 class ValidateRequest(BaseModel):
     session_id: str
-    mapping: dict[str, str | None]  # target -> source (user-confirmed)
+    mapping: dict[str, str | None]      # target -> source (user-confirmed)
+    extra_cols: list[str] = []           # colonnes additionnelles libres a inclure dans le learning_df
     territory: str = "default"
 
 
@@ -82,27 +186,33 @@ class ValidateResponse(BaseModel):
     missing_critical: list[str]
     warnings: list[str]
     preview: list[dict]
+    extra_cols: list[str] = []
 
 
 # ---------------------------------------------------------------------------
-# Core logic (ported from column_mapper.py)
+# Core logic
 # ---------------------------------------------------------------------------
 
-def _auto_map(source_cols: list[str]) -> list[ColumnMapping]:
+def _auto_map(source_cols: list[str]) -> tuple[list[ColumnMapping], list[str]]:
+    """Auto-detect a source column for each TARGET_COLUMN.
+
+    Returns (mappings, extra_candidates) where extra_candidates are source
+    columns that were not chosen by any target — proposed to the user as
+    free additional variables.
+    """
     source_lower = {c.lower(): c for c in source_cols}
     result: list[ColumnMapping] = []
+    used_sources: set[str] = set()
 
     for target in TARGET_COLUMNS:
         # 1. Exact match (case-insensitive)
         if target.lower() in source_lower:
-            result.append(ColumnMapping(
-                target=target,
-                source=source_lower[target.lower()],
-                confidence="exact",
-            ))
+            src = source_lower[target.lower()]
+            result.append(ColumnMapping(target=target, source=src, confidence="exact"))
+            used_sources.add(src)
             continue
 
-        # 2. Synonym match
+        # 2. Synonym match (exact, case-insensitive)
         found = None
         for alias in SYNONYMS.get(target, []):
             if alias.lower() in source_lower:
@@ -110,68 +220,88 @@ def _auto_map(source_cols: list[str]) -> list[ColumnMapping]:
                 break
         if found:
             result.append(ColumnMapping(target=target, source=found, confidence="synonym"))
+            used_sources.add(found)
             continue
 
         # 3. Fuzzy match
-        matches = get_close_matches(target.lower(), source_lower.keys(), n=1, cutoff=0.75)
+        candidates = [c for c in source_lower.keys()]
+        matches = get_close_matches(target.lower(), candidates, n=1, cutoff=0.75)
         if matches:
-            result.append(ColumnMapping(
-                target=target,
-                source=source_lower[matches[0]],
-                confidence="fuzzy",
-            ))
+            src = source_lower[matches[0]]
+            result.append(ColumnMapping(target=target, source=src, confidence="fuzzy"))
+            used_sources.add(src)
             continue
 
         # 4. Not found
         result.append(ColumnMapping(target=target, source=None, confidence="missing"))
 
-    return result
+    extra_candidates = [c for c in source_cols if c not in used_sources]
+    return result, extra_candidates
 
 
 def _build_learning_df(
     raw_df: pd.DataFrame,
     mapping: dict[str, str | None],
+    extra_cols: list[str] | None = None,
 ) -> tuple[pd.DataFrame, list[str], list[str]]:
-    """Build the standardised 35-column DataFrame (in-memory, no disk save)."""
+    """Build the 26-column standardised DataFrame + optional extra columns.
+
+    Returns (df, missing_critical, warnings).
+    """
     cols: dict[str, pd.Series] = {}
     warnings: list[str] = []
     n = len(raw_df)
 
-    # Ensure all 35+1 target columns exist, even if frontend sent a partial mapping
     for target in TARGET_COLUMNS:
         source = mapping.get(target)
         if source is not None and source in raw_df.columns:
             cols[target] = raw_df[source].reset_index(drop=True)
         else:
             cols[target] = pd.Series([np.nan] * n)
-            if source is None:
-                warnings.append(f"Colonne '{target}' non trouvee dans les donnees source.")
+            if source is None and target in CRITICAL_COLS:
+                warnings.append(f"Colonne critique '{target}' non trouvee dans les donnees source.")
+
+    # Extra columns (libres : ajoutees telles quelles)
+    if extra_cols:
+        for col in extra_cols:
+            if col in raw_df.columns and col not in cols:
+                cols[col] = raw_df[col].reset_index(drop=True)
 
     df = pd.DataFrame(cols)
 
-    # Derive TxPen if absent
+    # ── Derivations ──────────────────────────────────────────────────────────
+
+    # Derive TxPen if absent : TxPen = TMJOFCDTV / TMJOBCTV * 100
     if "TxPen" in df.columns and df["TxPen"].isna().all():
-        tmjatv = pd.to_numeric(df.get("TMJATV"), errors="coerce")
-        tmjabctv = pd.to_numeric(df.get("TMJABCTV"), errors="coerce")
-        mask = tmjabctv > 0
-        df.loc[mask, "TxPen"] = (tmjatv[mask] / tmjabctv[mask] * 100.0).round(4)
+        tmjofcd = pd.to_numeric(df.get("TMJOFCDTV"), errors="coerce")
+        tmjobc = pd.to_numeric(df.get("TMJOBCTV"), errors="coerce")
+        mask = tmjobc > 0
+        df.loc[mask, "TxPen"] = (tmjofcd[mask] / tmjobc[mask] * 100.0).round(4)
 
-    # Derive TxPenPL if absent
+    # Derive TxPenPL if absent : TxPenPL = TMJOFCDPL / TMJOBCPL * 100
     if "TxPenPL" in df.columns and df["TxPenPL"].isna().all():
-        tmjapl = pd.to_numeric(df.get("TMJAPL"), errors="coerce")
-        tmjabcpl = pd.to_numeric(df.get("TMJABCPL"), errors="coerce")
-        mask = tmjabcpl > 0
-        df.loc[mask, "TxPenPL"] = (tmjapl[mask] / tmjabcpl[mask] * 100.0).round(4)
+        tmjofcd_pl = pd.to_numeric(df.get("TMJOFCDPL"), errors="coerce")
+        tmjobc_pl = pd.to_numeric(df.get("TMJOBCPL"), errors="coerce")
+        mask = tmjobc_pl > 0
+        df.loc[mask, "TxPenPL"] = (tmjofcd_pl[mask] / tmjobc_pl[mask] * 100.0).round(4)
 
-    # Derive flag_comptage if absent
-    if "flag_comptage" in df.columns and df["flag_comptage"].isna().all() and "Type" in df.columns:
-        types = df["Type"].astype(str).str.strip().str.lower()
-        df["flag_comptage"] = types.isin(["per", "tou"]).astype(int)
+    # Derive flag_comptage from "Type Compteur" (Permanent → 1, Temporaire → 0)
+    # This column is always added (not in TARGET_COLUMNS to avoid forcing it
+    # through the mapping UI), it's used downstream for sample weighting.
+    if "Type Compteur" in df.columns:
+        types = df["Type Compteur"].astype(str).str.strip().str.lower()
+        df["flag_comptage"] = types.str.startswith("perman").astype(int)
+        # Fallback to "Per"/"Tou" prefixes used by historical Bordeaux dataset
+        legacy_mask = types.isin(["per", "tou"])
+        if legacy_mask.any() and df["flag_comptage"].sum() == 0:
+            df.loc[legacy_mask, "flag_comptage"] = 1
+    else:
+        df["flag_comptage"] = 0
 
     missing_critical = [c for c in CRITICAL_COLS if c in df.columns and df[c].isna().all()]
     if missing_critical:
         warnings.append(
-            f"Colonnes critiques manquantes: {missing_critical}. "
+            f"Colonnes critiques manquantes apres mapping : {missing_critical}. "
             "L'entrainement risque d'echouer."
         )
 
@@ -184,7 +314,7 @@ def _build_learning_df(
 
 @router.post("/auto", response_model=AutoMapResponse)
 async def auto_map(body: AutoMapRequest) -> AutoMapResponse:
-    """Run fuzzy auto-mapping of source columns to the 35 target columns."""
+    """Run fuzzy auto-mapping of source columns to the 26 target columns."""
     session = session_manager.get_session(body.session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
@@ -194,7 +324,7 @@ async def auto_map(body: AutoMapRequest) -> AutoMapResponse:
         raise HTTPException(status_code=400, detail="Aucun fichier uploade dans cette session.")
 
     source_cols = list(raw_df.columns)
-    mappings = _auto_map(source_cols)
+    mappings, extra_candidates = _auto_map(source_cols)
 
     # Store proposed mapping
     proposed = {m.target: m.source for m in mappings}
@@ -203,8 +333,8 @@ async def auto_map(body: AutoMapRequest) -> AutoMapResponse:
     unmapped = sum(1 for m in mappings if m.source is None)
 
     logger.info(
-        "Auto-map: session=%s mapped=%d/%d",
-        body.session_id, len(mappings) - unmapped, len(mappings),
+        "Auto-map: session=%s mapped=%d/%d extras=%d",
+        body.session_id, len(mappings) - unmapped, len(mappings), len(extra_candidates),
     )
 
     return AutoMapResponse(
@@ -212,13 +342,18 @@ async def auto_map(body: AutoMapRequest) -> AutoMapResponse:
         mappings=mappings,
         source_columns=source_cols,
         unmapped_count=unmapped,
+        groups=TARGET_GROUPS,
+        extra_candidates=extra_candidates,
     )
 
 
 @router.put("/validate", response_model=ValidateResponse)
 async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
     """Accept the user-confirmed mapping and build the learning DataFrame."""
-    logger.info("validate_mapping: start session=%s territory=%s", body.session_id, body.territory)
+    logger.info(
+        "validate_mapping: start session=%s territory=%s extras=%d",
+        body.session_id, body.territory, len(body.extra_cols),
+    )
     session = session_manager.get_session(body.session_id)
     if session is None:
         logger.warning("validate_mapping: session not found %s", body.session_id)
@@ -230,12 +365,12 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
         raise HTTPException(status_code=400, detail="Aucun fichier uploade dans cette session.")
 
     logger.info("validate_mapping: raw_df shape=%s", raw_df.shape)
-    df, missing_critical, warnings = _build_learning_df(raw_df, body.mapping)
-    logger.info("validate_mapping: learning_df built shape=%s missing=%s", df.shape, missing_critical)
+    df, missing_critical, warnings = _build_learning_df(raw_df, body.mapping, body.extra_cols)
+    logger.info(
+        "validate_mapping: learning_df built shape=%s missing=%s",
+        df.shape, missing_critical,
+    )
 
-    # Recursively convert numpy arrays/scalars to plain Python types.
-    # pyarrow Parquet round-trip turns list[list[float]] into nested ndarrays,
-    # which then break any downstream json.dumps call.
     def _plain(v):
         if v is None or isinstance(v, (str, bool, int)):
             return v
@@ -247,7 +382,6 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
             return {str(k): _plain(x) for k, x in v.items()}
         if isinstance(v, (list, tuple)):
             return [_plain(x) for x in v]
-        # numpy arrays, numpy scalars, pandas Timestamp, etc.
         if hasattr(v, "tolist"):
             return _plain(v.tolist())
         return str(v)
@@ -260,6 +394,7 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
 
     session_manager.store_data(body.session_id, "learning_df", df)
     session_manager.store_data(body.session_id, "confirmed_mapping", body.mapping)
+    session_manager.store_data(body.session_id, "extra_cols", list(body.extra_cols))
     session_manager.store_data(body.session_id, "territory", body.territory)
     logger.info("validate_mapping: session data stored")
 
@@ -268,7 +403,6 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
         {col: _plain(row[col]) for col in preview_df.columns}
         for _, row in preview_df.iterrows()
     ]
-    # JSON can't represent NaN; replace with "" in preview
     for row in preview:
         for k, v in list(row.items()):
             if v is None:
@@ -286,4 +420,5 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
         missing_critical=missing_critical,
         warnings=warnings,
         preview=preview,
+        extra_cols=list(body.extra_cols),
     )

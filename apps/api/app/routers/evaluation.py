@@ -345,7 +345,14 @@ def _make_folium_map_html(stats_df: pd.DataFrame, model_name: str) -> str:
     if valid.empty:
         return "<p style='color:#888;font-style:italic;'>Aucune coordonnee geographique disponible pour afficher la carte (colonnes lat/lon absentes).</p>"
 
-    tol = pd.to_numeric(valid.get("Tolerance_IN_OUT"), errors="coerce")
+    # Tolerance_IN_OUT may be missing entirely for the new FCD HERE schema.
+    # `.get()` returns None when absent; coerce to an empty numeric Series so
+    # downstream `.notna()` / mask operations stay vectorised.
+    tol_raw = valid.get("Tolerance_IN_OUT")
+    if tol_raw is None:
+        tol = pd.Series([np.nan] * len(valid), index=valid.index)
+    else:
+        tol = pd.to_numeric(tol_raw, errors="coerce")
     n1 = int((tol == 1).sum())
     n2 = int((tol == 2).sum())
     n3 = int((tol == 3).sum())
@@ -358,7 +365,18 @@ def _make_folium_map_html(stats_df: pd.DataFrame, model_name: str) -> str:
             return "#808080"
         return {1: "#2ecc71", 2: "#f39c12", 3: "#e74c3c"}.get(k, "#808080")
 
-    s = pd.to_numeric(valid.get("TMJABCTV"), errors="coerce")
+    # Reference flow column name varies with the schema (Bordeaux: TMJABCTV,
+    # Lyon: TMJOBCTV). Try both, then any column starting with TMJ as last fallback.
+    ref_col_candidates = ["TMJOBCTV", "TMJABCTV"]
+    s_raw = None
+    for c in ref_col_candidates:
+        if c in valid.columns:
+            s_raw = valid[c]
+            break
+    if s_raw is None:
+        s = pd.Series([np.nan] * len(valid), index=valid.index)
+    else:
+        s = pd.to_numeric(s_raw, errors="coerce")
     lo = float(np.nanquantile(s.dropna(), 0.01)) if s.notna().any() else 0.0
     hi = float(np.nanquantile(s.dropna(), 0.99)) if s.notna().any() else 1.0
     if not np.isfinite(hi) or hi <= lo:
