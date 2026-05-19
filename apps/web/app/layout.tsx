@@ -20,7 +20,10 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MDL Redressement Tool",
+  title: {
+    default: "MDL Redressement Tool",
+    template: "%s",
+  },
   description:
     "Pipeline de modelisation de redressement FCD : donnees, entrainement, evaluation",
 };
