@@ -149,11 +149,19 @@ export function LandingBg({ className }: LandingBgProps): React.JSX.Element {
     };
   }, []);
 
-  // Pre-build glyph strings once per mount (stable across renders).
-  // useState's lazy initialiser guarantees a single evaluation and
-  // — unlike a ref — is safe to read during render.
-  const [leftGlyphs] = useState(() => makeBinaryGlyphs(GLYPH_COUNT));
-  const [rightGlyphs] = useState(() => makeBinaryGlyphs(GLYPH_COUNT));
+  // Pre-build glyph strings once per mount, **client-side only**.
+  // `makeBinaryGlyphs` uses Math.random() — running it via useState's lazy
+  // initialiser would execute it during SSR as well and produce a different
+  // string than the client's first render, triggering a React hydration
+  // mismatch warning. We start with an empty string (matches SSR) and fill
+  // the columns inside useEffect, after hydration is complete.
+  const [leftGlyphs, setLeftGlyphs] = useState<string>("");
+  const [rightGlyphs, setRightGlyphs] = useState<string>("");
+
+  useEffect(() => {
+    setLeftGlyphs(makeBinaryGlyphs(GLYPH_COUNT));
+    setRightGlyphs(makeBinaryGlyphs(GLYPH_COUNT));
+  }, []);
 
   return (
     <div
