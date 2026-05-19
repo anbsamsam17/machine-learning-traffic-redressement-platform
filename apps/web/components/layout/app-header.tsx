@@ -18,7 +18,7 @@ import {
 import { useTheme } from "next-themes";
 import { useAppStore, type AppMode } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { getToken, removeToken } from "@/lib/auth";
+import { getToken, logout } from "@/lib/auth";
 import { apiClient } from "@/lib/api";
 import type { AuthMeResponse } from "@/lib/types/api";
 
@@ -106,8 +106,10 @@ export function AppHeader() {
     setMobileOpen(false);
   }
 
-  function handleLogout() {
-    removeToken();
+  async function handleLogout() {
+    // Best-effort server-side cookie invalidation, then clear local
+    // token + app state. `logout` always resolves, even on network error.
+    await logout();
     reset();
     router.push("/login");
   }

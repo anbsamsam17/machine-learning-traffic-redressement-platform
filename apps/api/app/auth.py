@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 import bcrypt
@@ -320,3 +320,23 @@ async def login(body: LoginRequest) -> TokenResponse:
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: Annotated[UserRecord, Depends(get_current_user)]) -> UserResponse:
     return UserResponse(user_id=current_user.user_id, email=current_user.email)
+
+
+@router.post("/logout")
+async def logout(response: Response) -> dict[str, bool]:
+    """Invalidate the auth cookie client-side.
+
+    JWTs are stateless and cannot be revoked server-side without a
+    blocklist, so this endpoint's job is to clear the `mdl_access_token`
+    cookie (which the Next.js Edge middleware reads). The frontend is
+    responsible for also clearing localStorage. Always returns
+    `{"ok": true}` so the client can safely chain a redirect to /login.
+    """
+    # Expire the cookie immediately (matches the path used by lib/auth.ts)
+    response.delete_cookie(
+        key="mdl_access_token",
+        path="/",
+        samesite="lax",
+    )
+    logger.info("User logged out")
+    return {"ok": True}

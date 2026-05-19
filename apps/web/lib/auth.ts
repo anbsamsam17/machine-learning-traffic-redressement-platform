@@ -5,6 +5,8 @@
  * apiClient (lib/api.ts). Prefer apiClient.* for new code.
  */
 
+import { getApiBase } from "./api-url";
+
 const TOKEN_KEY = "mdl_access_token";
 
 export function getToken(): string | null {
@@ -27,6 +29,29 @@ export function removeToken(): void {
 
 export function isAuthenticated(): boolean {
   return getToken() !== null;
+}
+
+/**
+ * Log the user out: call the API to clear the server-side cookie,
+ * then drop the local token. The API call is best-effort — even if
+ * it fails (network down, 404, etc.) we still clear local state so
+ * the user is not left in a wedged "looks logged in" UI.
+ */
+export async function logout(): Promise<void> {
+  const token = getToken();
+  try {
+    const headers: HeadersInit = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    await fetch(`${getApiBase()}/api/auth/logout`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+    });
+  } catch {
+    // Swallow — logout must succeed locally regardless of the server.
+  } finally {
+    removeToken();
+  }
 }
 
 /**
