@@ -364,6 +364,49 @@ async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
         logger.warning("validate_mapping: raw_df missing for session %s", body.session_id)
         raise HTTPException(status_code=400, detail="Aucun fichier uploade dans cette session.")
 
+    # --- Validate mapping payload BEFORE building the DataFrame ---
+    # Empty body.mapping or all-None entries cause a confusing 500 deeper in
+    # the pipeline. Surface a clear 422 with an actionable message instead.
+    if not body.mapping:
+        logger.warning("validate_mapping: empty mapping for session %s", body.session_id)
+        raise HTTPException(
+            status_code=422,
+            detail="Mapping vide: aucune colonne mappee. Lancez d'abord /api/mapping/auto puis confirmez les colonnes.",
+        )
+
+    mapped_sources = {
+        tgt: src for tgt, src in body.mapping.items()
+        if src is not None and str(src).strip() != ""
+    }
+    if not mapped_sources:
+        logger.warning(
+            "validate_mapping: no source column mapped for session %s", body.session_id,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Mapping vide: aucune colonne source assignee aux colonnes cibles.",
+        )
+
+    # Verify that at least one critical column is mapped to a real source column
+    # in raw_df. Without this, training silently produces NaN-only inputs.
+    raw_cols = set(raw_df.columns)
+    mapped_critical = [
+        c for c in CRITICAL_COLS
+        if mapped_sources.get(c) and mapped_sources[c] in raw_cols
+    ]
+    if not mapped_critical:
+        logger.warning(
+            "validate_mapping: no critical column mapped (session=%s)", body.session_id,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Aucune colonne critique mappee parmi: "
+                + ", ".join(CRITICAL_COLS)
+                + ". Mappez au moins une colonne critique avant de valider."
+            ),
+        )
+
     logger.info("validate_mapping: raw_df shape=%s", raw_df.shape)
     df, missing_critical, warnings = _build_learning_df(raw_df, body.mapping, body.extra_cols)
     logger.info(
