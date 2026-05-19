@@ -516,7 +516,7 @@ export default function EvaluationPage() {
               <input
                 ref={folderInputRef}
                 type="file"
-                // @ts-expect-error webkitdirectory is non-standard but widely supported
+                // @ts-ignore webkitdirectory is non-standard but widely supported
                 webkitdirectory=""
                 directory=""
                 multiple
