@@ -13,6 +13,8 @@ export interface EvalRunPayload {
   model_dir?: string;
   filter_flag_comptage?: boolean;
   column_mapping?: Record<string, string>;
+  year_column_name?: string | null;
+  year_value_mapping?: Record<string, number> | null;
 }
 
 export function useEvalRun() {

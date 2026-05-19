@@ -38,6 +38,13 @@ class EvalRequest(BaseModel):
     high_flow_threshold: float = DEFAULT_HIGH_FLOW_THRESHOLD
     filter_flag_comptage: bool = False
     column_mapping: dict[str, str] | None = None  # target -> source mapping from frontend
+    # Year-feature mapping override — the frontend keeps year_value_mapping
+    # in its training config (Zustand). When evaluating, pass it here so
+    # year_mapped can be replayed correctly even if the model's
+    # training_config.json was saved before year_value_mapping started
+    # being persisted there.
+    year_column_name: str | None = None
+    year_value_mapping: dict[str, float] | None = None
 
 
 class MetricsResult(BaseModel):
@@ -1320,25 +1327,36 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
         if target not in df.columns and target.lower() in col_lower:
             df[target] = df[col_lower[target.lower()]]
 
-    # Derive year_mapped from Annee if the model needs it. The training
-    # pipeline stores year_value_mapping in the training config when the
-    # user activates year_feature — read it back here so the model gets the
-    # same encoded values during eval (fixes "modele avec annee ne marche
-    # pas").
+    # Derive year_mapped from Annee if the model needs it. The mapping is
+    # resolved in priority order:
+    #   1. body.year_value_mapping   (frontend-provided, always wins)
+    #   2. training_config.year_value_mapping  (persisted at train time)
+    #   3. raw Annee values          (last-resort fallback, may bias the model)
     if "year_mapped" in input_cols and "year_mapped" not in df.columns:
-        year_col = None
-        for cand in ("Annee", "annee", "Year", "year"):
-            if cand in df.columns:
-                year_col = cand
-                break
-        year_mapping = (training_config or {}).get("year_value_mapping") or {}
+        year_col = body.year_column_name or None
+        if not year_col or year_col not in df.columns:
+            for cand in ("Annee", "annee", "Year", "year"):
+                if cand in df.columns:
+                    year_col = cand
+                    break
+        year_mapping = body.year_value_mapping or (training_config or {}).get("year_value_mapping") or {}
         if year_col and year_mapping:
             df["year_mapped"] = df[year_col].astype(str).map(year_mapping)
             if df["year_mapped"].isna().any():
                 df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].median())
+            logger.info(
+                "year_mapped: %d valeurs encodees via mapping (%d uniques)",
+                int(df["year_mapped"].notna().sum()),
+                len(year_mapping),
+            )
         elif year_col:
             df["year_mapped"] = pd.to_numeric(df[year_col], errors="coerce")
             df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].median())
+            logger.warning(
+                "year_mapped: pas de mapping fourni — utilisation directe de la colonne %s "
+                "(les predictions seront biaisees si le modele a ete entraine sur des valeurs encodees)",
+                year_col,
+            )
         else:
             logger.warning("year_mapped requis mais Annee absente — assignation 0")
             df["year_mapped"] = 0

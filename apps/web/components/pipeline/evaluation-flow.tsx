@@ -76,7 +76,7 @@ const COPY = {
 
 export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
   const copy = COPY[flowMode];
-  const { mode, sessionId, setSessionId, outputDir } = useAppStore();
+  const { mode, sessionId, setSessionId, outputDir, trainingConfig } = useAppStore();
 
   const [validationFile, setValidationFile] = useState<File | null>(null);
   const [fileColumns, setFileColumns] = useState<string[]>([]);
@@ -319,12 +319,20 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
         console.warn("Re-upload validation failed, will use raw_df fallback");
       }
 
+      // Replay the training-time year encoding so models with year_mapped
+      // receive the correct small integers (instead of raw 2019/2020).
+      const cfg = (trainingConfig ?? {}) as {
+        year_column_name?: string | null;
+        year_value_mapping?: Record<string, number> | null;
+      };
       const evalData = await evalRunMut.mutateAsync({
         session_id: sid,
         model_name: selectedModel,
         model_dir: resolvedModelDir.trim(),
         filter_flag_comptage: filterFlagComptage,
         column_mapping: colMapping,
+        year_column_name: cfg.year_column_name ?? null,
+        year_value_mapping: cfg.year_value_mapping ?? null,
       });
       setMetrics(evalData.metrics);
 
