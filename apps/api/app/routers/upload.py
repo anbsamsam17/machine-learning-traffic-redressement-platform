@@ -10,11 +10,12 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from pydantic import BaseModel
 
 from ..config import get_settings
 from ..session import session_manager
+from .sessions import get_current_user_optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/upload", tags=["upload"])
@@ -136,6 +137,7 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
 
 @router.post("", response_model=UploadResponse)
 async def upload_data(
+    request: Request,
     file: UploadFile = File(...),
     mode: str = Form("TV"),
 ) -> UploadResponse:
@@ -158,6 +160,17 @@ async def upload_data(
     session = session_manager.create_session(mode=mode)
     session_manager.store_data(session.session_id, "raw_df", df)
     session_manager.store_data(session.session_id, "filename", file.filename)
+
+    # If the user is authenticated, register this session as their active one
+    # so GET /api/sessions/current can restore the frontend state after a
+    # reload (APP-P0-4). Done after data is stored so the very next call to
+    # /current already sees a usable session.
+    current_user = await get_current_user_optional(request)
+    if current_user is not None:
+        try:
+            session_manager.set_user_session(current_user.user_id, session.session_id)
+        except Exception:
+            logger.exception("Failed to bind session %s to user %s", session.session_id, current_user.user_id)
 
     preview = df.head(10).fillna("").to_dict(orient="records")
     # Convert geometry dicts to string in preview for JSON serialization

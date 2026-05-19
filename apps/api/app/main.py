@@ -251,6 +251,7 @@ from .routers import (  # noqa: E402
     export,
     mapping,
     models,
+    sessions,
     training,
     upload,
 )
@@ -265,6 +266,9 @@ app.include_router(export.router, dependencies=_protected)
 app.include_router(carte.router, dependencies=_protected)
 app.include_router(compteurs.router, dependencies=_protected)
 app.include_router(models.router, dependencies=_protected)
+# sessions router uses its own optional auth dependency (returns 404 on no
+# auth instead of 401) so the frontend can call it on first page load.
+app.include_router(sessions.router)
 
 
 # -- Health (PUBLIC — minimal payload in production) ---------------------------

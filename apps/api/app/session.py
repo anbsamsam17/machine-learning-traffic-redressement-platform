@@ -120,6 +120,15 @@ class SessionBackend:
     def cleanup_expired(self) -> int:
         raise NotImplementedError
 
+    def set_user_session(self, user_id: str, session_id: str) -> None:
+        raise NotImplementedError
+
+    def get_user_session(self, user_id: str) -> str | None:
+        raise NotImplementedError
+
+    def clear_user_session(self, user_id: str) -> None:
+        raise NotImplementedError
+
     @property
     def active_count(self) -> int:
         raise NotImplementedError
@@ -134,6 +143,8 @@ class MemoryBackend(SessionBackend):
 
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
+        # user_id -> session_id (the "active" session for that user)
+        self._user_sessions: dict[str, str] = {}
         self._lock = Lock()
 
     def create_session(self, mode: str = "TV", owner_user_id: str = "") -> Session:
@@ -144,6 +155,28 @@ class MemoryBackend(SessionBackend):
         logger.info("Session created: sid=%s mode=%s owner=%s",
                     _sid_log(sid), mode, _sid_log(owner_user_id))
         return session
+
+    # -- User <-> session mapping (used by /api/sessions/current) --------------
+
+    def set_user_session(self, user_id: str, session_id: str) -> None:
+        with self._lock:
+            self._user_sessions[user_id] = session_id
+
+    def get_user_session(self, user_id: str) -> str | None:
+        with self._lock:
+            sid = self._user_sessions.get(user_id)
+        if sid is None:
+            return None
+        # Verify the session still exists / hasn't expired
+        if self.get_session(sid) is None:
+            with self._lock:
+                self._user_sessions.pop(user_id, None)
+            return None
+        return sid
+
+    def clear_user_session(self, user_id: str) -> None:
+        with self._lock:
+            self._user_sessions.pop(user_id, None)
 
     def get_session(self, session_id: str) -> Session | None:
         with self._lock:
@@ -275,6 +308,7 @@ class RedisBackend(SessionBackend):
 
     _PREFIX = "mdl:session:"
     _DATA_PREFIX = "mdl:sdata:"
+    _USER_SESSION_PREFIX = "mdl:usersession:"
 
     def __init__(self, redis_url: str) -> None:
         import redis as redis_lib
@@ -382,6 +416,41 @@ class RedisBackend(SessionBackend):
             if cursor == 0:
                 break
 
+    # -- User <-> session mapping (used by /api/sessions/current) --------------
+
+    def _user_session_key(self, user_id: str) -> str:
+        return f"{self._USER_SESSION_PREFIX}{user_id}"
+
+    def set_user_session(self, user_id: str, session_id: str) -> None:
+        try:
+            self._r.setex(self._user_session_key(user_id), self._ttl, session_id.encode("utf-8"))
+        except Exception:
+            logger.exception("Failed to set user session mapping for %s", user_id)
+
+    def get_user_session(self, user_id: str) -> str | None:
+        try:
+            raw = self._r.get(self._user_session_key(user_id))
+        except Exception:
+            logger.exception("Failed to read user session mapping for %s", user_id)
+            return None
+        if raw is None:
+            return None
+        sid = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        # Verify the session itself still exists / hasn't expired
+        if self.get_session(sid) is None:
+            try:
+                self._r.delete(self._user_session_key(user_id))
+            except Exception:
+                pass
+            return None
+        return sid
+
+    def clear_user_session(self, user_id: str) -> None:
+        try:
+            self._r.delete(self._user_session_key(user_id))
+        except Exception:
+            pass
+
     def cleanup_expired(self) -> int:
         # Redis handles TTL natively; nothing to do
         return 0
@@ -436,6 +505,17 @@ class SessionManager:
 
     def cleanup_expired(self) -> int:
         return self._backend.cleanup_expired()
+
+    def set_user_session(self, user_id: str, session_id: str) -> None:
+        """Register *session_id* as the active session for *user_id*."""
+        self._backend.set_user_session(user_id, session_id)
+
+    def get_user_session(self, user_id: str) -> str | None:
+        """Return the active session_id for *user_id*, if any (and still valid)."""
+        return self._backend.get_user_session(user_id)
+
+    def clear_user_session(self, user_id: str) -> None:
+        self._backend.clear_user_session(user_id)
 
     @property
     def active_count(self) -> int:

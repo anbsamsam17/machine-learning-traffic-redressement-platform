@@ -461,6 +461,13 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
     with _tasks_lock:
         _tasks[task_id] = task
 
+    # Persist the task id on the session so GET /api/sessions/current can
+    # restore the user to the training page after a reload (APP-P0-4).
+    try:
+        session_manager.store_data(body.session_id, "training_task_id", task_id)
+    except Exception:
+        logger.exception("Failed to persist training_task_id on session %s", body.session_id)
+
     thread = threading.Thread(target=_training_worker, args=(task,), daemon=True)
     thread.start()
 
