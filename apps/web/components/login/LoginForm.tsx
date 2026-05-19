@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-url";
+import { parseApiError } from "@/lib/api";
 
 /**
  * Sober login form — extracted from the previous page.tsx logic.
@@ -28,16 +29,24 @@ export function LoginForm() {
         body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
-        const data = await res
-          .json()
-          .catch(() => ({ detail: "Erreur inconnue" }));
-        throw new Error(data.detail ?? `Erreur ${res.status}`);
+        const data = await res.json().catch(() => null);
+        // IMPORTANT: never redirect to /register on 401. Stay on /login
+        // and display "Email ou mot de passe incorrect" (or whatever
+        // FastAPI returns) in the <Alert> below. Pydantic 422 detail
+        // arrays are stringified safely by parseApiError.
+        const fallback =
+          res.status === 401
+            ? "Email ou mot de passe incorrect"
+            : `Erreur ${res.status}`;
+        throw new Error(parseApiError(data, fallback));
       }
       const data = await res.json();
       setToken(data.access_token);
       router.push("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erreur de connexion");
+      // Explicitly do NOT navigate on failure — keep the user on /login
+      // so they can read the error and retry.
     } finally {
       setLoading(false);
     }
