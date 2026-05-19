@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from pydantic import BaseModel
 
 from ..config import get_settings
+from ..error_messages import user_message
 from ..session import session_manager
 from .sessions import get_current_user_optional
 
@@ -154,8 +155,11 @@ async def upload_data(
 
     try:
         df = _parse_file_to_df(content, file.filename or "data.csv")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("upload_data: failed to parse file %s", file.filename)
+        raise HTTPException(status_code=400, detail=user_message(exc))
 
     session = session_manager.create_session(mode=mode)
     session_manager.store_data(session.session_id, "raw_df", df)
@@ -210,8 +214,14 @@ async def upload_validation_data(
 
     try:
         df = _parse_file_to_df(content, file.filename or "validation.csv")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "upload_validation_data: failed to parse file %s (session=%s)",
+            file.filename, session_id,
+        )
+        raise HTTPException(status_code=400, detail=user_message(exc))
 
     session_manager.store_data(session_id, "validation_df", df)
     session_manager.store_data(session_id, "validation_filename", file.filename)
@@ -251,6 +261,11 @@ async def upload_model(
                     model_files[name] = zf.read(name)
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Archive ZIP invalide.")
+    except Exception as exc:
+        logger.exception(
+            "upload_model: failed to extract model archive (session=%s)", session_id,
+        )
+        raise HTTPException(status_code=400, detail=user_message(exc))
 
     if not model_files:
         raise HTTPException(
