@@ -68,6 +68,7 @@ export default function DonneesPage() {
   const [extraCandidates, setExtraCandidates] = useState<string[]>([]);
   const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
   const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
+  const [totalRows, setTotalRows] = useState<number>(0);
   const [step, setStep] = useState<"upload" | "mapping" | "preview">("upload");
   const [isAutoMapping, setIsAutoMapping] = useState(false);
   const [showStepComplete, setShowStepComplete] = useState(false);
@@ -156,6 +157,7 @@ export default function DonneesPage() {
         }));
         setMappings(autoMappings);
         setPreviewRows(uploadData.preview ?? []);
+        setTotalRows(typeof uploadData.rows === "number" ? uploadData.rows : (uploadData.preview?.length ?? 0));
         setStep("mapping");
 
         // Compute auto-mapping confidence
@@ -212,6 +214,7 @@ export default function DonneesPage() {
     setExtraCandidates([]);
     setSelectedExtras([]);
     setPreviewRows([]);
+    setTotalRows(0);
     setStep("upload");
     setShowStepComplete(false);
   }
@@ -263,6 +266,9 @@ export default function DonneesPage() {
 
       // Use preview rows from backend response
       setPreviewRows(data.preview ?? []);
+      if (typeof data.rows === "number") {
+        setTotalRows(data.rows);
+      }
       setStep("preview");
 
       if (data.missing_critical?.length > 0) {
@@ -414,7 +420,7 @@ export default function DonneesPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 <StatCard
                   label="Lignes"
-                  value={previewRows.length}
+                  value={(totalRows || previewRows.length).toLocaleString("fr-FR")}
                 />
                 <StatCard
                   label="Colonnes mappees"
@@ -473,6 +479,9 @@ export default function DonneesPage() {
                 </table>
               </div>
               <p className="text-xs text-slate-400 mt-3">
+                Apercu de {previewRows.length} ligne{previewRows.length > 1 ? "s" : ""}
+                {totalRows > previewRows.length ? ` sur ${totalRows.toLocaleString("fr-FR")}` : ""}
+                {" — "}
                 Affichage des 8 premieres colonnes sur{" "}
                 {Object.keys(previewRows[0]).length} colonnes totales.
               </p>
