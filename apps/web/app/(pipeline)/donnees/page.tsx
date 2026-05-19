@@ -64,6 +64,9 @@ export default function DonneesPage() {
   const [file, setFile] = useState<File | null>(null);
   const [sourceColumns, setSourceColumns] = useState<string[]>([]);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
+  const [groups, setGroups] = useState<Record<string, string[]>>({});
+  const [extraCandidates, setExtraCandidates] = useState<string[]>([]);
+  const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
   const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
   const [step, setStep] = useState<"upload" | "mapping" | "preview">("upload");
   const [isAutoMapping, setIsAutoMapping] = useState(false);
@@ -134,6 +137,9 @@ export default function DonneesPage() {
         const mapData = await mapResponse.json();
         const srcCols: string[] = mapData.source_columns ?? [];
         setSourceColumns(srcCols);
+        setGroups(mapData.groups ?? {});
+        setExtraCandidates(mapData.extra_candidates ?? []);
+        setSelectedExtras([]);
 
         // Build mappings from backend response
         const backendMappings: Array<{target: string; source: string | null; confidence: string}> = mapData.mappings ?? [];
@@ -202,6 +208,9 @@ export default function DonneesPage() {
     setFile(null);
     setSourceColumns([]);
     setMappings([]);
+    setGroups({});
+    setExtraCandidates([]);
+    setSelectedExtras([]);
     setPreviewRows([]);
     setStep("upload");
     setShowStepComplete(false);
@@ -241,6 +250,7 @@ export default function DonneesPage() {
           session_id: currentSessionId,
           mapping: mappingPayload,
           territory: "default",
+          extra_cols: selectedExtras,
         }),
       });
 
@@ -355,6 +365,10 @@ export default function DonneesPage() {
                 targetColumns={TARGET_COLUMNS}
                 sourceColumns={sourceColumns}
                 criticalColumns={CRITICAL_COLS}
+                groups={groups}
+                extraCandidates={extraCandidates}
+                selectedExtras={selectedExtras}
+                onExtrasChange={setSelectedExtras}
                 initialMappings={mappings}
                 onMappingsChange={setMappings}
               />
