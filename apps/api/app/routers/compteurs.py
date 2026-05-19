@@ -9,10 +9,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from ..auth import UserRecord, get_current_user, require_owned_session
 from ..session import session_manager
 
 logger = logging.getLogger(__name__)
@@ -210,11 +211,12 @@ def _build_compteurs_geojson(
 # ---------------------------------------------------------------------------
 
 @router.post("/generate", response_model=CompteursResponse)
-async def generate_compteurs(body: CompteursGenerateRequest) -> CompteursResponse:
+async def generate_compteurs(
+    body: CompteursGenerateRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> CompteursResponse:
     """Generate counting-loops GeoJSON from uploaded data and column mapping."""
-    session = session_manager.get_session(body.session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(body.session_id, current_user)
 
     raw_df: pd.DataFrame | None = session.data.get("raw_df")
     if raw_df is None:
@@ -256,11 +258,12 @@ async def generate_compteurs(body: CompteursGenerateRequest) -> CompteursRespons
 
 
 @router.get("/download/{session_id}")
-async def download_compteurs(session_id: str) -> Response:
+async def download_compteurs(
+    session_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> Response:
     """Download the generated counting-loops GeoJSON."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(session_id, current_user)
 
     compteurs_geojson = session.data.get("compteurs_geojson")
     if compteurs_geojson is None:

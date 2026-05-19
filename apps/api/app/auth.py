@@ -257,6 +257,31 @@ def get_owned_session(
     return sess
 
 
+def require_owned_session(session_id: str, user: "UserRecord") -> Session:
+    """Imperative helper variant of ``get_owned_session``.
+
+    Used by routers that resolve ``session_id`` from a body payload (instead
+    of a path parameter) and therefore cannot rely on FastAPI's
+    ``Depends(get_owned_session)`` plumbing. Same 404-on-mismatch semantics.
+    """
+    sess = session_manager.get_session(session_id)
+    if sess is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session non trouvee ou expiree.",
+        )
+    if sess.owner_user_id and sess.owner_user_id != user.user_id:
+        logger.warning(
+            "IDOR refused: user=%s tried to access session owned by %s",
+            user.user_id[:8], sess.owner_user_id[:8],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session non trouvee ou expiree.",
+        )
+    return sess
+
+
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------

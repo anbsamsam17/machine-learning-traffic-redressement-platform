@@ -20,9 +20,10 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
+from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
 
 from ..session import session_manager
@@ -292,11 +293,14 @@ async def upload_carte_model(
     file: UploadFile = File(..., description="Fichier ZIP contenant le dossier du modele"),
     session_id: str = Form(..., description="Session ID"),
     model_type: str = Form(..., description="Type de modele: tv ou pl"),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> CarteModelUploadResponse:
     """Upload a model ZIP for carte generation (TV or PL).
 
     Extracts into WORKSPACE_ROOT/{session_id}/carte_models/{model_type}/ and validates.
     """
+    require_owned_session(session_id, current_user)
+
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Le fichier doit etre un .zip")
 
@@ -353,6 +357,7 @@ async def upload_carte_model_folder(
     files: list[UploadFile] = File(..., description="Fichiers du dossier de modele (via webkitdirectory)"),
     session_id: str = Form(..., description="Session ID"),
     model_type: str = Form(..., description="Type de modele: tv ou pl"),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> CarteModelUploadResponse:
     """Upload model files from a folder selection (webkitdirectory) for carte generation.
 
@@ -360,6 +365,8 @@ async def upload_carte_model_folder(
     the tree under WORKSPACE_ROOT/{session_id}/carte_models/{model_type}/ and
     validates the model structure.
     """
+    require_owned_session(session_id, current_user)
+
     if model_type.lower() not in ("tv", "pl"):
         raise HTTPException(status_code=400, detail="model_type doit etre 'tv' ou 'pl'")
 
@@ -421,13 +428,14 @@ async def upload_carte_model_folder(
 
 
 @router.post("/generate", response_model=CarteGenerateResponse)
-async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
+async def generate_carte(
+    body: CarteGenerateRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> CarteGenerateResponse:
     """Apply TV + PL models on FCD data to produce a carte de debits GeoJSON."""
 
-    # 1. Validate session
-    session = session_manager.get_session(body.session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    # 1. Validate session ownership
+    session = require_owned_session(body.session_id, current_user)
 
     # 2. Load raw data from session
     raw_df: pd.DataFrame | None = session.data.get("raw_df")
@@ -793,13 +801,14 @@ async def generate_carte(body: CarteGenerateRequest) -> CarteGenerateResponse:
 
 
 @router.get("/download/{session_id}")
-async def download_carte(session_id: str):
+async def download_carte(
+    session_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+):
     """Download the generated carte GeoJSON."""
     from fastapi.responses import JSONResponse
 
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(session_id, current_user)
 
     geojson = session.data.get("carte_geojson")
     if geojson is None:

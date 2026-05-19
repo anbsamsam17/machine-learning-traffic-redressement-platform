@@ -65,6 +65,14 @@ class Session:
     def is_expired(self, ttl: int) -> bool:
         return (time.time() - self.last_accessed) > ttl
 
+    def is_owned_by(self, user_id: str) -> bool:
+        """True iff *user_id* matches this session's owner.
+
+        Legacy sessions with an empty ``owner_user_id`` are never owned —
+        callers asking ``is_owned_by`` must hold a real owner.
+        """
+        return bool(self.owner_user_id) and self.owner_user_id == user_id
+
 
 # ---------------------------------------------------------------------------
 # Helpers — DataFrame normalisation for safe serialisation (A3)
@@ -493,6 +501,19 @@ class SessionManager:
 
     def get_session(self, session_id: str) -> Session | None:
         return self._backend.get_session(session_id)
+
+    def get_owned_session(self, session_id: str, user_id: str) -> Session | None:
+        """Return the session iff it exists AND is owned by *user_id*.
+
+        Returns None on missing-session or wrong-owner — deliberately the
+        same response so foreign session IDs cannot be enumerated.
+        """
+        sess = self._backend.get_session(session_id)
+        if sess is None:
+            return None
+        if not sess.is_owned_by(user_id):
+            return None
+        return sess
 
     def store_data(self, session_id: str, key: str, value: Any) -> None:
         self._backend.store_data(session_id, key, value)

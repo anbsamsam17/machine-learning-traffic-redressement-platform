@@ -9,10 +9,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from ..auth import UserRecord, get_current_user, require_owned_session
 from ..session import session_manager
 
 logger = logging.getLogger(__name__)
@@ -24,11 +25,13 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 # ---------------------------------------------------------------------------
 
 @router.get("/model/{session_id}/{model_name}")
-async def export_model(session_id: str, model_name: str) -> Response:
+async def export_model(
+    session_id: str,
+    model_name: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> Response:
     """Export trained model as a ZIP archive (model.json + weights.h5 + norm_params.json)."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(session_id, current_user)
 
     model_json_str = session.data.get("trained_model_json")
     weights_bytes = session.data.get("trained_weights")
@@ -73,11 +76,12 @@ async def export_model(session_id: str, model_name: str) -> Response:
 
 
 @router.get("/models-all/{session_id}")
-async def export_all_models(session_id: str) -> Response:
+async def export_all_models(
+    session_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> Response:
     """Zip every trained model directory for this session and return it."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(session_id, current_user)
 
     output_dir = session.data.get("output_dir")
     if not output_dir:
@@ -124,11 +128,12 @@ async def export_all_models(session_id: str) -> Response:
 
 
 @router.get("/carte/{session_id}")
-async def export_carte(session_id: str) -> Response:
+async def export_carte(
+    session_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> Response:
     """Export the generated carte de debits as GeoJSON."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(session_id, current_user)
 
     carte_geojson = session.data.get("carte_geojson")
     if carte_geojson is None:
@@ -150,11 +155,12 @@ async def export_carte(session_id: str) -> Response:
 
 
 @router.get("/compteurs/{session_id}")
-async def export_compteurs(session_id: str) -> Response:
+async def export_compteurs(
+    session_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> Response:
     """Export the generated counting loops as GeoJSON."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(session_id, current_user)
 
     compteurs_geojson = session.data.get("compteurs_geojson")
     if compteurs_geojson is None:

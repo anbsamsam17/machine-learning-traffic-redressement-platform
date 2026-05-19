@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
 from ..session import session_manager
 from typing import TYPE_CHECKING
@@ -413,10 +414,11 @@ def _training_worker(task: TrainingTask) -> None:
 
 
 @router.post("/start", response_model=TrainingStartResponse)
-async def start_training(body: TrainingConfig) -> TrainingStartResponse:
-    session = session_manager.get_session(body.session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+async def start_training(
+    body: TrainingConfig,
+    current_user: UserRecord = Depends(get_current_user),
+) -> TrainingStartResponse:
+    session = require_owned_session(body.session_id, current_user)
     if session.data.get("learning_df") is None:
         raise HTTPException(
             status_code=400,
@@ -485,12 +487,23 @@ async def start_training(body: TrainingConfig) -> TrainingStartResponse:
     )
 
 
-@router.get("/stream/{task_id}")
-async def stream_training(task_id: str) -> StreamingResponse:
+def _get_owned_task(task_id: str, user: UserRecord) -> TrainingTask:
+    """Resolve *task_id* and enforce that *user* owns the underlying session."""
     with _tasks_lock:
         task = _tasks.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task non trouvee.")
+    # The task is bound to a session — owner check via the session manager.
+    require_owned_session(task.session_id, user)
+    return task
+
+
+@router.get("/stream/{task_id}")
+async def stream_training(
+    task_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> StreamingResponse:
+    task = _get_owned_task(task_id, current_user)
 
     async def event_generator():
         last_idx = 0
@@ -524,11 +537,11 @@ async def stream_training(task_id: str) -> StreamingResponse:
 
 
 @router.get("/status/{task_id}", response_model=TrainingStatusResponse)
-async def training_status(task_id: str) -> TrainingStatusResponse:
-    with _tasks_lock:
-        task = _tasks.get(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task non trouvee.")
+async def training_status(
+    task_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> TrainingStatusResponse:
+    task = _get_owned_task(task_id, current_user)
 
     last_epoch: dict[str, Any] = {}
     last_model_end: dict[str, Any] = {}
@@ -570,10 +583,10 @@ async def training_status(task_id: str) -> TrainingStatusResponse:
 
 
 @router.post("/cancel/{task_id}", response_model=TrainingCancelResponse)
-async def cancel_training(task_id: str) -> TrainingCancelResponse:
-    with _tasks_lock:
-        task = _tasks.get(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task non trouvee.")
+async def cancel_training(
+    task_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> TrainingCancelResponse:
+    task = _get_owned_task(task_id, current_user)
     task.cancel()
     return TrainingCancelResponse(task_id=task_id, status="cancelling")

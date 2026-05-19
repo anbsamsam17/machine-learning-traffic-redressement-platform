@@ -151,3 +151,43 @@ class TestSessionManager:
         retrieved = mgr.get_data(s.session_id, "dataframe")
         assert isinstance(retrieved, pd.DataFrame)
         assert len(retrieved) == 2
+
+
+class TestOwnership:
+    """APP-P0-7 — sessions must be scoped to their creating user."""
+
+    def test_session_records_owner(self):
+        mgr = SessionManager()
+        s = mgr.create_session(mode="TV", owner_user_id="user-A")
+        assert s.owner_user_id == "user-A"
+
+    def test_get_owned_session_matching_owner(self):
+        mgr = SessionManager()
+        s = mgr.create_session(owner_user_id="user-A")
+        assert mgr.get_owned_session(s.session_id, "user-A") is not None
+
+    def test_get_owned_session_wrong_owner_returns_none(self):
+        mgr = SessionManager()
+        s = mgr.create_session(owner_user_id="user-A")
+        assert mgr.get_owned_session(s.session_id, "user-B") is None
+
+    def test_get_owned_session_legacy_no_owner_returns_none(self):
+        """Sessions created without an owner (legacy / direct fixture) are
+        unreachable through the user-scoped helper. They can still be read via
+        the unscoped get_session() for backward-compatible internal callers."""
+        mgr = SessionManager()
+        s = mgr.create_session()  # owner_user_id=None
+        assert mgr.get_session(s.session_id) is not None
+        assert mgr.get_owned_session(s.session_id, "user-A") is None
+
+    def test_get_owned_session_unknown_sid_returns_none(self):
+        mgr = SessionManager()
+        assert mgr.get_owned_session("does-not-exist", "user-A") is None
+
+    def test_is_owned_by_helper(self):
+        s = Session(session_id="x", mode="TV", owner_user_id="user-A")
+        assert s.is_owned_by("user-A")
+        assert not s.is_owned_by("user-B")
+        # Legacy session with no owner is never "owned"
+        s2 = Session(session_id="y", mode="TV")
+        assert not s2.is_owned_by("user-A")

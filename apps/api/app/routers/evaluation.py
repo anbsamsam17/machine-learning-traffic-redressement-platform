@@ -15,10 +15,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..auth import UserRecord, get_current_user, require_owned_session
 from ..session import session_manager
 
 logger = logging.getLogger(__name__)
@@ -1111,11 +1112,10 @@ async def upload_validation(
     file: UploadFile = File(...),
     session_id: str = Form(...),
     column_mapping: str = Form(""),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> dict:
     """Upload a validation file (GeoJSON or CSV) and store it in the session."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(session_id, current_user)
 
     content = await file.read()
     filename = file.filename or "validation"
@@ -1206,7 +1206,10 @@ async def upload_validation(
 
 
 @router.post("/run", response_model=EvalResponse)
-async def run_evaluation(body: EvalRequest) -> EvalResponse:
+async def run_evaluation(
+    body: EvalRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> EvalResponse:
     """Run model evaluation on validation data.
 
     Supports two modes:
@@ -1217,9 +1220,7 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
-    session = session_manager.get_session(body.session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(body.session_id, current_user)
 
     # --- Determine model source ---
     model = None
@@ -1544,11 +1545,12 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
 
 
 @router.get("/report/{session_id}", response_model=ReportResponse)
-async def get_report(session_id: str) -> ReportResponse:
+async def get_report(
+    session_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+) -> ReportResponse:
     """Return the generated HTML evaluation report."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    session = require_owned_session(session_id, current_user)
 
     report_html = session_manager.get_data(session_id, "eval_report_html")
     if report_html is None:
@@ -1578,8 +1580,16 @@ async def download_model(
     model_name: str = Query(...),
     model_dir: str = Query(...),
     session_id: str = Query(None),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> StreamingResponse:
     """Download a model folder as a ZIP file."""
+    # Security: a model_dir can only be served if it lives under the caller's
+    # own session workspace. session_id is required and must be owned by the
+    # caller — that prevents user B from downloading user A's trained models.
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id requis.")
+    require_owned_session(session_id, current_user)
+
     model_path = Path(model_dir) / model_name
     if not model_path.exists() or not model_path.is_dir():
         raise HTTPException(status_code=404, detail=f"Dossier modele introuvable : {model_path}")
