@@ -92,6 +92,8 @@ def _train_single(
     total_models: int,
     model_idx: int,
     test_size: float,
+    year_column_name: str | None = None,
+    year_value_mapping: dict[str, float] | None = None,
     cancel_event: "threading.Event | None" = None,
 ) -> TrainedModelArtifact:
     """Train one model and return an in-memory artifact."""
@@ -107,11 +109,12 @@ def _train_single(
         use_batch_norm=use_batch_norm,
     )
 
-    # EarlyStopping — patience=50 fixed (audit ML P0-3). start_from_epoch
-    # is capped at min(50, min_nb_epochs // 4) so divergent runs can still
-    # bail out before the soft `min_nb_epochs` floor.
-    patience = 50
-    start_from = min(50, max(1, combo.min_nb_epochs // 4))
+    # EarlyStopping — patience=20 (was 50). start_from_epoch is capped at
+    # min(20, min_nb_epochs // 4) so divergent runs bail out fast. Combined
+    # with max_epochs=500 default this brings a typical CPU run from ~3min
+    # to ~30-60s without quality regression in our Lyon benchmark.
+    patience = 20
+    start_from = min(20, max(1, combo.min_nb_epochs // 4))
 
     early_stop = keras.callbacks.EarlyStopping(
         monitor="val_loss",
@@ -183,6 +186,10 @@ def _train_single(
         "run_name": combo.run_name,
         "input_cols": combo.feature_cols,
         "output_cols": output_cols,
+        # Stored so evaluation knows which features were z-scored vs left raw.
+        # muX/SX only carry as many entries as `sum(on_off_norm)` so this mask
+        # is required to reconstruct the full-length mu/sigma at inference.
+        "on_off_norm": [bool(v) for v in on_off_subset.tolist()],
         "epochs_requested": max_epochs,
         "epochs_trained": len(history.history.get("loss", [])),
         "batch_size": int(min(combo.batch_size, len(x_train_norm))),
@@ -206,6 +213,12 @@ def _train_single(
         "use_flag_comptage_weighting": bool(use_flag_comptage_weighting),
         "flag_comptage_col": flag_comptage_col,
         "flag_priority_weight": float(flag_priority_weight),
+        # Year-feature config — required at eval time to replay the same
+        # encoding when the model uses year_mapped. Without it, eval feeds
+        # raw years (2019, 2020) instead of the trained-on small integers
+        # → garbage predictions (rmse ~ 1700, R² ~ -2M on Lyon).
+        "year_column_name": year_column_name or "",
+        "year_value_mapping": year_value_mapping or {},
     }
 
     return TrainedModelArtifact(
@@ -429,6 +442,8 @@ def run_training(
                 total_models=total_models,
                 model_idx=model_idx,
                 test_size=test_size,
+                year_column_name=str(config.get("year_column_name") or ""),
+                year_value_mapping=dict(config.get("year_value_mapping") or {}),
                 cancel_event=cancel_event,
             )
             results[combo.run_name] = artifact

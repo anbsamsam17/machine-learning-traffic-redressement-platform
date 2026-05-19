@@ -73,6 +73,10 @@ export default function TrainingPage() {
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const prevModelIndexRef = useRef<number>(-1);
+  // Last logged epoch line per model — prevents duplicate "Epoch X/Y" prints
+  // when the status endpoint keeps returning the same final epoch while the
+  // backend cleans up between two consecutive runs.
+  const lastLoggedEpochRef = useRef<string>("");
 
   // Auto-scroll logs
   useEffect(() => {
@@ -177,10 +181,17 @@ export default function TrainingPage() {
           }
 
           if (data.current_epoch % 50 === 0 || data.current_epoch === data.total_epochs) {
-            addLog(
-              `[${incomingModelName}] Epoch ${data.current_epoch}/${data.total_epochs} — loss: ${data.loss.toFixed(4)} | val_loss: ${data.val_loss.toFixed(4)}`,
-              "epoch"
-            );
+            // Dedup: same (model_name, epoch) line never re-emitted. Status endpoint
+            // keeps returning final epoch during the inter-model cleanup, which used
+            // to spam "Epoch X/X" once per poll for several seconds.
+            const epochKey = `${incomingModelName}@${data.current_epoch}`;
+            if (lastLoggedEpochRef.current !== epochKey) {
+              lastLoggedEpochRef.current = epochKey;
+              addLog(
+                `[${incomingModelName}] Epoch ${data.current_epoch}/${data.total_epochs} — loss: ${data.loss.toFixed(4)} | val_loss: ${data.val_loss.toFixed(4)}`,
+                "epoch"
+              );
+            }
           }
         }
 

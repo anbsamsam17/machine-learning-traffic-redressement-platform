@@ -1139,13 +1139,18 @@ async def upload_validation(
             detail=f"Impossible de lire le fichier : {exc}",
         )
 
-    # Column renames for compatibility (same aliases as training scripts)
+    # Column renames for compatibility (same aliases as training scripts).
+    # Adds FCD HERE → legacy Bordeaux mapping so the eval report renders.
     renames = {
         "TMJATV": "TMJAFCDTV",
         "TMJFCDTV": "TMJAFCDTV",
+        "TMJOFCDTV": "TMJAFCDTV",
         "TMJAPL": "TMJAFCDPL",
         "TMJFCDPL": "TMJAFCDPL",
+        "TMJOFCDPL": "TMJAFCDPL",
         "TMJAVL": "TMJAFCDVL",
+        "TMJOBCTV": "TMJABCTV",
+        "TMJOBCPL": "TMJABCPL",
         "TxPen": "TxPenTVRef",
         "TxPenPL": "TxPenPLRef",
     }
@@ -1236,10 +1241,16 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
         y_mean = float(norm_raw["muY"][0][0])
         y_std = float(norm_raw["SY"][0][0])
 
-        # Get input/output cols from training config
+        # Get input/output cols from training config. The training pipeline
+        # writes `output_cols` (plural list) — older callers used the singular
+        # form so we accept both. Default mapped onto the new schema's TxPen
+        # via val_renames a few lines down.
         if training_config:
             input_cols = training_config.get("input_cols", [])
-            output_col = training_config.get("output_col", "TxPenTVRef")
+            output_col = training_config.get("output_col")
+            if not output_col:
+                out_list = training_config.get("output_cols") or []
+                output_col = out_list[0] if out_list else "TxPenTVRef"
         else:
             raise HTTPException(
                 status_code=400,
@@ -1285,10 +1296,18 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
             if source_col and source_col in df.columns and target_col not in df.columns:
                 df[target_col] = df[source_col]
 
-    # Apply column renames on validation data too (same as upload)
+    # Apply column renames on validation data too (same as upload).
+    # The downstream report/tolerance/barplot code is written against the
+    # legacy Bordeaux names (TMJABCTV, TMJAFCDTV, TxPenTVRef). Map the new
+    # FCD HERE schema (TMJOBCTV, TMJOFCDTV, TxPen) onto those legacy aliases
+    # so the report renders correctly without per-section patches.
     val_renames = {
-        "TMJATV": "TMJAFCDTV", "TMJFCDTV": "TMJAFCDTV",
-        "TMJAPL": "TMJAFCDPL", "TMJFCDPL": "TMJAFCDPL",
+        # FCD throughput aliases
+        "TMJATV": "TMJAFCDTV", "TMJFCDTV": "TMJAFCDTV", "TMJOFCDTV": "TMJAFCDTV",
+        "TMJAPL": "TMJAFCDPL", "TMJFCDPL": "TMJAFCDPL", "TMJOFCDPL": "TMJAFCDPL",
+        # Sensor counts (Boucle Comptage)
+        "TMJOBCTV": "TMJABCTV", "TMJOBCPL": "TMJABCPL",
+        # Penetration rates
         "TxPen": "TxPenTVRef", "TxPenPL": "TxPenPLRef",
     }
     for old, new in val_renames.items():
@@ -1300,6 +1319,29 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
     for target in input_cols + [output_col]:
         if target not in df.columns and target.lower() in col_lower:
             df[target] = df[col_lower[target.lower()]]
+
+    # Derive year_mapped from Annee if the model needs it. The training
+    # pipeline stores year_value_mapping in the training config when the
+    # user activates year_feature — read it back here so the model gets the
+    # same encoded values during eval (fixes "modele avec annee ne marche
+    # pas").
+    if "year_mapped" in input_cols and "year_mapped" not in df.columns:
+        year_col = None
+        for cand in ("Annee", "annee", "Year", "year"):
+            if cand in df.columns:
+                year_col = cand
+                break
+        year_mapping = (training_config or {}).get("year_value_mapping") or {}
+        if year_col and year_mapping:
+            df["year_mapped"] = df[year_col].astype(str).map(year_mapping)
+            if df["year_mapped"].isna().any():
+                df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].median())
+        elif year_col:
+            df["year_mapped"] = pd.to_numeric(df[year_col], errors="coerce")
+            df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].median())
+        else:
+            logger.warning("year_mapped requis mais Annee absente — assignation 0")
+            df["year_mapped"] = 0
 
     # Filter by flag_comptage if requested (permanent sensors only)
     if body.filter_flag_comptage:
@@ -1332,6 +1374,40 @@ async def run_evaluation(body: EvalRequest) -> EvalResponse:
 
     X = sub[input_cols].values.astype(np.float64)
     y_true = sub[output_col].values.astype(np.float64)
+
+    # Expand mu/sigma to full input_cols length using on_off_norm. The training
+    # pipeline only stores mu/sigma for the SUBSET of features with
+    # on_off_norm=True (so a 5-feature model with year_mapped left raw stores
+    # only 4 mu values). Without this expansion, `(X - mu) / sigma` raises
+    # "could not be broadcast" — exactly the crash reported on Lyon for
+    # fmask_111101 / fmask_111111 models.
+    n_inputs = len(input_cols)
+    if len(x_mean) != n_inputs:
+        on_off_raw = (training_config or {}).get("on_off_norm")
+        if on_off_raw is not None and len(on_off_raw) == n_inputs:
+            on_off_arr = np.array(on_off_raw, dtype=bool)
+        else:
+            # Legacy fallback: assume trailing features (year_mapped, flag_*)
+            # were left un-normalised. Matches evaluation_pipeline.py logic.
+            on_off_arr = np.ones(n_inputs, dtype=bool)
+            n_not_normed = n_inputs - len(x_mean)
+            if n_not_normed > 0:
+                on_off_arr[-n_not_normed:] = False
+        if int(on_off_arr.sum()) == len(x_mean):
+            full_mu = np.zeros(n_inputs, dtype=np.float64)
+            full_sigma = np.ones(n_inputs, dtype=np.float64)
+            full_mu[on_off_arr] = x_mean
+            full_sigma[on_off_arr] = x_std
+            x_mean = full_mu
+            x_std = full_sigma
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Normalisation incoherente : mu shape={x_mean.shape}, "
+                    f"input_cols={n_inputs}. Reentrainez le modele."
+                ),
+            )
 
     # Normalize and predict
     x_std_safe = np.where(x_std == 0, 1.0, x_std)

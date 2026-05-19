@@ -73,14 +73,27 @@ def apply_model(
     mu_y = artifact.mu_y.copy()
     s_y = artifact.sigma_y.copy()
 
-    # Year mapping
+    # Year mapping. Falls back to common column names ("Annee", "annee",
+    # "Year", "year") when the caller forgot to set year_column_name in the
+    # evaluation config — fixes the "modele avec annee ne marche pas" bug
+    # reported on Lyon, where the training config carried the mapping but the
+    # eval call didn't echo it back.
     if "year_mapped" in input_cols and "year_mapped" not in df.columns:
         year_mapping = config.get("year_value_mapping", {})
-        year_col = config.get("year_column_name", "")
+        year_col = config.get("year_column_name", "") or ""
+        if not year_col:
+            for cand in ("Annee", "annee", "Year", "year"):
+                if cand in df.columns:
+                    year_col = cand
+                    break
         if year_col and year_col in df.columns and year_mapping:
             df["year_mapped"] = df[year_col].astype(str).map(year_mapping)
             if df["year_mapped"].isna().any():
                 df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].mean())
+        elif year_col and year_col in df.columns:
+            # No explicit mapping — coerce the year column to numeric directly.
+            df["year_mapped"] = pd.to_numeric(df[year_col], errors="coerce")
+            df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].median())
         else:
             median_value = (
                 sorted(year_mapping.values())[len(year_mapping) // 2]

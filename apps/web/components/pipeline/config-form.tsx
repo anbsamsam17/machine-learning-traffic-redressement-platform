@@ -439,8 +439,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [activations, setActivations] = useState<string[]>(["elu"]);
   const [learningRates, setLearningRates] = useState<string[]>(["0.01"]);
   const [losses, setLosses] = useState<string[]>(["mse"]);
-  const [minEpochs, setMinEpochs] = useState<string[]>(["500", "1000"]);
-  const [maxEpochs, setMaxEpochs] = useState(2050);
+  const [minEpochs, setMinEpochs] = useState<string[]>(["100", "200"]);
+  const [maxEpochs, setMaxEpochs] = useState(500);
   const [testSize, setTestSize] = useState(0.0);
 
   // ── Architecture ─────────────────────────────────────────────────────────
@@ -474,7 +474,10 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   }, [showExtraDropdown]);
 
   // ── Compute combinations ─────────────────────────────────────────────────
-  const combinationsCount = useMemo(() => {
+  // Returns the breakdown so the resume panel can explain WHERE the total
+  // comes from (feature_subsets × hyperparams) — avoids the "I configured 2
+  // combos but got 8" surprise reported on Lyon.
+  const combinationsBreakdown = useMemo(() => {
     const optionalCols = inputCols.filter((c) => !mandatoryCols.includes(c));
     const minOptional = Math.max(0, minInputCount - mandatoryCols.length);
 
@@ -502,16 +505,14 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     const nArchs = selectedArchs.length || 1;
     const nBatch = batchSizes.filter((v) => !isNaN(parseInt(v, 10))).length || 1;
 
-    return (
-      featureSets *
-      nActivations *
-      nLr *
-      nEpochs *
-      nLosses *
-      nDropouts *
-      nArchs *
-      nBatch
-    );
+    const hyperparams =
+      nActivations * nLr * nEpochs * nLosses * nDropouts * nArchs * nBatch;
+
+    return {
+      total: featureSets * hyperparams,
+      featureSets,
+      hyperparams,
+    };
   }, [
     inputCols,
     mandatoryCols,
@@ -524,6 +525,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     selectedArchs,
     batchSizes,
   ]);
+
+  const combinationsCount = combinationsBreakdown.total;
 
   // Estimated duration: combinations * SECONDS_PER_COMBINATION, formatted.
   const estimatedDuration = useMemo(() => {
@@ -1207,6 +1210,17 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               >
                 {combinationsCount.toLocaleString("fr-FR")}
               </p>
+              {combinationsBreakdown.featureSets > 1 && (
+                <p className="text-[10px] text-text-muted font-mono pt-1">
+                  = {combinationsBreakdown.featureSets} sous-ensembles ×{" "}
+                  {combinationsBreakdown.hyperparams} hyperparam
+                </p>
+              )}
+              {combinationsCount >= 4 && (
+                <p className="text-[10px] text-warning pt-1">
+                  ⚠ {combinationsCount} modeles seront entraines en sequence
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs">

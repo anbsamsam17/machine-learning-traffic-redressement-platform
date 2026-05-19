@@ -92,8 +92,8 @@ class TrainingConfig(BaseModel):
     activations: list[str] = ["elu"]
     learning_rates: list[float] = [0.01]
     losses: list[str] = ["mse"]
-    min_nb_epochs_list: list[int] = [500, 1000]
-    max_epochs: int = 2050
+    min_nb_epochs_list: list[int] = [100, 200]
+    max_epochs: int = 500
     test_size: float = 0.0
     neurons_factors_list: list[list[float]] = [[1.0, 1.0]]
     use_batch_norm: bool = False

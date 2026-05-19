@@ -23,12 +23,18 @@ from tensorflow.keras.optimizers import Adam  # noqa: E402
 import logging as _logging  # noqa: E402
 _mb_logger = _logging.getLogger(__name__)
 
-# Limit TF threads — must run before TF initialises. If TF was already
-# initialised (e.g. by a previous training run in the same worker), these
-# calls raise RuntimeError("cannot be modified after initialization").
+# TF threads — derived from CPU count instead of hardcoded.
+# intra_op = parallelism inside one op (matmul, conv). Benefits from many cores.
+# inter_op = parallelism between independent ops. 2 is enough for sequential
+# Dense networks. Override via env vars MDL_TF_INTRA / MDL_TF_INTER for ops tuning.
+_cpu_count = os.cpu_count() or 4
+_intra = int(os.environ.get("MDL_TF_INTRA", max(2, _cpu_count - 1)))
+_inter = int(os.environ.get("MDL_TF_INTER", min(4, max(2, _cpu_count // 2))))
+_mb_logger.info("TF threading: intra_op=%d inter_op=%d (cpu_count=%d)", _intra, _inter, _cpu_count)
+
 for _setter, _label in (
-    (lambda: tf.config.threading.set_intra_op_parallelism_threads(4), "intra_op_threads"),
-    (lambda: tf.config.threading.set_inter_op_parallelism_threads(2), "inter_op_threads"),
+    (lambda: tf.config.threading.set_intra_op_parallelism_threads(_intra), "intra_op_threads"),
+    (lambda: tf.config.threading.set_inter_op_parallelism_threads(_inter), "inter_op_threads"),
     (lambda: tf.config.optimizer.set_jit(False), "jit_disable"),
 ):
     try:
