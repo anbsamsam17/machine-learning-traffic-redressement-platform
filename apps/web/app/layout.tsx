@@ -41,6 +41,10 @@ export default function RootLayout({
     >
       <body className="min-h-screen bg-bg text-text font-sans antialiased">
         <Providers>
+          {/* Skip link: visible on keyboard focus, jumps past the global header */}
+          <a href="#main-content" className="skip-link">
+            Aller au contenu
+          </a>
           <AppHeader />
           <SamPageBinder />
           <main id="main-content" className="flex-1">{children}</main>

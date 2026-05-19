@@ -233,3 +233,28 @@ progress::-moz-progress-bar {
   background: var(--color-accent);
   border-radius: 999px;
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Accessibility — skip-link
+ * Visible only on keyboard focus to let users jump past the header nav.
+ * ──────────────────────────────────────────────────────────────────── */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-decoration: none;
+  transition: top 0.2s ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: 8px;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
