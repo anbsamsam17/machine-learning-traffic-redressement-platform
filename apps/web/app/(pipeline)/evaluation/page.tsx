@@ -84,8 +84,12 @@ export default function EvaluationPage() {
   const [folderName, setFolderName] = useState<string | null>(null);
   const [folderFileCount, setFolderFileCount] = useState(0);
 
-  // Hidden folder input ref
+  // Hidden folder input ref — only mounted after the user explicitly clicks
+  // the "Parcourir un dossier" button. Mounting it unconditionally has been
+  // reported to make some Chromium builds auto-open a native file picker on
+  // page load (APP-P1-9), so we delay the mount until intent is confirmed.
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const [folderPickerArmed, setFolderPickerArmed] = useState(false);
 
   // Ambient mood on mount — invite user to load a model
   useEffect(() => {
@@ -215,7 +219,19 @@ export default function EvaluationPage() {
     if (folderInputRef.current) {
       folderInputRef.current.value = "";
     }
+    // Disarm the picker so the input is unmounted again until the next click.
+    setFolderPickerArmed(false);
   }, []);
+
+  // APP-P1-9: explicit user gesture handler — arms the picker, then clicks
+  // the freshly mounted input once. queueMicrotask waits for the ref to attach.
+  const openFolderPicker = useCallback(() => {
+    if (!sessionId || uploading) return;
+    setFolderPickerArmed(true);
+    queueMicrotask(() => {
+      folderInputRef.current?.click();
+    });
+  }, [sessionId, uploading]);
 
   // Auto-load session models on mount
   useEffect(() => {
@@ -491,23 +507,31 @@ export default function EvaluationPage() {
               Chaque sous-dossier doit contenir NNarchitecture.json, NNweights.weights.h5 et NNnormCoefficients.json.
             </p>
 
-            {/* Hidden folder input */}
-            <input
-              ref={folderInputRef}
-              type="file"
-              // @ts-ignore webkitdirectory is non-standard but widely supported
-              webkitdirectory=""
-              directory=""
-              multiple
-              className="hidden"
-              onChange={handleFolderSelect}
-            />
+            {/* Hidden folder input — only mounted after the user clicks the
+                button below. Some Chromium builds open the native picker on
+                mount when an <input type="file" webkitdirectory> is present in
+                the tree even with display:none, so we keep it unmounted by
+                default. */}
+            {folderPickerArmed && (
+              <input
+                ref={folderInputRef}
+                type="file"
+                // @ts-expect-error webkitdirectory is non-standard but widely supported
+                webkitdirectory=""
+                directory=""
+                multiple
+                className="hidden"
+                onChange={handleFolderSelect}
+                data-testid="folder-picker-input"
+              />
+            )}
 
             {!folderName ? (
               <button
                 type="button"
-                onClick={() => folderInputRef.current?.click()}
+                onClick={openFolderPicker}
                 disabled={!sessionId || uploading}
+                data-testid="open-folder-picker"
                 className="w-full relative flex flex-col items-center justify-center gap-4 p-10 rounded-2xl border-2 border-dashed border-white/[0.08] hover:border-indigo-500/40 bg-slate-900/30 hover:bg-indigo-500/5 transition-all duration-300 cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500/20 transition-colors">
