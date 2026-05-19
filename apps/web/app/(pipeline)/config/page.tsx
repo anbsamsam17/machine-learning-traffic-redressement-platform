@@ -48,9 +48,13 @@ export default function ConfigPage() {
       session_id: sessionId,
     });
 
-    // Compute number of combinations for the toast summary
+    // Compute number of combinations for the toast summary.
+    // Must mirror config-form.tsx logic: feature_subsets × hyperparams
+    // (NOT just hyperparams — the previous version always told the user
+    // "2 combinaisons" when feature_subset_grid was on with 31 subsets,
+    // because it omitted the subset multiplier completely).
     const len = (v: unknown) => (Array.isArray(v) ? v.length : 1);
-    const combos =
+    const hyperparams =
       len(config.activations) *
       len(config.learning_rates) *
       len(config.min_nb_epochs_list) *
@@ -58,6 +62,30 @@ export default function ConfigPage() {
       len(config.dropouts) *
       len(config.neurons_factors_list) *
       len(config.batch_sizes);
+
+    let featureSets = 1;
+    if (config.feature_subset_grid) {
+      const inputCols = config.input_cols ?? [];
+      const mandatory = config.mandatory_input_cols ?? [];
+      const minInput = config.min_input_count ?? 0;
+      const optionalCols = inputCols.filter((c) => !mandatory.includes(c));
+      const minOptional = Math.max(0, minInput - mandatory.length);
+      const comb = (n: number, k: number): number => {
+        if (k > n || k < 0) return 0;
+        if (k === 0 || k === n) return 1;
+        let result = 1;
+        for (let i = 0; i < Math.min(k, n - k); i++) {
+          result = (result * (n - i)) / (i + 1);
+        }
+        return Math.round(result);
+      };
+      featureSets = 0;
+      for (let k = minOptional; k <= optionalCols.length; k++) {
+        featureSets += comb(optionalCols.length, k);
+      }
+      featureSets = Math.max(featureSets, 1);
+    }
+    const combos = featureSets * hyperparams;
 
     samNotify.info(
       `${combos.toLocaleString("fr-FR")} combinaison${combos > 1 ? "s" : ""} prevue${combos > 1 ? "s" : ""}`
