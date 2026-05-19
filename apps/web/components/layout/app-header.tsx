@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Brain,
@@ -37,10 +37,34 @@ export function AppHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const firstLinkRef = useRef<HTMLButtonElement>(null);
 
   const isAuthPage = pathname === "/login" || pathname === "/register";
 
   useEffect(() => setMounted(true), []);
+
+  // A11y — close mobile drawer on Escape and move focus to the first
+  // interactive element when the drawer opens. Basic focus-trap.
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    // Defer to give the enter animation a tick to mount.
+    const focusTimer = window.setTimeout(() => {
+      firstLinkRef.current?.focus();
+    }, 50);
+
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setMobileOpen(false);
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      window.clearTimeout(focusTimer);
+    };
+  }, [mobileOpen]);
 
   // Fetch current user email — single call per pathname change.
   // The full TanStack migration of this hook is a follow-up; for now we
@@ -178,22 +202,30 @@ export function AppHeader() {
           onClick={() => setMobileOpen(!mobileOpen)}
           className="md:hidden p-1.5 rounded text-text-muted hover:text-text hover:bg-bg-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           aria-expanded={mobileOpen}
-          aria-label="Menu"
+          aria-controls="mobile-nav-drawer"
+          aria-label={mobileOpen ? "Fermer le menu" : "Ouvrir le menu"}
         >
           {mobileOpen ? <X size={18} aria-hidden="true" /> : <Menu size={18} aria-hidden="true" />}
         </button>
       </div>
 
-      {/* Mobile menu */}
+      {/* Mobile menu — dialog drawer */}
       {mobileOpen && (
-        <div className="md:hidden border-t border-border bg-bg-elevated">
+        <div
+          id="mobile-nav-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation"
+          className="md:hidden border-t border-border bg-bg-elevated"
+        >
           <div className="p-3 space-y-1">
-            {MODES.map((m) => {
+            {MODES.map((m, idx) => {
               const active = mode === m.key;
               const Icon = m.icon;
               return (
                 <button
                   key={m.key}
+                  ref={idx === 0 ? firstLinkRef : undefined}
                   onClick={() => handleModeClick(m.key, m.path)}
                   aria-current={active ? "page" : undefined}
                   className={cn(
