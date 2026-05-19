@@ -43,63 +43,90 @@ class ModelUploadResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _scan_models_in_dir(base: Path) -> list[ModelInfo]:
-    """Scan a directory for model sub-folders containing NNarchitecture.json."""
+def _is_model_dir(p: Path) -> bool:
+    """Return True if ``p`` looks like a serialised model directory.
+
+    Accepts either the modern ``model.keras`` archive or the legacy
+    ``NNarchitecture.json`` + ``NNweights*.h5`` layout.
+    """
+    if not p.is_dir():
+        return False
+    if (p / "model.keras").exists():
+        return True
+    if (p / "NNarchitecture.json").exists():
+        if (p / "NNweights.weights.h5").exists() or (p / "NNweights.h5").exists():
+            return True
+    return False
+
+
+def _make_model_info(p: Path) -> ModelInfo:
+    has_keras = (p / "model.keras").exists()
+    has_arch = (p / "NNarchitecture.json").exists()
+    weights_h5 = (p / "NNweights.weights.h5").exists() or (p / "NNweights.h5").exists()
+    norm_file = (p / "NNnormCoefficients.json").exists()
+
+    training_config = None
+    config_file = p / "training_config.json"
+    if config_file.exists():
+        try:
+            training_config = json.loads(config_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    return ModelInfo(
+        name=p.name,
+        path=str(p),
+        # model.keras embeds weights; treat presence as "has_weights"
+        has_weights=weights_h5 or has_keras,
+        has_architecture=has_arch or has_keras,
+        has_norm=norm_file,
+        training_config=training_config,
+    )
+
+
+def _scan_models_in_dir(base: Path, max_depth: int = 6) -> list[ModelInfo]:
+    """Recursively scan ``base`` for model sub-folders.
+
+    A folder counts as a model if it contains ``model.keras`` OR the pair
+    ``NNarchitecture.json`` + ``NNweights*.h5``. Recursion stops at any folder
+    matched as a model (it does not look inside model folders themselves).
+    """
     if not base.exists() or not base.is_dir():
         return []
 
     models: list[ModelInfo] = []
+    seen: set[str] = set()
 
-    # Check if base itself is a model directory (flat zip)
-    if (base / "NNarchitecture.json").exists():
-        weights_h5 = (base / "NNweights.weights.h5").exists() or (base / "NNweights.h5").exists()
-        norm_file = (base / "NNnormCoefficients.json").exists()
-        training_config = None
-        config_file = base / "training_config.json"
-        if config_file.exists():
-            try:
-                training_config = json.loads(config_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError) as exc:
-                logger.warning("Failed to load training_config.json at %s: %s", config_file, exc)
-        models.append(ModelInfo(
-            name=base.name,
-            path=str(base),
-            has_weights=weights_h5,
-            has_architecture=True,
-            has_norm=norm_file,
-            training_config=training_config,
-        ))
+    # Base itself may be a model dir (e.g. flat ZIP upload)
+    if _is_model_dir(base):
+        info = _make_model_info(base)
+        seen.add(info.path)
+        models.append(info)
         return models
 
-    for sub in sorted(base.iterdir()):
-        if not sub.is_dir():
-            continue
+    def _walk(p: Path, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            entries = sorted(p.iterdir())
+        except (PermissionError, OSError):
+            return
+        for sub in entries:
+            if not sub.is_dir():
+                continue
+            # Skip noise/system folders
+            if sub.name.startswith(".") or sub.name in {"__MACOSX", "__pycache__"}:
+                continue
+            if _is_model_dir(sub):
+                info = _make_model_info(sub)
+                if info.path not in seen:
+                    seen.add(info.path)
+                    models.append(info)
+                # Don't recurse into a model folder
+                continue
+            _walk(sub, depth + 1)
 
-        arch_file = sub / "NNarchitecture.json"
-        if not arch_file.exists():
-            continue
-
-        weights_h5 = (sub / "NNweights.weights.h5").exists() or (sub / "NNweights.h5").exists()
-        norm_file = (sub / "NNnormCoefficients.json").exists()
-
-        # Load training config if available
-        training_config = None
-        config_file = sub / "training_config.json"
-        if config_file.exists():
-            try:
-                training_config = json.loads(config_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError) as exc:
-                logger.warning("Failed to load training_config.json at %s: %s", config_file, exc)
-
-        models.append(ModelInfo(
-            name=sub.name,
-            path=str(sub),
-            has_weights=weights_h5,
-            has_architecture=True,
-            has_norm=norm_file,
-            training_config=training_config,
-        ))
-
+    _walk(base, 0)
     return models
 
 
@@ -115,23 +142,32 @@ def _get_session_models_dir(session_id: str) -> Path:
 
 @router.get("/list", response_model=ModelsListResponse)
 async def list_models(
-    dir: str = Query(None, description="Dossier contenant les modeles entraines"),
+    root: str = Query(None, description="Racine du scan recursif (chemin absolu)"),
+    dir: str = Query(None, description="Alias historique pour 'root'"),
     session_id: str = Query(None, description="Session ID — cherche dans le workspace serveur"),
 ) -> ModelsListResponse:
-    """List all model sub-directories that contain NNarchitecture.json.
+    """List all model sub-directories under a root, recursively.
 
-    Accepts either ``dir`` (explicit path) or ``session_id`` (uses WORKSPACE_ROOT/{session_id}/models/).
+    A folder is a model if it contains ``model.keras`` OR the legacy pair
+    ``NNarchitecture.json`` + ``NNweights*.h5``.
+
+    Resolution order:
+    1. ``root`` (preferred) or ``dir`` (legacy alias) — explicit absolute path
+    2. ``session_id`` — uses ``WORKSPACE_ROOT/{session_id}/models/``
     """
-    if session_id:
+    scan_root = root or dir
+    if scan_root:
+        validate_path(scan_root)
+        base = Path(scan_root)
+    elif session_id:
         base = _get_session_models_dir(session_id)
-    elif dir:
-        validate_path(dir)
-        base = Path(dir)
     else:
-        raise HTTPException(status_code=400, detail="Fournissez 'dir' ou 'session_id'.")
+        raise HTTPException(
+            status_code=400, detail="Fournissez 'root' (ou 'dir') ou 'session_id'."
+        )
 
     models = _scan_models_in_dir(base)
-    logger.info("Listed %d models in %s", len(models), base)
+    logger.info("Listed %d models under %s", len(models), base)
     return ModelsListResponse(models=models)
 
 
