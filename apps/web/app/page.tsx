@@ -27,7 +27,7 @@
  */
 
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Brain,
   Truck,
@@ -36,6 +36,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAppStore, type AppMode } from "@/lib/store";
+import { samMood } from "@/lib/sam/store";
+import { getPageMessage } from "@/lib/sam/page-messages";
 import { HeroLanding } from "@/components/landing/HeroLanding";
 import { ModesGrid } from "@/components/landing/ModesGrid";
 import { QuickStats } from "@/components/landing/QuickStats";
@@ -135,6 +137,22 @@ export default function HomePage() {
   // Re-build the fallback content once per mount. Stable identity is enough
   // for the children — no expensive transforms here.
   const content = useMemo<LandingContent>(() => buildContent(), []);
+
+  // Force-reset Sam's mood to the landing's "welcome" entry on every mount.
+  // SamPageBinder already does this on pathname change, but a stale toast
+  // (`setMoodOnly` with an autoResetMs setTimeout queued by a samNotify on
+  // a previous page like /donnees) can fire after navigation and overwrite
+  // the binder's mood back to "based". Re-asserting the landing entry here,
+  // after the binder's effect, guarantees Sam always greets with "welcome"
+  // on the landing — see QA report APP-P1-1 / QA_B1 §P1-2.
+  useEffect(() => {
+    const entry = getPageMessage("/");
+    if (entry) {
+      samMood.set(entry.mood, entry.message);
+    } else {
+      samMood.set("welcome");
+    }
+  }, []);
 
   function handleModeSelect(key: LandingMode) {
     reset();
