@@ -20,6 +20,8 @@ function isPublicPath(pathname: string): boolean {
   // Public static assets (Sam avatar moods + background images)
   if (pathname.startsWith("/sam/")) return true;
   if (pathname.startsWith("/bg/")) return true;
+  // Temporary: dev-only test fixtures served from public/test/
+  if (pathname.startsWith("/test/")) return true;
   if (pathname === "/favicon.ico") return true;
   return false;
 }

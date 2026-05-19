@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 import bcrypt
@@ -185,13 +185,27 @@ user_store = UserStore()
 # Dependency: get_current_user
 # ---------------------------------------------------------------------------
 
-_bearer_scheme = HTTPBearer()
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer_scheme)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+    mdl_access_token: Annotated[str | None, Cookie()] = None,
 ) -> UserRecord:
-    payload = verify_token(credentials.credentials)
+    """Resolve the current user from either the `Authorization: Bearer <jwt>`
+    header (server-to-server, mobile apps) or the `mdl_access_token` cookie
+    (browser pages — set by lib/auth.ts after login). Both vectors carry the
+    same JWT; reading from the cookie too means React components can use
+    plain `fetch()` without manually attaching the header on every call.
+    """
+    token = credentials.credentials if credentials else mdl_access_token
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    payload = verify_token(token)
     user_id: str | None = payload.get("sub")
     if user_id is None:
         raise HTTPException(
