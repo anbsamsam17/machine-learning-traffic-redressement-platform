@@ -18,7 +18,6 @@ export const PIPELINE_STEPS: PipelineStep[] = [
   { id: "config", label: "Configuration", path: "/config" },
   { id: "training", label: "Entrainement", path: "/training" },
   { id: "evaluation", label: "Evaluation", path: "/evaluation" },
-  { id: "extrapolation", label: "Extrapolation", path: "/extrapolation" },
 ];
 
 /** Shape returned by the backend GET /api/sessions/current endpoint. */

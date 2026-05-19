@@ -13,7 +13,6 @@ const pathToStep: Record<string, number> = {
   "/config": 1,
   "/training": 2,
   "/evaluation": 3,
-  "/extrapolation": 4,
 };
 
 export default function PipelineLayout({
