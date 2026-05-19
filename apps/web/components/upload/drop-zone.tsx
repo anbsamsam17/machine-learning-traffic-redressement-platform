@@ -90,6 +90,7 @@ export function DropZone({
         zoneRef.current = el;
         if (typeof dzRef === "function") dzRef(el);
       }}
+      data-testid="dropzone"
       className={cn(
         "relative flex flex-col items-center justify-center gap-3 px-6 py-10 rounded-md border border-dashed transition-colors cursor-pointer group",
         isDragActive
@@ -100,7 +101,7 @@ export function DropZone({
       tabIndex={0}
       aria-label={label}
     >
-      <input {...getInputProps()} />
+      <input {...getInputProps()} data-testid="dropzone-input" />
       <div
         className={cn(
           "w-10 h-10 rounded-md flex items-center justify-center transition-colors",
