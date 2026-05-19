@@ -62,10 +62,37 @@ async def _cleanup_loop() -> None:
             logger.exception("Error during session cleanup")
 
 
+_SEED_USER_EMAIL = "samir.anbri@gmail.com"
+_SEED_USER_PASSWORD = "TestPass123!"
+
+
+def _seed_default_user() -> None:
+    """Idempotently create a default dev/admin user on startup.
+
+    The user store is in-memory (or Redis-backed) and loses non-Redis
+    data across restarts, so without seeding the dev account everyone
+    gets a 401 on first login post-deploy. This is a no-op if the user
+    already exists.
+    """
+    try:
+        from .auth import user_store
+
+        if user_store.get_by_email(_SEED_USER_EMAIL) is not None:
+            logger.info("Seed user already exists, skipping: %s", _SEED_USER_EMAIL)
+            return
+        user_store.register(_SEED_USER_EMAIL, _SEED_USER_PASSWORD)
+        logger.info("Seed user created: %s", _SEED_USER_EMAIL)
+    except Exception:
+        logger.exception("Failed to seed default user")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup / shutdown lifecycle."""
     settings = get_settings()
+
+    # -- Seed default dev user (idempotent) ------------------------------------
+    _seed_default_user()
 
     # -- Sentry init (if DSN provided) -----------------------------------------
     if settings.SENTRY_DSN:
