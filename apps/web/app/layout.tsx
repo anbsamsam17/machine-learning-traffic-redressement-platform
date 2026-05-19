@@ -43,7 +43,8 @@ export default function RootLayout({
         <Providers>
           <AppHeader />
           <SamPageBinder />
-          <main className="flex-1">{children}</main>
+          <main id="main-content" className="flex-1">{children}</main>
+          {/* Toasts are status messages — make sure SR users hear them */}
           <Toaster
             position="bottom-right"
             duration={4000}
@@ -54,6 +55,7 @@ export default function RootLayout({
             theme="dark"
             closeButton
             richColors={false}
+            aria-live="polite"
             toastOptions={{
               style: {
                 background: "rgba(15, 20, 40, 0.95)",
