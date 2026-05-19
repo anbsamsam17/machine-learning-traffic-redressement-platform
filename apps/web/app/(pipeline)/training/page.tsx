@@ -47,8 +47,17 @@ interface LogEntry {
 
 export default function TrainingPage() {
   const router = useRouter();
-  const { sessionId, taskId, setTaskId, nextStep, mode, outputDir, setOutputDir, trainingConfig } =
-    useAppStore();
+  const {
+    sessionId,
+    taskId,
+    setTaskId,
+    nextStep,
+    mode,
+    outputDir,
+    setOutputDir,
+    trainingConfig,
+    mappingValidated,
+  } = useAppStore();
   const [localOutputDir, setLocalOutputDir] = useState(outputDir ?? "");
 
   const [status, setStatus] = useState<
@@ -235,8 +244,21 @@ export default function TrainingPage() {
   }
 
   async function handleStartTraining() {
+    // APP-P1-7: Hard guards — fail loudly with a toast instead of letting the
+    // API fail or bouncing the user back silently via a redirect.
     if (!sessionId) {
-      toast.error("Pas de session active. Retournez aux etapes precedentes.");
+      toast.error("Pas de session active. Importe d'abord un fichier sur l'etape Donnees.");
+      router.push("/donnees");
+      return;
+    }
+    if (!mappingValidated) {
+      toast.error("Valide d'abord le mapping des colonnes sur l'etape Donnees.");
+      router.push("/donnees");
+      return;
+    }
+    if (!trainingConfig) {
+      toast.error("Aucune configuration trouvee. Retourne a l'etape Configuration.");
+      router.push("/config");
       return;
     }
     const dir = localOutputDir.trim();
