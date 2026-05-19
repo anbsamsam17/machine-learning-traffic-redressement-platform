@@ -21,6 +21,55 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Extract a human-readable error message from a parsed FastAPI error body.
+ *
+ * FastAPI returns `{ detail: string }` for plain HTTPException errors,
+ * but `{ detail: Array<{loc, msg, type}> }` for Pydantic 422 validation
+ * errors. Passing the array directly to React or `new Error()` results
+ * in either a "Objects are not valid as a React child" crash or an
+ * unhelpful "[object Object]" message. This helper normalizes both
+ * shapes into a single string safe to render.
+ */
+export function parseApiError(
+  data: unknown,
+  fallback = "Erreur inconnue"
+): string {
+  if (data == null) return fallback;
+  if (typeof data === "string") return data;
+  if (typeof data !== "object") return String(data);
+
+  const detail = (data as { detail?: unknown }).detail;
+  if (detail == null) {
+    const message = (data as { message?: unknown }).message;
+    return typeof message === "string" ? message : fallback;
+  }
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    // Pydantic validation error: Array<{loc, msg, type}>
+    const parts = detail.map((item) => {
+      if (item && typeof item === "object") {
+        const obj = item as { loc?: unknown; msg?: unknown };
+        const loc = Array.isArray(obj.loc)
+          ? obj.loc.filter((p) => p !== "body").join(".")
+          : "";
+        const msg = typeof obj.msg === "string" ? obj.msg : JSON.stringify(item);
+        return loc ? `${loc}: ${msg}` : msg;
+      }
+      return String(item);
+    });
+    return parts.join(" ; ") || fallback;
+  }
+  if (typeof detail === "object") {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(detail);
+}
+
 interface BaseOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -56,8 +105,10 @@ async function handle<T>(res: Response): Promise<T> {
     try {
       const ct = res.headers.get("content-type") ?? "";
       if (ct.includes("application/json")) {
-        const j = (await res.json()) as { detail?: string; message?: string };
-        detail = j.detail ?? j.message ?? detail;
+        const j = await res.json();
+        // parseApiError handles both string `detail` (HTTPException) and
+        // array `detail` (Pydantic 422 validation errors) safely.
+        detail = parseApiError(j, detail);
       } else {
         detail = await res.text();
       }
