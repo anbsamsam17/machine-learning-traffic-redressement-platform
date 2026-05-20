@@ -428,3 +428,23 @@ def run_evaluation(
         "best_metrics": best,
         "model_results": model_results,
     }
+
+
+# ---------------------------------------------------------------------------
+# K-fold cross-validation (P1.3)
+# ---------------------------------------------------------------------------
+# The implementation lives in services/ml/kfold.py to keep the import graph
+# clean (kfold pulls run_training, which is heavy). We re-export it here so
+# callers can keep their `from .evaluation_pipeline import kfold_train_eval`
+# imports stable as the audit plan expects.
+
+def kfold_train_eval(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    """K-fold cross-validation on a trained-model configuration.
+
+    See ``services.ml.kfold.kfold_train_eval`` for the full signature and
+    semantics. This thin re-export lets external callers import from
+    ``evaluation_pipeline`` (P1.3 surface) without dragging in
+    ``run_training`` at module import time.
+    """
+    from .kfold import kfold_train_eval as _impl
+    return _impl(*args, **kwargs)

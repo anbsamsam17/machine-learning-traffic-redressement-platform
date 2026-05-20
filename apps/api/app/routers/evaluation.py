@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..auth import UserRecord, get_current_user, require_owned_session
 from ..session import session_manager
@@ -92,6 +92,28 @@ class CompareRequest(BaseModel):
     run_a: str
     run_b: str
     tolerance_pct: float = 15.0
+
+
+class KFoldRequest(BaseModel):
+    """Body for POST /api/evaluation/kfold (P1.3).
+
+    The endpoint re-trains the model identified by ``run_name`` k times on
+    different folds of the session's training DataFrame, using the *same*
+    hyper-parameters as the original run. It returns per-fold held-out
+    metrics plus a mean/std summary so the caller can see how stable a
+    "good" model actually is.
+    """
+
+    session_id: str
+    run_name: str
+    # k must be small enough to keep the wall-clock under control, large
+    # enough to give a meaningful std estimate. The audit plan specifies 5;
+    # we cap at 10 to discourage absurdly long runs.
+    k: int = Field(default=5, ge=2, le=10)
+    shuffle_seed: int = 1750
+    # Optional override of the search root used to locate ``run_name``.
+    # When None, we look under ``WORKSPACE_ROOT/{session_id}/models/``.
+    model_dir: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1814,3 +1836,209 @@ async def compare_models_endpoint(
         result["significant_at_0.05"], result["verdict"],
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# P1.3 — K-fold cross-validation on a trained model
+# ---------------------------------------------------------------------------
+#
+# A single-split evaluation only tells you how a model performs on ONE
+# choice of validation set. With k=5 folds we re-train the same architecture
+# on 5 different 80/20 partitions of the source data and look at the
+# mean ± std of the held-out metrics. A model whose tol_in_pct swings by
+# more than ~5 points across folds is fragile, even if its single-split
+# score looked impressive.
+#
+# This endpoint is intentionally slow (k full trainings of the same model)
+# and is meant to be triggered manually for the top finalists of a grid
+# search — not on every model.
+
+# Wall-clock above which we emit a warning in the server log. Not a hard
+# kill — the FastAPI route itself has no timeout, the cancel_event pattern
+# is the official way to abort.
+_KFOLD_SLOW_WARN_SECONDS = 600.0
+
+
+def _kfold_resolve_training_config(
+    session_id: str, run_name: str, override_dir: str | None,
+) -> tuple[dict[str, Any], Path]:
+    """Find the ``training_config.json`` for *run_name* under the session
+    workspace (or *override_dir* when provided).
+
+    Returns the parsed config dict + the model directory path.
+    Raises HTTPException(404) when the model folder cannot be located.
+    """
+    from ..config import get_settings
+
+    candidates: list[Path] = []
+    if override_dir:
+        candidates.append(Path(override_dir) / run_name)
+        candidates.append(Path(override_dir))  # caller passed the run dir itself
+    settings = get_settings()
+    workspace_models = Path(settings.WORKSPACE_ROOT) / session_id / "models"
+    candidates.append(workspace_models / run_name)
+
+    for cand in candidates:
+        cfg_file = cand / "training_config.json"
+        if cfg_file.exists():
+            try:
+                return json.loads(cfg_file.read_text(encoding="utf-8")), cand
+            except (OSError, json.JSONDecodeError) as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"training_config.json illisible pour {run_name}: {exc}",
+                )
+
+    raise HTTPException(
+        status_code=404,
+        detail=(
+            f"Modele '{run_name}' introuvable. Cherche dans : "
+            + ", ".join(str(c) for c in candidates)
+        ),
+    )
+
+
+@router.post("/kfold")
+async def kfold_cross_validation(
+    body: KFoldRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Run K-fold cross-validation on a previously-trained model.
+
+    The endpoint re-trains the model k times on k different 80/20 (for k=5)
+    folds of the session's training DataFrame, using the *same*
+    hyper-parameters as the original training run. Each fold reports the
+    held-out ``tol_in_pct``, ``p80`` (err_rel_p80) and ``r2``. The summary
+    gives the mean and unbiased std across folds — a low std means the
+    architecture is robust to data sampling, a high std means the metric
+    is unreliable.
+
+    Cancellation: the standard `asyncio.CancelledError` mechanism applies.
+    A shared `threading.Event` is also propagated into the training loop
+    so TF stops between epochs / folds.
+
+    Status codes:
+        200 — OK, ``{k, folds, summary, cancelled, duration_s}``
+        401/403 — handled by ``require_owned_session`` upstream
+        404 — model directory not found
+        422 — k out of bounds (Pydantic) or bad request body
+        400 — session has no learning_df, or training_config invalid
+    """
+    import os
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+    import time as _time
+
+    require_owned_session(body.session_id, current_user)
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 1. Locate the training config + parse hyper-parameters
+    # ──────────────────────────────────────────────────────────────────────
+    training_config, model_dir = _kfold_resolve_training_config(
+        body.session_id, body.run_name, body.model_dir,
+    )
+    if not training_config.get("input_cols"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"training_config.json incomplet pour {body.run_name} "
+                "(input_cols manquant). Reentrainez le modele."
+            ),
+        )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 2. Get the source training DataFrame from the session
+    # ──────────────────────────────────────────────────────────────────────
+    session = session_manager.get_session(body.session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session expiree.")
+    learning_df = session_manager.get_data(body.session_id, "learning_df")
+    if learning_df is None or not isinstance(learning_df, pd.DataFrame) or learning_df.empty:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Pas de DataFrame d'apprentissage dans la session. "
+                "Retournez a l'etape Donnees et revalidez le mapping."
+            ),
+        )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 3. Determine the model type (TV / PL) from the target column.
+    # ──────────────────────────────────────────────────────────────────────
+    from ..services.ml.types import PL_CONFIG, TV_CONFIG
+
+    output_cols = training_config.get("output_cols") or []
+    target = (output_cols[0] if output_cols else "TxPen").lower()
+    type_config = PL_CONFIG if "pl" in target else TV_CONFIG
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 4. Run the k-fold loop in a worker thread with a cancellation event.
+    # ──────────────────────────────────────────────────────────────────────
+    import threading as _threading
+
+    cancel_event = _threading.Event()
+    started = _time.time()
+
+    def _runner() -> dict[str, Any]:
+        # Lazy import — pulls heavy TF state.
+        from ..services.ml.kfold import kfold_train_eval
+
+        return kfold_train_eval(
+            df=learning_df,
+            training_config=training_config,
+            type_config=type_config,
+            k=body.k,
+            shuffle_seed=body.shuffle_seed,
+            cancel_event=cancel_event,
+        )
+
+    try:
+        result = await asyncio.to_thread(_runner)
+    except asyncio.CancelledError:
+        cancel_event.set()
+        # Best-effort: let the thread observe the flag before re-raising.
+        await asyncio.sleep(0)
+        logger.warning(
+            "kfold cancelled: session=%s run=%s", body.session_id, body.run_name,
+        )
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "kfold failed: session=%s run=%s err=%s",
+            body.session_id, body.run_name, exc,
+        )
+        raise HTTPException(status_code=500, detail=f"K-fold a echoue : {exc}")
+
+    duration_s = _time.time() - started
+    if duration_s > _KFOLD_SLOW_WARN_SECONDS:
+        logger.warning(
+            "kfold slow: session=%s run=%s k=%d duration=%.1fs > %.0fs",
+            body.session_id, body.run_name, body.k, duration_s,
+            _KFOLD_SLOW_WARN_SECONDS,
+        )
+
+    # Persist for downstream consumers (UI panel, reports).
+    try:
+        session_manager.store_data(
+            body.session_id, f"kfold_result:{body.run_name}", result,
+        )
+    except Exception:  # noqa: BLE001 — non-fatal
+        logger.exception(
+            "Failed to persist kfold result for session=%s run=%s",
+            body.session_id, body.run_name,
+        )
+
+    logger.info(
+        "kfold done: session=%s run=%s k=%d folds_returned=%d duration=%.1fs",
+        body.session_id, body.run_name, body.k,
+        len(result.get("folds") or []), duration_s,
+    )
+
+    return {
+        **result,
+        "run_name": body.run_name,
+        "model_dir": str(model_dir),
+        "duration_s": round(duration_s, 2),
+    }
