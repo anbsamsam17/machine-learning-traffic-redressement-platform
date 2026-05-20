@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
-  Brain,
+  Car,
   Truck,
   Map,
   Activity,
@@ -12,10 +12,7 @@ import {
   Home,
   LogOut,
   User,
-  Moon,
-  Sun,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { useAppStore, type AppMode } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { getToken, logout } from "@/lib/auth";
@@ -23,7 +20,7 @@ import { apiClient } from "@/lib/api";
 import type { AuthMeResponse } from "@/lib/types/api";
 
 const MODES = [
-  { key: "tv" as AppMode, label: "ML Redressement FCD TV", icon: Brain, path: "/donnees" },
+  { key: "tv" as AppMode, label: "ML Redressement FCD TV", icon: Car, path: "/donnees" },
   { key: "pl" as AppMode, label: "Modele PL", icon: Truck, path: "/donnees" },
   { key: "carte" as AppMode, label: "Carte", icon: Map, path: "/carte" },
   { key: "compteurs" as AppMode, label: "Compteurs", icon: Activity, path: "/compteurs" },
@@ -33,15 +30,11 @@ export function AppHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const { mode, setMode, reset } = useAppStore();
-  const { theme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
   const firstLinkRef = useRef<HTMLButtonElement>(null);
 
   const isAuthPage = pathname === "/login" || pathname === "/register";
-
-  useEffect(() => setMounted(true), []);
 
   // A11y — close mobile drawer on Escape and move focus to the first
   // interactive element when the drawer opens. Basic focus-trap.
@@ -124,10 +117,6 @@ export function AppHeader() {
     router.replace("/login");
   }
 
-  function toggleTheme() {
-    setTheme(theme === "dark" ? "light" : "dark");
-  }
-
   if (isAuthPage) return null;
 
   return (
@@ -175,20 +164,6 @@ export function AppHeader() {
 
         {/* Right side */}
         <div className="hidden md:flex items-center gap-2">
-          {mounted && (
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded text-text-muted hover:text-text hover:bg-bg-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              aria-label={theme === "dark" ? "Activer le mode clair" : "Activer le mode sombre"}
-            >
-              {theme === "dark" ? (
-                <Sun size={14} aria-hidden="true" />
-              ) : (
-                <Moon size={14} aria-hidden="true" />
-              )}
-            </button>
-          )}
-
           {userEmail && (
             <div className="flex items-center gap-1">
               <div className="flex items-center gap-1.5 px-2 h-7 rounded bg-bg-elevated border border-border">
@@ -252,15 +227,6 @@ export function AppHeader() {
                 </button>
               );
             })}
-            {mounted && (
-              <button
-                onClick={toggleTheme}
-                className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm font-medium text-text-muted hover:text-text hover:bg-bg-subtle transition-colors"
-              >
-                {theme === "dark" ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
-                {theme === "dark" ? "Mode clair" : "Mode sombre"}
-              </button>
-            )}
             {userEmail && (
               <div className="pt-2 mt-2 border-t border-border">
                 <div className="flex items-center justify-between px-3 py-2">
