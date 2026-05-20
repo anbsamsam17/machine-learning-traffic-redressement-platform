@@ -185,8 +185,11 @@ export default function HomePage() {
           }}
         />
 
-        {/* Quick stats band */}
-        <QuickStats stats={content.quickStats} />
+        {/* Quick stats band — masquee tant qu'aucune source agregee fiable n'existe.
+            Voir backend: pas d'endpoint global d'agregation des modeles par
+            utilisateur. Plutot que d'afficher des valeurs arbitraires, on n'affiche
+            rien jusqu'a ce qu'un endpoint reel soit disponible. */}
+        {content.quickStats.length > 0 && <QuickStats stats={content.quickStats} />}
 
         {/* Modes grid + activity sidebar */}
         <section className="mt-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">

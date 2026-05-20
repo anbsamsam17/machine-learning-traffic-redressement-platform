@@ -58,10 +58,12 @@ export function HeroLanding({
           {title}
         </h1>
 
-        {/* Subtitle */}
-        <p className="text-base md:text-lg text-zinc-300/90 max-w-2xl leading-relaxed">
-          {subtitle}
-        </p>
+        {/* Subtitle (masque si chaine vide) */}
+        {subtitle && (
+          <p className="text-base md:text-lg text-zinc-300/90 max-w-2xl leading-relaxed">
+            {subtitle}
+          </p>
+        )}
 
         {/* Tagline + CTA row */}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3 pt-2">

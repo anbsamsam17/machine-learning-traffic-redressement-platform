@@ -12,8 +12,7 @@ export const landingContent = {
   hero: {
     eyebrow: "Plateforme interne · v2.0",
     title: "Outils Data Engineering · Etudes Trafic",
-    subtitle:
-      "Modeles neuronaux, compteurs permanents et donnees FCD pour le redressement et la modelisation du trafic routier.",
+    subtitle: "",
     tagline:
       "Choisissez un outil ci-dessous. Tous les calculs s'executent cote serveur, donnees isolees par session.",
   },
@@ -36,14 +35,14 @@ export const landingContent = {
     {
       id: "pl",
       shortTitle: "PL",
-      title: "Modele Poids Lourds",
-      tagline: "Meme pipeline que TV, parametres et ponderations specifiques aux PL.",
+      title: "Machine Learning : Redressement FCD Poids Lourds",
+      tagline: "Reseau neuronal calibre sur FCD HERE et compteurs permanents PL.",
       description:
-        "Reutilise l'infrastructure TV avec des sample weights renforces sur les capteurs permanents (x4 par defaut) et une grille adaptee aux faibles volumes. Seed figee pour garantir la reproductibilite entre runs.",
+        "Pipeline complet dedie aux poids lourds : import des releves, mapping des features, grid search adaptatif sur l'architecture et les hyperparametres, sample weights renforces sur les capteurs permanents (x4 par defaut), evaluation GEH et export du modele .keras. Rapports d'erreur par classe TMJA PL livres en fin de run.",
       keyMetrics: [
+        "GEH < 5",
         "Sample weights x4 capteurs permanents",
-        "Reproductible (seed figee)",
-        "Format .keras natif",
+        "Grid search adaptatif",
       ],
       cta: "Lancer l'analyse PL",
     },
@@ -77,28 +76,9 @@ export const landingContent = {
     },
   ],
 
-  quickStats: [
-    {
-      label: "Modeles entraines",
-      value: "127",
-      hint: "Depuis le debut de l'annee",
-    },
-    {
-      label: "Precision moyenne",
-      value: "94%",
-      hint: "GEH < 5 sur jeux de validation",
-    },
-    {
-      label: "Segments traites",
-      value: "48k",
-      hint: "Cumul des cartes generees",
-    },
-    {
-      label: "Sessions actives",
-      value: "6",
-      hint: "Ce mois-ci",
-    },
-  ],
+  // Vide tant qu'aucun endpoint d'agregation reel n'existe (cf. apps/api/app/routers/models.py).
+  // Plutot que des chiffres arbitraires, on masque le bandeau.
+  quickStats: [] as ReadonlyArray<{ label: string; value: string; hint?: string }>,
 
   recentActivity: [
     {
