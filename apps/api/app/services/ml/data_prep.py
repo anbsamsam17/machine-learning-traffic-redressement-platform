@@ -180,6 +180,20 @@ def split_train_valid(
         if idx_valid is not None:
             valid_sample_weight = all_sw[idx_valid]
 
+        # Normalise so sum(weights) == N_train: keeps the effective LR
+        # stable and lets EarlyStopping compare losses across weighted /
+        # non-weighted runs.
+        n = len(train_sample_weight)
+        total = float(train_sample_weight.sum())
+        if total > 0:
+            train_sample_weight = train_sample_weight * (n / total)
+
+        if valid_sample_weight is not None:
+            n_v = len(valid_sample_weight)
+            total_v = float(valid_sample_weight.sum())
+            if total_v > 0:
+                valid_sample_weight = valid_sample_weight * (n_v / total_v)
+
     return {
         "x_full": x_full,
         "y": y,
