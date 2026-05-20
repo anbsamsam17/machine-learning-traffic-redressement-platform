@@ -151,15 +151,8 @@ export function SamCoachingPanel() {
         <div className="flex-1 min-w-0 space-y-4">
           <header className="space-y-1 pr-8">
             <h2 className="text-base sm:text-lg font-semibold text-text leading-tight">
-              Configuration par défaut : <span className="font-mono text-accent">MDL_Lyon_TV_BEST</span>
-              <span className="text-text-muted font-normal"> — 6 features (Compact 6)</span>
+              Voici mes recommandations pour ton grid…
             </h2>
-            <p className="text-xs text-text-muted">
-              Baseline production validée — tol 59.83 %, p80 29.46, R² 0.686 sur 3632 capteurs GrandLyon (seed 1754, 6 features). Chaque champ ci-dessous a une info-bulle dédiée
-              (icône&nbsp;
-              <span className="inline-block size-3 rounded-full border border-accent/50 align-middle" />
-              ) qui explique le défaut choisi.
-            </p>
           </header>
 
           {/* Main recommendations */}
