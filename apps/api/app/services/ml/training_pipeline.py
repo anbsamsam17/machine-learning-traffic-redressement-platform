@@ -7,10 +7,14 @@ No disk I/O is performed.
 
 from __future__ import annotations
 
+import logging
+import math
 import os
 from datetime import datetime
 import threading  # noqa: F401 -- used in type hint string
 from typing import Any, Callable
+
+_logger = logging.getLogger(__name__)
 
 # GPU disabled before any TF import
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
@@ -63,6 +67,105 @@ class TrainedModelArtifact:
 
 
 # ---------------------------------------------------------------------------
+# P4.5 — Hard example mining callback
+# ---------------------------------------------------------------------------
+
+class HardExampleMiningCallback(keras.callbacks.Callback):
+    """Boost sample_weight on hard training examples mid-training.
+
+    After ``start_epoch`` (default 30), every ``period`` epochs (default 10)
+    the callback re-predicts on the (normalized) train set, denormalizes
+    predictions back to TxPen-space, and multiplies ``sample_weight`` of
+    rows where ``|pred - obs| / max(obs, eps) > threshold`` by ``boost_factor``.
+
+    The cumulative boost on any individual sample is capped at ``max_boost``
+    so a few persistently-hard rows cannot completely dominate the loss.
+
+    The ``sample_weight`` array must be the same Python object that the
+    caller passed into ``model.fit(sample_weight=...)`` — Keras keeps a
+    reference to it, so in-place mutation propagates to the training loop.
+    """
+
+    def __init__(
+        self,
+        x_train_norm: np.ndarray,
+        y_train_obs: np.ndarray,
+        mu_y: np.ndarray,
+        sigma_y: np.ndarray,
+        sample_weight: np.ndarray,
+        *,
+        start_epoch: int = 30,
+        period: int = 10,
+        threshold: float = 0.15,
+        boost_factor: float = 1.5,
+        max_boost: float = 3.0,
+        target_log_transform: bool = False,
+    ):
+        super().__init__()
+        self._x = x_train_norm
+        # y_train_obs MUST be in denormalized "TxPen" space — i.e. the raw
+        # observed target values (post-expm1 if log-transformed). The
+        # threshold compares relative error in that natural unit.
+        self._y_obs = y_train_obs.astype(float).reshape(-1)
+        self._mu_y = np.asarray(mu_y, dtype=float).reshape(-1)
+        self._sigma_y = np.asarray(sigma_y, dtype=float).reshape(-1)
+        self._sw = sample_weight  # mutated in place
+        self._initial_sw = sample_weight.copy()
+        self._start_epoch = int(start_epoch)
+        self._period = max(1, int(period))
+        self._threshold = float(threshold)
+        self._boost_factor = float(boost_factor)
+        self._max_boost = float(max_boost)
+        self._target_log_transform = bool(target_log_transform)
+
+    def on_epoch_end(self, epoch, logs=None):  # noqa: D401, ARG002
+        # epoch is 0-indexed in Keras → trigger when (epoch+1) >= start_epoch
+        if (epoch + 1) < self._start_epoch:
+            return
+        if ((epoch + 1) - self._start_epoch) % self._period != 0:
+            return
+
+        try:
+            preds_norm = self.model.predict(self._x, verbose=0)
+        except Exception as exc:  # noqa: BLE001 — defensive
+            _logger.warning("HardExampleMining predict failed: %s", exc)
+            return
+
+        # Predictions come out z-scored; denormalize using the saved moments
+        # for the FIRST output (TxPen). For multi-output (e.g. quantile head)
+        # we only use the median column.
+        preds_norm = np.asarray(preds_norm)
+        if preds_norm.ndim == 2 and preds_norm.shape[1] >= 1:
+            preds_col = preds_norm[:, 0]
+        else:
+            preds_col = preds_norm.reshape(-1)
+
+        mu0 = float(self._mu_y[0]) if self._mu_y.size > 0 else 0.0
+        sg0 = float(self._sigma_y[0]) if self._sigma_y.size > 0 else 1.0
+        preds_natural = preds_col * sg0 + mu0
+        if self._target_log_transform:
+            preds_natural = np.expm1(preds_natural)
+
+        obs = self._y_obs
+        denom = np.where(np.abs(obs) > 1e-6, np.abs(obs), 1e-6)
+        rel_err = np.abs(preds_natural - obs) / denom
+        hard_mask = rel_err > self._threshold
+
+        if not hard_mask.any():
+            return
+
+        # Cap cumulative boost: never exceed max_boost * initial weight.
+        cap = self._initial_sw * self._max_boost
+        new_sw = self._sw.copy()
+        new_sw[hard_mask] = np.minimum(
+            new_sw[hard_mask] * self._boost_factor,
+            cap[hard_mask],
+        )
+        # In-place write so Keras sees the update (it holds a reference).
+        self._sw[:] = new_sw
+
+
+# ---------------------------------------------------------------------------
 # Single model training (in memory)
 # ---------------------------------------------------------------------------
 
@@ -99,8 +202,17 @@ def _train_single(
     reduce_lr_patience: int = 10,
     reduce_lr_factor: float = 0.5,
     reduce_lr_min: float = 1e-5,
+    # --- P4.4 / P4.5 / P4.6 ----------------------------------------------
+    run_name_override: str | None = None,
+    use_hard_example_mining: bool = False,
+    use_curriculum: bool = False,
+    flow_for_curriculum: np.ndarray | None = None,
+    y_train_obs: np.ndarray | None = None,
+    target_log_transform: bool = False,
 ) -> TrainedModelArtifact:
     """Train one model and return an in-memory artifact."""
+
+    run_name_effective = run_name_override or combo.run_name
 
     model = build_model(
         input_size=x_train_norm.shape[1],
@@ -154,12 +266,38 @@ def _train_single(
         callbacks_list.append(
             TrainingProgressCallback(
                 callback=progress_callback,
-                run_name=combo.run_name,
+                run_name=run_name_effective,
                 total_epochs=max_epochs,
                 total_models=total_models,
                 model_idx=model_idx,
             )
         )
+
+    # P4.5 — Hard example mining: needs a *mutable* sample_weight array so
+    # the callback can boost rows mid-training. We ALWAYS materialize the
+    # array (defaulting to uniform 1s) when mining is requested.
+    effective_train_sw = train_sample_weight
+    hem_active = bool(use_hard_example_mining) and y_train_obs is not None
+    if hem_active:
+        if effective_train_sw is None:
+            effective_train_sw = np.ones(len(x_train_norm), dtype=float)
+        else:
+            # Copy so we don't mutate the caller's array across seeds.
+            effective_train_sw = np.asarray(effective_train_sw, dtype=float).copy()
+        hem_cb = HardExampleMiningCallback(
+            x_train_norm=x_train_norm,
+            y_train_obs=np.asarray(y_train_obs).reshape(-1),
+            mu_y=mu_y,
+            sigma_y=sigma_y,
+            sample_weight=effective_train_sw,
+            start_epoch=30,
+            period=10,
+            threshold=0.15,
+            boost_factor=1.5,
+            max_boost=3.0,
+            target_log_transform=bool(target_log_transform),
+        )
+        callbacks_list.append(hem_cb)
 
     fit_kwargs: dict[str, Any] = {
         "x": x_train_norm,
@@ -169,8 +307,8 @@ def _train_single(
         "verbose": 0,
         "callbacks": callbacks_list,
     }
-    if train_sample_weight is not None:
-        fit_kwargs["sample_weight"] = train_sample_weight
+    if effective_train_sw is not None:
+        fit_kwargs["sample_weight"] = effective_train_sw
     if x_valid_norm is not None and y_valid_norm is not None:
         if valid_sample_weight is not None:
             fit_kwargs["validation_data"] = (
@@ -179,7 +317,62 @@ def _train_single(
         else:
             fit_kwargs["validation_data"] = (x_valid_norm, y_valid_norm)
 
-    history = model.fit(**fit_kwargs)
+    # P4.6 — Curriculum learning. We split max_epochs into two phases:
+    #   Phase A: ceil(max_epochs * 0.3) epochs on the easiest 50% (lowest
+    #            TMJOBCTV) of the training set.
+    #   Phase B: remaining epochs on the full training set.
+    # `flow_for_curriculum` must be aligned with x_train_norm (same row
+    # order). EarlyStopping is shared across both phases (same callback
+    # instance), so start_from_epoch counts from phase-A epoch 0 — this is
+    # acceptable because phase A is at most 30% of max_epochs, well under
+    # the typical start_from of 200+.
+    curriculum_active = bool(use_curriculum) and (
+        flow_for_curriculum is not None and len(flow_for_curriculum) == len(x_train_norm)
+    )
+    if bool(use_curriculum) and not curriculum_active:
+        _logger.warning(
+            "Curriculum learning requested for %s but flow_for_curriculum is "
+            "missing or misaligned — disabling curriculum for this combo.",
+            run_name_effective,
+        )
+
+    if curriculum_active:
+        flow = np.asarray(flow_for_curriculum, dtype=float).reshape(-1)
+        order = np.argsort(flow, kind="stable")
+        half = max(1, len(order) // 2)
+        easy_idx = order[:half]
+
+        phase_a_epochs = max(1, math.ceil(max_epochs * 0.3))
+        phase_b_epochs = max(0, max_epochs - phase_a_epochs)
+
+        # Phase A — easy subset
+        phase_a_kwargs = dict(fit_kwargs)
+        phase_a_kwargs["x"] = x_train_norm[easy_idx]
+        phase_a_kwargs["y"] = y_train_norm[easy_idx]
+        phase_a_kwargs["epochs"] = phase_a_epochs
+        phase_a_kwargs["batch_size"] = min(combo.batch_size, len(easy_idx))
+        if "sample_weight" in phase_a_kwargs and phase_a_kwargs["sample_weight"] is not None:
+            phase_a_kwargs["sample_weight"] = phase_a_kwargs["sample_weight"][easy_idx]
+
+        history_a = model.fit(**phase_a_kwargs)
+
+        if phase_b_epochs > 0 and not (
+            cancel_event is not None and cancel_event.is_set()
+        ):
+            fit_kwargs["epochs"] = phase_b_epochs
+            history_b = model.fit(**fit_kwargs)
+            # Merge histories so downstream code sees both phases.
+            merged: dict[str, list] = {}
+            for k in set(history_a.history) | set(history_b.history):
+                merged[k] = list(history_a.history.get(k, [])) + list(
+                    history_b.history.get(k, [])
+                )
+            history = type(history_a)()
+            history.history = merged
+        else:
+            history = history_a
+    else:
+        history = model.fit(**fit_kwargs)
 
     # Evaluate
     if analysis_scope == "all":
@@ -196,7 +389,7 @@ def _train_single(
     }
 
     config_dict = {
-        "run_name": combo.run_name,
+        "run_name": run_name_effective,
         "input_cols": combo.feature_cols,
         "output_cols": output_cols,
         # Stored so evaluation knows which features were z-scored vs left raw.
@@ -232,10 +425,22 @@ def _train_single(
         # → garbage predictions (rmse ~ 1700, R² ~ -2M on Lyon).
         "year_column_name": year_column_name or "",
         "year_value_mapping": year_value_mapping or {},
+        # P4.4/4.5/4.6 — echo so the report shows which flags were active.
+        "use_hard_example_mining": bool(use_hard_example_mining),
+        "hard_example_mining_note": (
+            "Train sample_weight is boosted x1.5 (cap x3) every 10 epochs "
+            "after epoch 30 on rows where |pred-obs|/obs > 0.15."
+            if use_hard_example_mining
+            else ""
+        ),
+        "use_curriculum": bool(curriculum_active),
+        "curriculum_phase_a_epochs": (
+            int(math.ceil(max_epochs * 0.3)) if curriculum_active else 0
+        ),
     }
 
     return TrainedModelArtifact(
-        run_name=combo.run_name,
+        run_name=run_name_effective,
         model=model,
         mu_x=mu_x,
         sigma_x=sigma_x,
@@ -381,6 +586,30 @@ def run_training(
         )
     ]
 
+    # P4.4 — multi-seed runs. Validated to a sane range so a typo cannot
+    # accidentally explode the grid into hundreds of replicas.
+    n_seeds = int(
+        config.get("n_seeds", getattr(type_config, "default_n_seeds", 1))
+    )
+    if not (1 <= n_seeds <= 10):
+        raise ValueError(
+            f"n_seeds must be in [1, 10], got {n_seeds}."
+        )
+
+    # P4.5 / P4.6 — feature flags (combo-wide for now).
+    use_hard_example_mining = bool(
+        config.get(
+            "use_hard_example_mining",
+            getattr(type_config, "default_use_hard_example_mining", False),
+        )
+    )
+    use_curriculum = bool(
+        config.get(
+            "use_curriculum",
+            getattr(type_config, "default_use_curriculum", False),
+        )
+    )
+
     combinations = generate_all_combinations(
         feature_sets=feature_sets,
         all_input_cols=input_cols,
@@ -393,17 +622,53 @@ def run_training(
         batch_sizes=batch_sizes,
     )
 
-    total_models = len(combinations)
+    # Multiply combo count by n_seeds so the progress UI receives an
+    # accurate total (e.g. 5 combos x 3 seeds -> total_models == 15).
+    total_models = len(combinations) * n_seeds
     if total_models == 0:
         return {}
     _hard_cap = int(config.get("_max_grid_combinations", 100))
     if total_models > _hard_cap:
         raise ValueError(
-            f"Grid search would expand to {total_models} combinations; "
+            f"Grid search would expand to {total_models} combinations "
+            f"(combos={len(combinations)} x n_seeds={n_seeds}); "
             f"refuse to launch (hard cap = {_hard_cap})."
         )
 
     results: dict[str, TrainedModelArtifact] = {}
+
+    # P4.6 — Flow array for curriculum learning. We read the BC denominator
+    # column (TMJOBCTV for TV, TMJOBCPL for PL) from the prepared df. The
+    # idx_train indices are aligned with the prepared df row order so this
+    # gives us per-train-row flow values directly.
+    flow_full: np.ndarray | None = None
+    if use_curriculum:
+        bc_col = type_config.target_denominator_bc
+        if bc_col in prepared.columns:
+            flow_full = pd.to_numeric(
+                prepared[bc_col], errors="coerce"
+            ).fillna(0.0).values.astype(float)
+        else:
+            _logger.warning(
+                "Curriculum learning requested but column %s is absent — "
+                "feature will be disabled on a per-combo basis.",
+                bc_col,
+            )
+
+    # P4.5 — Observed y_train in *natural* (denormalized, pre-log-transform)
+    # space, required to compute the relative-error threshold. We invert
+    # log1p when target_log_transform was applied so the comparison is in
+    # TxPen %, not log-space.
+    target_log_transform = bool(prepared is not None and config.get("target_log_transform", False))
+    if y_train.ndim == 2 and y_train.shape[1] >= 1:
+        y_train_obs_raw = y_train[:, 0].astype(float).copy()
+    else:
+        y_train_obs_raw = np.asarray(y_train, dtype=float).reshape(-1).copy()
+    if target_log_transform:
+        # y_train was log1p()-transformed inside split_train_valid -> reverse.
+        y_train_obs_natural = np.expm1(y_train_obs_raw)
+    else:
+        y_train_obs_natural = y_train_obs_raw
 
     # Group by feature mask to share normalization
     from collections import defaultdict
@@ -430,63 +695,97 @@ def run_training(
             x_valid_norm, _, _ = normalize(x_va, on_off_subset, mu_x, sigma_x)
         x_all_norm, _, _ = normalize(x_subset, on_off_subset, mu_x, sigma_x)
 
+        # P4.6 — pre-slice flow array to align with the train indices used
+        # by *this* feature group. idx_train is the same for every feature
+        # group (only the column subset varies), so we slice once per group.
+        flow_train_for_curriculum: np.ndarray | None = None
+        if flow_full is not None:
+            flow_train_for_curriculum = flow_full[idx_train]
+
         for combo in combos:
             if cancel_event is not None and cancel_event.is_set():
                 return results
-            model_idx += 1
-            # Per-run deterministic seeding: each run gets a unique offset
-            # so the grid no longer collapses onto a handful of repeated
-            # (tol, p80) tuples. enable_op_determinism() was already
-            # activated once above; it is idempotent.
-            run_idx = model_idx - 1
-            seed_everything(seed + run_idx, enable_op_determinism=False)
-            tf.keras.utils.set_random_seed(seed + run_idx)
-            artifact = _train_single(
-                x_train_norm=x_train_norm,
-                y_train_norm=y_train_norm,
-                x_valid_norm=x_valid_norm,
-                y_valid_norm=y_valid_norm,
-                x_all_norm=x_all_norm,
-                y_all_norm=y_all_norm,
-                mu_x=mu_x,
-                sigma_x=sigma_x,
-                mu_y=mu_y,
-                sigma_y=sigma_y,
-                combo=combo,
-                max_epochs=max_epochs,
-                analysis_scope=analysis_scope,
-                output_cols=output_cols,
-                on_off_subset=on_off_subset,
-                seed=seed,
-                train_sample_weight=split["train_sample_weight"],
-                valid_sample_weight=split["valid_sample_weight"],
-                use_flag_comptage_weighting=use_weighting,
-                flag_comptage_col=flag_col,
-                flag_priority_weight=flag_weight,
-                use_batch_norm=use_batch_norm,
-                progress_callback=progress_callback,
-                total_models=total_models,
-                model_idx=model_idx,
-                test_size=test_size,
-                year_column_name=str(config.get("year_column_name") or ""),
-                year_value_mapping=dict(config.get("year_value_mapping") or {}),
-                cancel_event=cancel_event,
-                reduce_lr_patience=int(config.get("reduce_lr_patience", 10)),
-                reduce_lr_factor=float(config.get("reduce_lr_factor", 0.5)),
-                reduce_lr_min=float(config.get("reduce_lr_min", 1e-5)),
-            )
-            results[combo.run_name] = artifact
-            # C7: free TF state between every model (not just between feature
-            # groups) — long grids otherwise leak ~hundreds of MB on CPU.
-            import gc as _gc
-            del artifact
-            _gc.collect()
-            try:
-                tf.keras.backend.clear_session()
-            except Exception as exc:  # noqa: BLE001 — defensive
-                import logging as _l
-                _l.getLogger(__name__).warning(
-                    "clear_session after model failed: %s", exc,
+            # P4.4 — replicate each combo `n_seeds` times. When n_seeds == 1
+            # the run_name is unchanged (back-compat); otherwise a
+            # `_seed<i>` suffix disambiguates the artifacts.
+            for seed_idx in range(n_seeds):
+                if cancel_event is not None and cancel_event.is_set():
+                    return results
+                model_idx += 1
+                # Per-run deterministic seeding: each run gets a unique
+                # offset so the grid no longer collapses onto a handful of
+                # repeated (tol, p80) tuples. enable_op_determinism() was
+                # already activated once above; it is idempotent.
+                run_idx = model_idx - 1
+                run_seed = seed + run_idx
+                seed_everything(run_seed, enable_op_determinism=False)
+                tf.keras.utils.set_random_seed(run_seed)
+
+                run_name_eff = (
+                    combo.run_name if n_seeds == 1
+                    else f"{combo.run_name}_seed{seed_idx}"
                 )
+
+                artifact = _train_single(
+                    x_train_norm=x_train_norm,
+                    y_train_norm=y_train_norm,
+                    x_valid_norm=x_valid_norm,
+                    y_valid_norm=y_valid_norm,
+                    x_all_norm=x_all_norm,
+                    y_all_norm=y_all_norm,
+                    mu_x=mu_x,
+                    sigma_x=sigma_x,
+                    mu_y=mu_y,
+                    sigma_y=sigma_y,
+                    combo=combo,
+                    max_epochs=max_epochs,
+                    analysis_scope=analysis_scope,
+                    output_cols=output_cols,
+                    on_off_subset=on_off_subset,
+                    seed=run_seed,
+                    train_sample_weight=split["train_sample_weight"],
+                    valid_sample_weight=split["valid_sample_weight"],
+                    use_flag_comptage_weighting=use_weighting,
+                    flag_comptage_col=flag_col,
+                    flag_priority_weight=flag_weight,
+                    use_batch_norm=use_batch_norm,
+                    progress_callback=progress_callback,
+                    total_models=total_models,
+                    model_idx=model_idx,
+                    test_size=test_size,
+                    year_column_name=str(config.get("year_column_name") or ""),
+                    year_value_mapping=dict(config.get("year_value_mapping") or {}),
+                    cancel_event=cancel_event,
+                    reduce_lr_patience=int(config.get("reduce_lr_patience", 10)),
+                    reduce_lr_factor=float(config.get("reduce_lr_factor", 0.5)),
+                    reduce_lr_min=float(config.get("reduce_lr_min", 1e-5)),
+                    run_name_override=run_name_eff,
+                    use_hard_example_mining=use_hard_example_mining,
+                    use_curriculum=use_curriculum,
+                    flow_for_curriculum=flow_train_for_curriculum,
+                    y_train_obs=y_train_obs_natural,
+                    target_log_transform=target_log_transform,
+                )
+                # Stamp multi-seed metadata in the echo for downstream code.
+                try:
+                    artifact.training_config["n_seeds"] = int(n_seeds)
+                    artifact.training_config["seed_index"] = int(seed_idx)
+                    artifact.training_config["base_run_name"] = combo.run_name
+                except Exception:  # noqa: BLE001 — defensive only
+                    pass
+
+                results[run_name_eff] = artifact
+                # C7: free TF state between every model (not just between
+                # feature groups) — long grids otherwise leak ~hundreds of
+                # MB on CPU.
+                import gc as _gc
+                del artifact
+                _gc.collect()
+                try:
+                    tf.keras.backend.clear_session()
+                except Exception as exc:  # noqa: BLE001 — defensive
+                    _logger.warning(
+                        "clear_session after model failed: %s", exc,
+                    )
 
     return results

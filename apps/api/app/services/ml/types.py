@@ -121,6 +121,28 @@ class ModelTypeConfig:
     default_use_quantile_head: bool = False
     default_quantiles: tuple[float, ...] = (0.2, 0.5, 0.8)
 
+    # --- P4 training-pipeline defaults --------------------------------------
+    # All flags below are additive and default to a no-op (backward compat).
+
+    # P4.4: multi-seed runs. When > 1, each grid combo is trained `n_seeds`
+    # times with seed = base_seed + run_idx*n_seeds + seed_idx so the
+    # downstream ensemble can average/select across replicas. Allowed range
+    # 1..10 (validated at runtime).
+    default_n_seeds: int = 1
+
+    # P4.5: hard-example mining. When True, every 10 epochs (after epoch 30)
+    # samples with |pred - obs|/obs > 0.15 get their sample_weight multiplied
+    # by 1.5 (compound boost capped at 3x). Mid-training side-effect echoed
+    # in the artifact's training_config.
+    default_use_hard_example_mining: bool = False
+
+    # P4.6: curriculum learning (easy -> hard). When True, the model is first
+    # trained on the lowest-50% TMJOBCTV rows for ceil(max_epochs*0.3)
+    # epochs, then on the full training set for the remaining epochs. The
+    # caller must pass a TMJOBCTV-like array via `flow_for_curriculum`;
+    # otherwise the flag is silently disabled with a warning.
+    default_use_curriculum: bool = False
+
 
 # ── TV configuration ────────────────────────────────────────────────────────
 
