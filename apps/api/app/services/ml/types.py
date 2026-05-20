@@ -95,6 +95,32 @@ class ModelTypeConfig:
     # checkpoints keep loading without surprise.
     use_year_embedding: bool = False
 
+    # --- P3 architecture defaults -------------------------------------------
+    # All flags below are additive and default to the pre-P3 behavior so
+    # existing tests / smoke scripts keep passing.
+
+    # P3.1: optimizer choice + L2 weight decay (only used with AdamW).
+    default_optimizer: Literal["adam", "adamw"] = "adam"
+    default_weight_decay: float = 0.0
+
+    # P3.3: input -> last-hidden skip connection (forces Functional API).
+    default_use_skip_connection: bool = False
+
+    # P3.4: dropout schedule across hidden layers.
+    default_dropout_schedule: Literal["uniform", "decreasing"] = "uniform"
+
+    # P3.5: optimizer gradient clipping (None = disabled, byte-identical to
+    # the pre-P3 builder).
+    default_clipnorm: float | None = None
+
+    # P3.7: norm layer ("none" | "batch" | "layer"). When None, the legacy
+    # `use_batch_norm` bool drives the behaviour (back-compat).
+    default_norm_layer: Literal["none", "batch", "layer"] | None = None
+
+    # P3.9: multi-quantile regression head (q=0.2/0.5/0.8 by default).
+    default_use_quantile_head: bool = False
+    default_quantiles: tuple[float, ...] = (0.2, 0.5, 0.8)
+
 
 # ── TV configuration ────────────────────────────────────────────────────────
 
