@@ -149,6 +149,27 @@ def _compute_metrics(
 
 
 # ---------------------------------------------------------------------------
+# Display-label mapping: the dataframe still stores legacy Bordeaux column
+# names internally (TMJABCTV / TMJAFCDTV / TxPenTVRef) because val_renames
+# aliases the FCD HERE schema onto them, but every label shown to the user
+# in the HTML report must use the modern FCD HERE names.
+# ---------------------------------------------------------------------------
+_DISPLAY_LABELS = {
+    "TMJABCTV": "TMJOBCTV",
+    "TMJABCPL": "TMJOBCPL",
+    "TMJAFCDTV": "TMJOFCDTV",
+    "TMJAFCDPL": "TMJOFCDPL",
+    "TxPenTVRef": "TxPen",
+    "TxPenPLRef": "TxPenPL",
+}
+
+
+def _label(col: str) -> str:
+    """Return the user-facing label for a (possibly legacy) column name."""
+    return _DISPLAY_LABELS.get(col, col)
+
+
+# ---------------------------------------------------------------------------
 # HTML report generator
 # ---------------------------------------------------------------------------
 
@@ -314,13 +335,16 @@ def _make_barplot_html(df: pd.DataFrame, title: str) -> str:
         return str(v)
 
     customdata = [[_fmtv(row.get(c)) for c in hover_cols] for _, row in d.iterrows()]
-    hover_lines = "".join(f"<b>{c}</b> : %{{customdata[{i}]}}<br>" for i, c in enumerate(hover_cols))
+    hover_lines = "".join(
+        f"<b>{_label(c)}</b> : %{{customdata[{i}]}}<br>"
+        for i, c in enumerate(hover_cols)
+    )
     hover_template = hover_lines + "<extra></extra>"
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=labels, y=d["TMJABCTV"].tolist(),
-        name="TMJABCTV (validation)", marker_color="#1f77b4",
+        name=f"{_label('TMJABCTV')} (validation)", marker_color="#1f77b4",
         customdata=customdata,
         hovertemplate=hover_template,
     ))
@@ -424,7 +448,7 @@ def _make_folium_map_html(stats_df: pd.DataFrame, model_name: str) -> str:
             v = row.get(c, "-")
             if isinstance(v, float):
                 v = "-" if (math.isnan(v) or math.isinf(v)) else f"{v:.2f}"
-            lines.append(f"<b>{c}</b> : {v}")
+            lines.append(f"<b>{_label(c)}</b> : {v}")
         popup_html = (
             "<div style='font-size:13px;font-family:Manrope,sans-serif;line-height:1.7;'>"
             + "<br>".join(lines)
@@ -457,7 +481,7 @@ def _make_folium_map_html(stats_df: pd.DataFrame, model_name: str) -> str:
       <div><span style="display:inline-block;width:13px;height:13px;background:#2ecc71;border:1px solid #999;margin-right:6px;border-radius:50%;"></span>1 Inclus <b>({n1} &ndash; {pct(n1):.1f}%)</b></div>
       <div><span style="display:inline-block;width:13px;height:13px;background:#f39c12;border:1px solid #999;margin-right:6px;border-radius:50%;"></span>2 Hors &lt;15% borne <b>({n2} &ndash; {pct(n2):.1f}%)</b></div>
       <div><span style="display:inline-block;width:13px;height:13px;background:#e74c3c;border:1px solid #999;margin-right:6px;border-radius:50%;"></span>3 Hors &gt;15% borne <b>({n3} &ndash; {pct(n3):.1f}%)</b></div>
-      <div style="margin-top:6px;font-size:11px;color:#666;">Total: {n_valid} | Rayon ~ TMJABCTV</div>
+      <div style="margin-top:6px;font-size:11px;color:#666;">Total: {n_valid} | Rayon ~ TMJOBCTV</div>
     </div>
     """
     m.get_root().html.add_child(folium.Element(legend_html))
@@ -1016,7 +1040,7 @@ def _generate_html_report(
     </table>
   </div>
 
-  <h2>Barplot - TMJABCTV vs TVr (validation)</h2>
+  <h2>Barplot - TMJOBCTV vs TVr (validation)</h2>
   <div class="panel plot-wrap">
     {bar_html}
   </div>
@@ -1028,7 +1052,7 @@ def _generate_html_report(
   </div>
 
   <h2>Carte des capteurs (validation)</h2>
-  <p class="hint">Cliquez sur un capteur pour voir toutes ses informations. Couleur = tolerance (vert = inclus, orange = hors &lt;15%, rouge = hors &gt;15%). Taille = TMJABCTV.</p>
+  <p class="hint">Cliquez sur un capteur pour voir toutes ses informations. Couleur = tolerance (vert = inclus, orange = hors &lt;15%, rouge = hors &gt;15%). Taille = TMJOBCTV.</p>
   <div class="panel" style="padding:6px;overflow:hidden;">
     {map_html}
   </div>
