@@ -29,7 +29,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import {
-  Brain,
+  Car,
   Truck,
   Map as MapIcon,
   Activity,
@@ -62,7 +62,7 @@ const MODE_VISUAL: Record<
   string,
   { accent: LandingModeContent["accent"]; icon: LucideIcon }
 > = {
-  tv: { accent: "indigo", icon: Brain as LucideIcon },
+  tv: { accent: "indigo", icon: Car as LucideIcon },
   pl: { accent: "amber", icon: Truck as LucideIcon },
   carte: { accent: "cyan", icon: MapIcon as LucideIcon },
   compteurs: { accent: "emerald", icon: Activity as LucideIcon },

@@ -24,7 +24,7 @@ const FEATURES: Feature[] = [
   {
     icon: Route,
     title: "Données FCD",
-    desc: "Floating Car Data temps réel",
+    desc: "Floating Car Data croisées avec les données mesurées",
     accent: "text-amber-300",
   },
   {
