@@ -1,0 +1,64 @@
+{
+  "run_name": "A3_Drop_decreasing",
+  "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111_decreasing",
+  "config": {
+    "run_name": "A3_Drop_decreasing",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "functional_class",
+      "avg_distance_before_m",
+      "avg_distance_after_m",
+      "avg_min_distance_m",
+      "truck_avg_distance_m",
+      "truck_avg_distance_before_m",
+      "truck_avg_distance_after_m",
+      "truck_avg_min_distance_m"
+    ],
+    "activation": "elu",
+    "loss": "mse",
+    "dropout": 0.025,
+    "min_nb_epochs": 1000,
+    "max_epochs": 1250,
+    "neurons_factors": [
+      3.0,
+      2.0,
+      1.0
+    ],
+    "learning_rate": 0.01,
+    "batch_size": 256,
+    "test_size": 0.05,
+    "dropout_schedule": "decreasing"
+  },
+  "input_cols": [
+    "year_mapped",
+    "TMJOFCDTV",
+    "TMJOFCDPL",
+    "functional_class",
+    "avg_distance_before_m",
+    "avg_distance_after_m",
+    "avg_min_distance_m",
+    "truck_avg_distance_m",
+    "truck_avg_distance_before_m",
+    "truck_avg_distance_after_m",
+    "truck_avg_min_distance_m"
+  ],
+  "metrics": {
+    "rmse": 0.6769,
+    "mae": 0.3842,
+    "mape": 22.16,
+    "r_squared": 0.689404,
+    "geh_mean": 0.0544,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3671,
+    "hd_rmse": 0.643,
+    "ld_rmse": 1.1132,
+    "median_relative_error": 13.98
+  },
+  "tol_inclus": 2230,
+  "tol_total": 3671,
+  "err_p80_pct": 29.91,
+  "barplot_broken": false,
+  "train_seconds": 211.1
+}

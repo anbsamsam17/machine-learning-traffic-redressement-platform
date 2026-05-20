@@ -1,0 +1,98 @@
+[
+  {
+    "id": 1,
+    "name": "mse_025_ep1000",
+    "loss": "mse",
+    "dropout": 0.025,
+    "min_epochs": 1000,
+    "target_log_transform": false
+  },
+  {
+    "id": 2,
+    "name": "mse_02_ep1000",
+    "loss": "mse",
+    "dropout": 0.02,
+    "min_epochs": 1000,
+    "target_log_transform": false
+  },
+  {
+    "id": 3,
+    "name": "mse_03_ep1000",
+    "loss": "mse",
+    "dropout": 0.03,
+    "min_epochs": 1000,
+    "target_log_transform": false
+  },
+  {
+    "id": 4,
+    "name": "huber_025_ep1000",
+    "loss": "huber",
+    "dropout": 0.025,
+    "min_epochs": 1000,
+    "target_log_transform": false
+  },
+  {
+    "id": 5,
+    "name": "huber_02_ep1000",
+    "loss": "huber",
+    "dropout": 0.02,
+    "min_epochs": 1000,
+    "target_log_transform": false
+  },
+  {
+    "id": 6,
+    "name": "tolerance_aware_025_ep1000",
+    "loss": "tolerance_aware",
+    "dropout": 0.025,
+    "min_epochs": 1000,
+    "target_log_transform": false
+  },
+  {
+    "id": 7,
+    "name": "tolerance_aware_02_ep1000",
+    "loss": "tolerance_aware",
+    "dropout": 0.02,
+    "min_epochs": 1000,
+    "target_log_transform": false
+  },
+  {
+    "id": 8,
+    "name": "pinball_p80_025_ep1000",
+    "loss": "pinball_p80",
+    "dropout": 0.025,
+    "min_epochs": 1000,
+    "target_log_transform": false
+  },
+  {
+    "id": 9,
+    "name": "mse_025_ep1000_tlog",
+    "loss": "mse",
+    "dropout": 0.025,
+    "min_epochs": 1000,
+    "target_log_transform": true
+  },
+  {
+    "id": 10,
+    "name": "huber_025_ep1000_tlog",
+    "loss": "huber",
+    "dropout": 0.025,
+    "min_epochs": 1000,
+    "target_log_transform": true
+  },
+  {
+    "id": 11,
+    "name": "mse_025_ep750",
+    "loss": "mse",
+    "dropout": 0.025,
+    "min_epochs": 750,
+    "target_log_transform": false
+  },
+  {
+    "id": 12,
+    "name": "mse_025_ep1250",
+    "loss": "mse",
+    "dropout": 0.025,
+    "min_epochs": 1250,
+    "target_log_transform": false
+  }
+]

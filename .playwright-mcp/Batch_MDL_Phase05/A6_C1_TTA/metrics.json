@@ -1,0 +1,58 @@
+{
+  "run_name": "A6_C1_TTA",
+  "config_id": 11,
+  "mode": "tta_reeval",
+  "parent_run_name": "A6_huber_permX2_recX2",
+  "parent_config_id": 1,
+  "tta_iter": 5,
+  "tta_noise_std": 0.01,
+  "actual_model_name": "elu_lr0.01_ep1000_huber_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111",
+  "metrics": {
+    "rmse": 0.6778,
+    "mae": 0.3743,
+    "mape": 21.16,
+    "r_squared": 0.668881,
+    "geh_mean": 0.0531,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3632,
+    "hd_rmse": 0.6075,
+    "ld_rmse": 1.4179,
+    "median_relative_error": 13.82
+  },
+  "metrics_ci95": {
+    "r2": [
+      0.615851,
+      0.720627
+    ],
+    "p80": [
+      27.7326,
+      29.8885
+    ],
+    "tol_in_pct": [
+      60.02,
+      63.24
+    ]
+  },
+  "tol_inclus": 2238,
+  "tol_total": 3632,
+  "err_p80_pct": 28.76,
+  "barplot_broken": false,
+  "broken": false,
+  "broken_reasons": [],
+  "eval_seconds": 10.6,
+  "parent_metrics": {
+    "rmse": 0.6778,
+    "mae": 0.3743,
+    "mape": 21.16,
+    "r_squared": 0.668843,
+    "geh_mean": 0.0531,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3632,
+    "hd_rmse": 0.6075,
+    "ld_rmse": 1.418,
+    "median_relative_error": 13.97
+  },
+  "parent_tol_inclus": 2236,
+  "parent_tol_total": 3632,
+  "parent_err_p80_pct": 28.92
+}

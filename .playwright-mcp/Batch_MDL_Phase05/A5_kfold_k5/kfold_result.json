@@ -1,0 +1,63 @@
+{
+  "k": 5,
+  "folds": [
+    {
+      "fold_idx": 0,
+      "tol_in_pct": null,
+      "p80": null,
+      "r2": null,
+      "n_val_samples": 727,
+      "error": "name 'logger' is not defined"
+    },
+    {
+      "fold_idx": 1,
+      "tol_in_pct": null,
+      "p80": null,
+      "r2": null,
+      "n_val_samples": 727,
+      "error": "name 'logger' is not defined"
+    },
+    {
+      "fold_idx": 2,
+      "tol_in_pct": null,
+      "p80": null,
+      "r2": null,
+      "n_val_samples": 726,
+      "error": "name 'logger' is not defined"
+    },
+    {
+      "fold_idx": 3,
+      "tol_in_pct": null,
+      "p80": null,
+      "r2": null,
+      "n_val_samples": 726,
+      "error": "name 'logger' is not defined"
+    },
+    {
+      "fold_idx": 4,
+      "tol_in_pct": null,
+      "p80": null,
+      "r2": null,
+      "n_val_samples": 726,
+      "error": "name 'logger' is not defined"
+    }
+  ],
+  "summary": {
+    "tol_in_pct": {
+      "mean": null,
+      "std": null
+    },
+    "p80": {
+      "mean": null,
+      "std": null
+    },
+    "r2": {
+      "mean": null,
+      "std": null
+    }
+  },
+  "cancelled": false,
+  "run_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111",
+  "model_dir": "C:\\Users\\SamirANBRI\\Desktop\\AppRedressement\\mdl-redressement-portfolio\\tmp_workdir\\93c973086c124a4f9a914674932c90ac\\models\\elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111",
+  "duration_s": 0.06
+}

@@ -195,8 +195,27 @@ def run_one(
         "test_size": float(cfg.get("test_size", 0.05)),
         "year_column_name": "Annee",
         "year_value_mapping": YEAR_MAPPING,
-        "use_flag_permanent_weighting": False,
     }
+    # Phase 0-5 — forward EVERY user-configurable flag from cfg to the body.
+    # Without this loop the worker silently overrides advanced flags (perm /
+    # recent_year weighting, log_flow, target_log_transform, scaler, embedding,
+    # quantile head, hard mining, curriculum, n_seeds, etc.).
+    forwarded_flags = (
+        "use_flag_permanent_weighting", "flag_priority_weight",
+        "use_flag_recent_year_weighting", "recent_year_priority_weight",
+        "use_log_flow_weighting", "log_flow_weighting_col",
+        "target_log_transform",
+        "scaler",
+        "use_year_embedding", "year_embedding_dim",
+        "use_quantile_head",
+        "use_hard_example_mining",
+        "use_curriculum",
+        "n_seeds",
+        "tta_iter", "tta_noise_std",
+    )
+    for key in forwarded_flags:
+        if key in cfg and cfg[key] is not None:
+            body[key] = cfg[key]
     # Phase 3 architecture axes (single-valued).
     if "optimizer" in cfg:
         body["optimizer"] = cfg["optimizer"]

@@ -1,0 +1,217 @@
+[
+  {
+    "id": 1,
+    "name": "A2_Full_logTV",
+    "description": "Full 11 + log_TMJOFCDTV",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "functional_class",
+      "avg_distance_before_m",
+      "avg_distance_after_m",
+      "avg_min_distance_m",
+      "truck_avg_distance_m",
+      "truck_avg_distance_before_m",
+      "truck_avg_distance_after_m",
+      "truck_avg_min_distance_m",
+      "log_TMJOFCDTV"
+    ]
+  },
+  {
+    "id": 2,
+    "name": "A2_Full_logPL",
+    "description": "Full 11 + log_TMJOFCDPL",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "functional_class",
+      "avg_distance_before_m",
+      "avg_distance_after_m",
+      "avg_min_distance_m",
+      "truck_avg_distance_m",
+      "truck_avg_distance_before_m",
+      "truck_avg_distance_after_m",
+      "truck_avg_min_distance_m",
+      "log_TMJOFCDPL"
+    ]
+  },
+  {
+    "id": 3,
+    "name": "A2_Full_logBoth",
+    "description": "Full 11 + log_TMJOFCDTV + log_TMJOFCDPL",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "functional_class",
+      "avg_distance_before_m",
+      "avg_distance_after_m",
+      "avg_min_distance_m",
+      "truck_avg_distance_m",
+      "truck_avg_distance_before_m",
+      "truck_avg_distance_after_m",
+      "truck_avg_min_distance_m",
+      "log_TMJOFCDTV",
+      "log_TMJOFCDPL"
+    ]
+  },
+  {
+    "id": 4,
+    "name": "A2_Full_ratioPLTV",
+    "description": "Full 11 + ratio_PLTV",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "functional_class",
+      "avg_distance_before_m",
+      "avg_distance_after_m",
+      "avg_min_distance_m",
+      "truck_avg_distance_m",
+      "truck_avg_distance_before_m",
+      "truck_avg_distance_after_m",
+      "truck_avg_min_distance_m",
+      "ratio_PLTV"
+    ]
+  },
+  {
+    "id": 5,
+    "name": "A2_Full_fcOH",
+    "description": "Full 10 (FC retire) + fc_1..fc_5",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "avg_distance_before_m",
+      "avg_distance_after_m",
+      "avg_min_distance_m",
+      "truck_avg_distance_m",
+      "truck_avg_distance_before_m",
+      "truck_avg_distance_after_m",
+      "truck_avg_min_distance_m",
+      "fc_1",
+      "fc_2",
+      "fc_3",
+      "fc_4",
+      "fc_5"
+    ]
+  },
+  {
+    "id": 6,
+    "name": "A2_Full_ratio_fcOH",
+    "description": "Full + ratio_PLTV + fc_1..fc_5",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "avg_distance_before_m",
+      "avg_distance_after_m",
+      "avg_min_distance_m",
+      "truck_avg_distance_m",
+      "truck_avg_distance_before_m",
+      "truck_avg_distance_after_m",
+      "truck_avg_min_distance_m",
+      "ratio_PLTV",
+      "fc_1",
+      "fc_2",
+      "fc_3",
+      "fc_4",
+      "fc_5"
+    ]
+  },
+  {
+    "id": 7,
+    "name": "A2_Full_robust",
+    "description": "Full 11 with RobustScaler-encoded numeric features (rs_*)",
+    "input_cols": [
+      "year_mapped",
+      "rs_TMJOFCDTV",
+      "rs_TMJOFCDPL",
+      "functional_class",
+      "rs_avg_distance_before_m",
+      "rs_avg_distance_after_m",
+      "rs_avg_min_distance_m",
+      "rs_truck_avg_distance_m",
+      "rs_truck_avg_distance_before_m",
+      "rs_truck_avg_distance_after_m",
+      "rs_truck_avg_min_distance_m"
+    ],
+    "robust_scaled": true
+  },
+  {
+    "id": 8,
+    "name": "A2_Full_yearEmb3",
+    "description": "Full 11 + year_embedding emulation (dim=3 sinusoidal)",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "functional_class",
+      "avg_distance_before_m",
+      "avg_distance_after_m",
+      "avg_min_distance_m",
+      "truck_avg_distance_m",
+      "truck_avg_distance_before_m",
+      "truck_avg_distance_after_m",
+      "truck_avg_min_distance_m",
+      "yemb1",
+      "yemb2",
+      "yemb3"
+    ]
+  },
+  {
+    "id": 9,
+    "name": "A2_Compact6_logTV_fcOH",
+    "description": "[year, TMJOFCDTV, log_TMJOFCDTV, TMJOFCDPL, fc_1..fc_5]",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "log_TMJOFCDTV",
+      "TMJOFCDPL",
+      "fc_1",
+      "fc_2",
+      "fc_3",
+      "fc_4",
+      "fc_5"
+    ]
+  },
+  {
+    "id": 10,
+    "name": "A2_Compact6_ratio_robust",
+    "description": "[year, rs_TMJOFCDTV, rs_TMJOFCDPL, ratio_PLTV, functional_class, rs_avg_min_distance_m]",
+    "input_cols": [
+      "year_mapped",
+      "rs_TMJOFCDTV",
+      "rs_TMJOFCDPL",
+      "ratio_PLTV",
+      "functional_class",
+      "rs_avg_min_distance_m"
+    ],
+    "robust_scaled": true
+  },
+  {
+    "id": 11,
+    "name": "A2_Min4",
+    "description": "[year, TMJOFCDTV, TMJOFCDPL, functional_class]",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "functional_class"
+    ]
+  },
+  {
+    "id": 12,
+    "name": "A2_Min5_ratio",
+    "description": "[year, TMJOFCDTV, TMJOFCDPL, ratio_PLTV, functional_class]",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "ratio_PLTV",
+      "functional_class"
+    ]
+  }
+]

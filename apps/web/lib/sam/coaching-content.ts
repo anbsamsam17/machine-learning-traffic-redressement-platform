@@ -3,11 +3,10 @@
  * recommendations panel + every per-field tooltip.
  *
  * All copy is in French to match the rest of the redressement pipeline UI.
- * Recommendations are drawn from the audit (Phase 1 → 5):
- *   - p80 / tol_in sensitivity to loss & outliers
- *   - flag_permanent + flag_recent_year weighting gains on the in-tol sensor count
- *   - empirical sweet-spot grid on dropout / neurons_factors
- *   - bootstrap CI95 for stability of tol_in
+ * Recommendations are derived from the MDL_Lyon_TV_BEST production baseline
+ * (seed 1751) — 66.41 % tol / p80 26.34 / R²=0.808 on the 3632 GrandLyon
+ * sensors (BCFCDREF_AllYears_TV) — and from the 76+ models benchmarked
+ * during Phase 05 / 06.
  *
  * Edit copy here once → it propagates to the panel AND every tooltip.
  */
@@ -41,94 +40,100 @@ export interface SamConfigRecommendations {
 export const samConfigRecommendations: SamConfigRecommendations = {
   mainRecommendations: [
     {
-      label: "Loss",
+      label: "Loss mse — baseline éprouvée",
       body:
-        "Préférez `huber` ou `tolerance_aware` au lieu de `mse` pour réduire l'impact des outliers (~−3 à −5 % sur le p80).",
+        "`tolerance_aware` testé, gains instables ; le `mse` produit 66 % tol / R² 0.81 reproductible (10 graines testées) — référence MDL_Lyon_TV_BEST.",
     },
     {
-      label: "Pondération",
+      label: "Pondération capteurs permanents × 2.0",
       body:
-        "Activez « capteurs permanents » + « année la plus récente » ensemble (gain observé de +60 à +90 capteurs in-tol sur les runs audit).",
+        "`Type Compteur` ∈ {Permanent, permanent, Siredo} pondérés ×2.0 — sweet spot validé vs ×1 (baseline) ou ×3 (sur-concentration).",
     },
     {
-      label: "Architecture",
+      label: "Full 11 features",
       body:
-        "Testez `dropout 0.10–0.15` avec `neurons_factors [2.0, 1.5, 1.0]` — sweet spot observé sur la grille d'audit.",
+        "FCD TV + FCD PL + 4 distances VL (before/after/min/m) + 4 distances PL + `functional_class` + `year_mapped`. `Compact 6` perd −5 pp tol.",
     },
     {
-      label: "Régularisation",
+      label: "Dropout 0.025, [3, 2, 1], 1250 epochs forcés",
       body:
-        "`AdamW` + `weight_decay=1e-4` réduit l'overfit sur les modèles deep (≥3 couches).",
+        "`min_nb_epochs = max_epochs = 1250` — convergence stable, pas de surapprentissage observé sur 3632 capteurs.",
     },
     {
-      label: "Validation",
+      label: "test_size = 0 (in-sample)",
       body:
-        "`test_size=0.05` (5 %) combiné à un bootstrap CI95 donne des intervalles fiables sur tol_in.",
+        "Sur 3632 capteurs, un hold-out 5 % (184 lignes) bruite l'EarlyStopping et coupe le training à ~epoch 1100 au lieu de 1250.",
     },
   ],
   pitfalls: [
     {
-      label: "Min epochs trop bas",
+      label: "Pondération `année récente` activée",
       body:
-        "`min_nb_epochs < 20` produit des modèles dégénérés. Gardez toujours ≥ 20, idéalement ≥ 100.",
+        "42 % du jeu = 2025, déjà fortement représenté → dégrade la tol globale de −3 pp sur ce dataset déséquilibré.",
     },
     {
-      label: "MSE sur cible brute",
+      label: "AdamW + weight_decay",
       body:
-        "Loss `mse` sur cible non-transformée est fortement biaisée par les capteurs > 20 000 TMJOBCTV — préférez `huber`.",
+        "Testé sur ce MLP : perte de 15 pp R². Garder `Adam` (lr 0.01) — l'optimiseur de référence MDL_Lyon_TV_BEST.",
     },
     {
-      label: "Seed unique",
+      label: "Skip / SELU / Curriculum",
       body:
-        "`n_seeds=1` ne mesure pas la variance — sur ce dataset bruité, les runs ne sont pas comparables sans multi-seed.",
+        "`Skip connection` (−15 pp tol), `SELU` (−10 pp R² vs ELU), `Curriculum` (−7 pp tol) — tous testés, tous régressent ici.",
+    },
+    {
+      label: "`tolerance_aware` ou `pinball_p80`",
+      body:
+        "Meilleur sur ablation pure mais variance forte ; `mse` reste plus robuste sur les 76+ modèles benchmarkés.",
     },
   ],
   strategy: {
-    models: "30–60 modèles",
-    epochs: "200–500 epochs",
-    batch: "batch_size = 256",
+    models: "Validation prod : défauts",
+    epochs: "Exploration : varier seed",
+    batch: "Comparaison : 1 axe à la fois",
     rationale:
-      "Volume suffisant pour couvrir les sous-ensembles de features sans exploser le temps de calcul GPU/CPU.",
+      "Laisser les défauts reproduit MDL_Lyon_TV_BEST en ~140 s. Pour explorer, varier la seed (10 graines → +1-3 pp tol observé) puis figer le best. Pour comparer une nouvelle feature, conserver tous les défauts sauf l'axe testé.",
   },
   advancedRecommendations: [
     {
-      label: "Skip connections",
+      label: "BatchNorm",
       body:
-        "Pour les architectures ≥ 3 couches, des skip connections (résiduelles) améliorent la stabilité du gradient.",
+        "Effet marginal sur la tol (±1 pp), améliore le R² (0.72) — à tester si overfitting suspecté.",
     },
     {
-      label: "LayerNorm",
+      label: "Tolerance-aware loss",
       body:
-        "`LayerNorm` après chaque couche cachée stabilise mieux que `BatchNorm` quand `batch_size < 128`.",
+        "À essayer si la médiane des erreurs est l'objectif principal (vs robust mean) — variance plus élevée que mse.",
     },
     {
-      label: "Quantile head",
+      label: "Multi-seed n=3",
       body:
-        "Une tête de prédiction quantile (q=0.5) en parallèle de la régression donne un proxy direct pour le p80.",
+        "Ensemble plus stable (variance ±0.18) vs single-seed (±0.87) — utile pour valider la stabilité d'un changement.",
     },
     {
-      label: "Multi-seed averaging",
+      label: "Bootstrap CI95",
       body:
-        "Moyenner 3–5 seeds par configuration réduit la variance des métriques de tol_in de ~30 %.",
+        "`bootstrap_iter=1000` ajoute des intervalles de confiance fiables sur la tol_in (coût compute négligeable).",
     },
     {
-      label: "Cosine LR schedule",
+      label: "K-fold k=5",
       body:
-        "Un schedule cosine + warmup sur 10 % des epochs surpasse le LR constant sur les runs ≥ 500 epochs.",
+        "Pour mesurer la généralisation hors-sample sur le dataset cleané — complémentaire au test_size=0.",
     },
   ],
 };
 
 // ---------------------------------------------------------------------------
 // Per-field tooltips — keys correspond to logical field names exposed by the
-// ConfigForm. Each entry combines a 1-sentence purpose with an audit-driven
-// recommendation. Editing one entry updates every tooltip on the form.
+// ConfigForm. Each entry combines a 1-sentence purpose with the rationale of
+// the chosen MDL_Lyon_TV_BEST default. Editing one entry updates every
+// tooltip on the form.
 // ---------------------------------------------------------------------------
 
 export interface FieldTooltip {
   /** One-sentence description of what the field controls. */
   purpose: string;
-  /** Concrete value / range recommendation drawn from the audit. */
+  /** Concrete value / range recommendation drawn from the production baseline. */
   recommendation: string;
 }
 
@@ -138,25 +143,31 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Facteurs multiplicateurs de N (nombre de features) qui définissent le nombre de neurones par couche cachée.",
     recommendation:
-      "Sweet spot audit : [2.0, 1.5, 1.0] ou [2, 1]. Ajoutez [3, 2, 1] pour les datasets riches (≥ 8 features).",
+      "Défaut **[3, 2, 1]** — architecture à 3 couches, validée stable sur MDL_Lyon_TV_BEST.",
   },
   activations: {
     purpose:
       "Fonction(s) d'activation des couches cachées — testées en grid search si plusieurs sélectionnées.",
     recommendation:
-      "`elu` reste la baseline robuste. Testez `selu` si vous activez LayerNorm/SkipConnections.",
+      "Défaut **elu** — `SELU` testé : −10 pp R² vs ELU sur ce dataset.",
   },
   use_batch_norm: {
     purpose:
       "Ajoute une couche `BatchNormalization` après chaque couche cachée.",
     recommendation:
-      "Recommandé pour `batch_size ≥ 128`. Désactivez si vous passez à `batch_size < 64` (préférez LayerNorm).",
+      "Défaut **OFF** — BatchNorm marginal sur la tol (±1 pp), améliore R² (0.72) — à tester si overfitting suspecté.",
   },
   dropouts: {
     purpose:
       "Taux de dropout appliqué à chaque couche cachée — testé en grid search si plusieurs valeurs.",
     recommendation:
-      "Sweet spot observé : 0.10 à 0.15. Évitez 0.0 (overfit) et > 0.30 (sous-apprentissage).",
+      "Défaut **0.025** — sweet spot vs 0.02 (overfit) et 0.03 (underfit).",
+  },
+  dropout: {
+    purpose:
+      "Taux de dropout appliqué à chaque couche cachée.",
+    recommendation:
+      "Défaut **0.025** — sweet spot vs 0.02 (overfit) et 0.03 (underfit).",
   },
 
   // ── Training ────────────────────────────────────────────────────────────
@@ -164,37 +175,43 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Fonction(s) de perte minimisée(s) pendant l'entraînement.",
     recommendation:
-      "Préférez `huber` à `mse` — réduit l'impact des outliers (~−3 à −5 % p80). `mae` reste utile en secondaire.",
+      "Défaut **mse** — validé sur 76+ modèles. `tolerance_aware` gain instable, `pinball_p80` biaisé.",
+  },
+  loss: {
+    purpose:
+      "Fonction de perte minimisée pendant l'entraînement.",
+    recommendation:
+      "Défaut **mse** — validé sur 76+ modèles. `tolerance_aware` gain instable, `pinball_p80` biaisé.",
   },
   learning_rates: {
     purpose:
       "Pas d'apprentissage Adam — testé en grid search si plusieurs valeurs.",
     recommendation:
-      "Baseline : `0.01`. Pour les architectures deep (≥ 3 couches), essayez aussi `0.001`.",
+      "Défaut **0.01** — référence MDL_Lyon_TV_BEST avec Adam (lr plus bas non bénéfique sur ce MLP).",
   },
   batch_sizes: {
     purpose:
       "Nombre d'échantillons traités par étape de gradient.",
     recommendation:
-      "Baseline audit : `256`. Augmentez à `512` si vous avez ≥ 5 000 lignes d'entraînement.",
+      "Défaut **256** — équilibre vitesse / lissage gradient sur 3632 lignes.",
   },
   min_nb_epochs_list: {
     purpose:
       "Nombre d'epochs minimum avant que l'EarlyStopping puisse arrêter l'entraînement.",
     recommendation:
-      "Toujours ≥ 20 (< 20 = modèles dégénérés). Recommandé : `[100, 200]` pour bien explorer.",
+      "Défaut **1250** — force le training complet ; sur 3632 capteurs Lyon le modèle continue à améliorer jusqu'à 1250.",
   },
   max_epochs: {
     purpose:
       "Plafond d'epochs — l'entraînement s'arrête au plus tard à cette valeur.",
     recommendation:
-      "500 suffit pour la plupart des configs. Montez à 1000 si l'EarlyStopping ne se déclenche jamais.",
+      "Défaut **1250** = min_nb_epochs → désactive EarlyStopping en pratique.",
   },
   test_size: {
     purpose:
       "Fraction du dataset réservée au test final (hold-out).",
     recommendation:
-      "`0.05` (5 %) recommandé — combiné à un bootstrap CI95 pour des intervalles de tol_in fiables.",
+      "Défaut **0.0** — in-sample full training. 0.05 dégrade EarlyStopping sur petit val (184 lignes).",
   },
 
   // ── Feature subsets ─────────────────────────────────────────────────────
@@ -202,7 +219,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Liste des colonnes d'entrée utilisées comme features par le modèle.",
     recommendation:
-      "Gardez le set par défaut TV/PL — ajoutez `TMJOBCTV_HPM` / `HPS` uniquement si présents dans vos données.",
+      "Défaut **Full 11 features** : FCD TV + FCD PL + 4 distances VL + 4 distances PL + `functional_class` + `year_mapped`. `Compact 6` perd −5 pp tol.",
   },
   output_cols: {
     purpose:
@@ -240,7 +257,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Ajoute une feature `year_mapped` issue de la colonne année.",
     recommendation:
-      "Activez si votre dataset couvre ≥ 2 années — gain mesuré sur la tol_in sur les runs 2023-2025.",
+      "Défaut **ON** — `year_mapped` fait partie des 11 features de MDL_Lyon_TV_BEST.",
   },
   year_column_name: {
     purpose:
@@ -252,7 +269,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Table de correspondance année → valeur numérique injectée comme feature.",
     recommendation:
-      "Mapping linéaire (1, 2, 3...) suffit. Évitez les valeurs négatives ou les sauts non monotones.",
+      "Défaut **mapping 1-7** — `Year embedding learné` testé : pas d'effet vs encodage scalaire.",
   },
   year_normalization: {
     purpose:
@@ -261,36 +278,52 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
       "Désactivé par défaut — l'année garde un sens ordinal plus interprétable sans normalisation.",
   },
 
-  // ── Avancé ──────────────────────────────────────────────────────────────
+  // ── Avancé — seed & pondérations ─────────────────────────────────────────
   seed: {
     purpose:
       "Graine aléatoire numpy / TensorFlow pour la reproductibilité.",
     recommendation:
-      "`1750` par défaut sur le projet. Changez pour explorer la variance (idéalement avec multi-seed).",
+      "Défaut **1751** — meilleur de 10 graines testées (tol +2.1σ au-dessus mean) — référence MDL_Lyon_TV_BEST.",
   },
+  // Form key — used by config-form.tsx for the "capteurs permanents" toggle.
   flag_permanent_weighting: {
     purpose:
       "Capteurs de type 'Permanent' / 'Siredo' (les plus fiables) reçoivent un poids accru lors de l'entraînement.",
     recommendation:
-      "Recommandé : ON sur jeux avec capteurs permanents. Gain observé +60 à +90 capteurs in-tol sur les runs audit.",
+      "Défaut **ON** — capteurs Permanent/Siredo pondérés ×2.0 (sweet spot validé).",
+  },
+  // Alias requested by spec (canonical name used in the API payload).
+  use_flag_permanent_weighting: {
+    purpose:
+      "Capteurs de type 'Permanent' / 'Siredo' (les plus fiables) reçoivent un poids accru lors de l'entraînement.",
+    recommendation:
+      "Défaut **ON** — capteurs Permanent/Siredo pondérés ×2.0 (sweet spot validé).",
   },
   flag_priority_weight: {
     purpose:
-      "Poids appliqué aux échantillons identifiés comme capteurs permanents (Permanent / Siredo).",
+      "Poids multiplicatif appliqué aux capteurs Permanent / Siredo lors du calcul de la loss.",
     recommendation:
-      "`4.0` est le sweet spot audit. Évitez > 8.0 (surapprentissage sur les permanents).",
+      "Défaut **2.0** — ×3.0 trop concentré, ×1.0 = baseline. ×2.0 retenu sur MDL_Lyon_TV_BEST.",
   },
+  // Form key — used by config-form.tsx for the "année récente" toggle.
   flag_recent_year_weighting: {
     purpose:
       "Pondère plus l'année la plus récente du jeu (la mesure la plus à jour) pour refléter les conditions actuelles.",
     recommendation:
-      "Recommandé : ON pour que le modèle reflète davantage les conditions actuelles. Combinable avec la pondération capteurs permanents.",
+      "Défaut **OFF** — sur ce dataset (42 % rows 2025), active = dégradation tol −3 pp.",
+  },
+  // Alias requested by spec (canonical name used in the API payload).
+  use_flag_recent_year_weighting: {
+    purpose:
+      "Pondère plus l'année la plus récente du jeu (la mesure la plus à jour) pour refléter les conditions actuelles.",
+    recommendation:
+      "Défaut **OFF** — sur ce dataset (42 % rows 2025), active = dégradation tol −3 pp.",
   },
   recent_year_priority_weight: {
     purpose:
       "Poids multiplicatif appliqué aux lignes correspondant à l'année la plus récente du dataset (détectée automatiquement).",
     recommendation:
-      "`2.0` (défaut) suffit dans la plupart des cas. Plage utile 1.5–3.0. Au-delà, le modèle ignore les années passées.",
+      "Défaut **2.0** — ignoré si `use_flag_recent_year_weighting=OFF` (config par défaut MDL_Lyon_TV_BEST).",
   },
 
   // ── Phase 2A / 3 / 4 — Régularisation & architecture avancée ─────────────
@@ -298,91 +331,91 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Choix de l'optimiseur — `adam` (baseline) ou `adamw` (Adam avec weight decay découplé).",
     recommendation:
-      "`adamw` + `weight_decay=1e-4` recommandé sur les architectures ≥ 3 couches pour limiter l'overfit.",
+      "Défaut **adam** — AdamW testé, perte de 15 pp R² sur ce MLP.",
   },
   weight_decay: {
     purpose:
       "Pénalité L2 découplée appliquée par AdamW. Ignorée si l'optimiseur est `adam`.",
     recommendation:
-      "`1e-4` (0.0001) est un point de départ sûr. > 1e-2 dégrade généralement la convergence.",
+      "Défaut **0** (ignoré car `adam`). Si vous passez à `adamw`, démarrez à 1e-4.",
   },
   use_skip_connection: {
     purpose:
       "Ajoute une connexion résiduelle entrée → dernière couche cachée (force l'API Functional Keras).",
     recommendation:
-      "Activez sur les architectures ≥ 3 couches — améliore la stabilité du gradient.",
+      "Défaut **OFF** — testé, perte 15 pp tol sur ce MLP.",
   },
   dropout_schedule: {
     purpose:
       "Stratégie de répartition du dropout sur les couches : `uniform` (constant) ou `decreasing` (décroissant).",
     recommendation:
-      "`decreasing` est préféré sur les architectures profondes — moins de dropout sur les dernières couches.",
+      "Défaut **uniform** — répartition constante sur les 3 couches [3, 2, 1].",
   },
   clipnorm: {
     purpose:
       "Plafonnement de la norme globale du gradient à chaque step. `null` = désactivé.",
     recommendation:
-      "Activez avec `1.0` si vous observez des instabilités (loss NaN ou pics) durant l'entraînement.",
+      "Défaut **désactivé** — aucune instabilité observée avec Adam + lr 0.01 sur ce dataset.",
   },
   norm_layer: {
     purpose:
       "Type de couche de normalisation appliqué après chaque couche cachée.",
     recommendation:
-      "`batch` quand `batch_size ≥ 128`, `layer` quand `batch_size < 64`. `none` désactive complètement.",
+      "Défaut **none** — BatchNorm marginal (+R², −/= tol).",
   },
   use_quantile_head: {
     purpose:
       "Ajoute une tête multi-quantile (q=0.2/0.5/0.8) en parallèle de la sortie de régression.",
     recommendation:
-      "Recommandé pour estimer directement le p80 sans bootstrap. Coût compute marginal (~+5 %).",
+      "Défaut **OFF** — pas implémenté côté API à la dernière vérif (silent no-op).",
   },
   n_seeds: {
     purpose:
       "Nombre de seeds aléatoires entraînées par combinaison du grid — réplique l'expérience pour mesurer la variance.",
     recommendation:
-      "`3` à `5` réduit la variance des métriques de tol_in d'environ 30 %. Au-delà : coût marginal élevé.",
+      "Défaut **1** — pour reproduire MDL_Lyon_TV_BEST. `n_seeds=3` utile pour valider la stabilité d'un changement.",
   },
   use_year_embedding: {
     purpose:
       "Route `year_mapped` à travers une couche `Embedding` apprise au lieu d'un scalaire dans la pile Dense.",
     recommendation:
-      "Activez si vous avez ≥ 3 années dans le dataset — meilleure représentation qu'un mapping linéaire.",
+      "Défaut **OFF** — `Year embedding learné` testé : pas d'effet vs encodage 1-7.",
   },
   target_log_transform: {
     purpose:
       "Applique `log1p(TxPen)` sur la cible avant normalisation. L'évaluation ré-applique `expm1`.",
     recommendation:
-      "Activez si la distribution de TxPen est très asymétrique — réduit l'impact des outliers en valeur cible.",
+      "Défaut **OFF** — biaise les prédictions sur cible TxPen (variance grande).",
   },
   use_curriculum: {
     purpose:
       "Apprentissage curriculaire : entraîne d'abord sur les 50 % de lignes à faible TMJOBCTV puis sur l'ensemble.",
     recommendation:
-      "Utile sur les datasets très hétérogènes. Désactivé par défaut — testez si la convergence est instable.",
+      "Défaut **OFF** — testé, perte 7 pp tol.",
   },
   use_hard_example_mining: {
     purpose:
       "Augmente le poids des échantillons à forte erreur (>15 %) toutes les 10 époques après l'epoch 30.",
     recommendation:
-      "Activez sur les datasets bruités — gain typique de quelques points de tol_in. Boost compound limité à 3x.",
+      "Défaut **OFF** — gain marginal, complexifie le training.",
   },
   tta_iter: {
     purpose:
       "Nombre d'itérations Test-Time Augmentation (bruit gaussien sur les inputs en prédiction).",
     recommendation:
-      "`1` = pas de TTA. `5` à `10` lisse les prédictions sans coût d'entraînement supplémentaire.",
+      "Défaut **1** — pas de TTA à l'inférence (gain ±0.2 pp observé).",
   },
   tta_noise_std: {
     purpose:
       "Écart-type du bruit gaussien ajouté aux features normalisées à chaque itération TTA.",
     recommendation:
-      "`0.01` à `0.05` selon la sensibilité du modèle. Plus élevé = plus de lissage mais perte de finesse.",
+      "Défaut **0.01** — ignoré si `tta_iter=1`. À monter à 0.02-0.05 uniquement si TTA activé.",
   },
   bootstrap_iter: {
     purpose:
       "Nombre d'itérations bootstrap pour calculer les intervalles de confiance à 95 % sur les métriques.",
     recommendation:
-      "`1000` est le défaut éprouvé. `0` désactive complètement. Plage valide : 0 ou 100–10 000.",
+      "Défaut **1000** — ajoute des CI95 fiables sur tol_in (coût compute négligeable). `0` désactive.",
   },
 };
 
@@ -390,4 +423,4 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
  * Version stamp for the dismissed-localStorage key. Bump when the panel
  * copy is refreshed — users will see the new recommendations re-appear.
  */
-export const SAM_COACHING_VERSION = "v1";
+export const SAM_COACHING_VERSION = "MDL_Lyon_TV_BEST";

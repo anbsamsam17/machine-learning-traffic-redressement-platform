@@ -1,0 +1,69 @@
+{
+  "run_name": "A4_Compact6_combX2",
+  "weighting_summary": "perm x2.0 + recent x2.0",
+  "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111",
+  "config": {
+    "run_name": "A4_Compact6_combX2",
+    "weighting_summary": "perm x2.0 + recent x2.0",
+    "input_cols": [
+      "year_mapped",
+      "TMJOFCDTV",
+      "TMJOFCDPL",
+      "functional_class",
+      "avg_min_distance_m",
+      "truck_avg_min_distance_m"
+    ],
+    "use_flag_permanent_weighting": true,
+    "flag_priority_weight": 2.0,
+    "use_flag_recent_year_weighting": true,
+    "recent_year_priority_weight": 2.0
+  },
+  "input_cols": [
+    "year_mapped",
+    "TMJOFCDTV",
+    "TMJOFCDPL",
+    "functional_class",
+    "avg_min_distance_m",
+    "truck_avg_min_distance_m"
+  ],
+  "metrics": {
+    "rmse": 0.7211,
+    "mae": 0.4356,
+    "mape": 25.29,
+    "r_squared": 0.64754,
+    "geh_mean": 0.0615,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3671,
+    "hd_rmse": 0.6865,
+    "ld_rmse": 1.1698,
+    "median_relative_error": 16.76
+  },
+  "metrics_ci95": {
+    "r2": [
+      0.610187,
+      0.684021
+    ],
+    "p80": [
+      31.6208,
+      33.5833
+    ],
+    "tol_in_pct": [
+      52.74,
+      55.92
+    ]
+  },
+  "tol_inclus": 1995,
+  "tol_total": 3671,
+  "err_p80_pct": 32.53,
+  "barplot_broken": false,
+  "train_seconds": 103.8,
+  "tol_pct": 54.34,
+  "tol_in_pct_ci95": [
+    52.74,
+    55.92
+  ],
+  "err_p80_pct_ci95": [
+    31.62,
+    33.58
+  ]
+}

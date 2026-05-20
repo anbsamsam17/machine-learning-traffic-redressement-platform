@@ -1,0 +1,1596 @@
+{
+  "wall_clock_seconds": 2760.4,
+  "n_runs": 12,
+  "runs": [
+    {
+      "run_name": "A2_Full_logTV",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111111111",
+      "description": "Full 11 + log_TMJOFCDTV",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "functional_class",
+        "avg_distance_before_m",
+        "avg_distance_after_m",
+        "avg_min_distance_m",
+        "truck_avg_distance_m",
+        "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m",
+        "truck_avg_min_distance_m",
+        "log_TMJOFCDTV"
+      ],
+      "n_inputs": 12,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.6723,
+        "mae": 0.3744,
+        "mape": 20.36,
+        "r_squared": 0.674269,
+        "geh_mean": 0.0529,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.6031,
+        "ld_rmse": 1.4022,
+        "median_relative_error": 14.13
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.622267,
+          0.724375
+        ],
+        "p80": [
+          28.0014,
+          30.1491
+        ],
+        "tol_in_pct": [
+          59.33,
+          62.58
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 107,
+          "tol_in_pct": 53.5,
+          "p80": 60.4025,
+          "r2": 0.059316
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 787,
+          "tol_in_pct": 57.83,
+          "p80": 35.2569,
+          "r2": 0.449878
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 970,
+          "tol_in_pct": 59.95,
+          "p80": 25.1489,
+          "r2": 0.52323
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 349,
+          "tol_in_pct": 77.04,
+          "p80": 15.7967,
+          "r2": 0.71
+        }
+      ],
+      "tol_inclus": 2213,
+      "tol_total": 3632,
+      "err_p80_pct": 29.03,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 155.6
+    },
+    {
+      "run_name": "A2_Full_logPL",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111111111",
+      "description": "Full 11 + log_TMJOFCDPL",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "functional_class",
+        "avg_distance_before_m",
+        "avg_distance_after_m",
+        "avg_min_distance_m",
+        "truck_avg_distance_m",
+        "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m",
+        "truck_avg_min_distance_m",
+        "log_TMJOFCDPL"
+      ],
+      "n_inputs": 12,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.686,
+        "mae": 0.3976,
+        "mape": 23.14,
+        "r_squared": 0.660865,
+        "geh_mean": 0.0567,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.6217,
+        "ld_rmse": 1.3826,
+        "median_relative_error": 14.96
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.612293,
+          0.708374
+        ],
+        "p80": [
+          30.1474,
+          32.4565
+        ],
+        "tol_in_pct": [
+          56.36,
+          59.58
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 92,
+          "tol_in_pct": 46.0,
+          "p80": 62.4252,
+          "r2": 0.085465
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 715,
+          "tol_in_pct": 52.53,
+          "p80": 37.4205,
+          "r2": 0.395129
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 961,
+          "tol_in_pct": 59.39,
+          "p80": 26.5044,
+          "r2": 0.498073
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 338,
+          "tol_in_pct": 74.61,
+          "p80": 16.0263,
+          "r2": 0.707172
+        }
+      ],
+      "tol_inclus": 2106,
+      "tol_total": 3632,
+      "err_p80_pct": 31.42,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 382.7
+    },
+    {
+      "run_name": "A2_Full_logBoth",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111111111",
+      "description": "Full 11 + log_TMJOFCDTV + log_TMJOFCDPL",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "functional_class",
+        "avg_distance_before_m",
+        "avg_distance_after_m",
+        "avg_min_distance_m",
+        "truck_avg_distance_m",
+        "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m",
+        "truck_avg_min_distance_m",
+        "log_TMJOFCDTV",
+        "log_TMJOFCDPL"
+      ],
+      "n_inputs": 13,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.686,
+        "mae": 0.3976,
+        "mape": 23.14,
+        "r_squared": 0.660865,
+        "geh_mean": 0.0567,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.6217,
+        "ld_rmse": 1.3826,
+        "median_relative_error": 14.96
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.612293,
+          0.708374
+        ],
+        "p80": [
+          30.1474,
+          32.4565
+        ],
+        "tol_in_pct": [
+          56.36,
+          59.58
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 92,
+          "tol_in_pct": 46.0,
+          "p80": 62.4252,
+          "r2": 0.085465
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 715,
+          "tol_in_pct": 52.53,
+          "p80": 37.4205,
+          "r2": 0.395129
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 961,
+          "tol_in_pct": 59.39,
+          "p80": 26.5044,
+          "r2": 0.498073
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 338,
+          "tol_in_pct": 74.61,
+          "p80": 16.0263,
+          "r2": 0.707172
+        }
+      ],
+      "tol_inclus": 2106,
+      "tol_total": 3632,
+      "err_p80_pct": 31.42,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 367.0
+    },
+    {
+      "run_name": "A2_Full_ratioPLTV",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111111111",
+      "description": "Full 11 + ratio_PLTV",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "functional_class",
+        "avg_distance_before_m",
+        "avg_distance_after_m",
+        "avg_min_distance_m",
+        "truck_avg_distance_m",
+        "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m",
+        "truck_avg_min_distance_m",
+        "ratio_PLTV"
+      ],
+      "n_inputs": 12,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.6657,
+        "mae": 0.3767,
+        "mape": 21.85,
+        "r_squared": 0.680615,
+        "geh_mean": 0.0536,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.5996,
+        "ld_rmse": 1.3705,
+        "median_relative_error": 14.07
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.631596,
+          0.727589
+        ],
+        "p80": [
+          28.1476,
+          30.3555
+        ],
+        "tol_in_pct": [
+          59.36,
+          62.75
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 95,
+          "tol_in_pct": 47.5,
+          "p80": 61.2639,
+          "r2": 0.101418
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 746,
+          "tol_in_pct": 54.81,
+          "p80": 36.9091,
+          "r2": 0.433171
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 1025,
+          "tol_in_pct": 63.35,
+          "p80": 23.3058,
+          "r2": 0.533778
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 350,
+          "tol_in_pct": 77.26,
+          "p80": 15.2801,
+          "r2": 0.731862
+        }
+      ],
+      "tol_inclus": 2216,
+      "tol_total": 3632,
+      "err_p80_pct": 29.27,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 195.5
+    },
+    {
+      "run_name": "A2_Full_fcOH",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111111111",
+      "description": "Full 10 (FC retire) + fc_1..fc_5",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "avg_distance_before_m",
+        "avg_distance_after_m",
+        "avg_min_distance_m",
+        "truck_avg_distance_m",
+        "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m",
+        "truck_avg_min_distance_m",
+        "fc_1",
+        "fc_2",
+        "fc_3",
+        "fc_4",
+        "fc_5"
+      ],
+      "n_inputs": 15,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.6657,
+        "mae": 0.3767,
+        "mape": 21.85,
+        "r_squared": 0.680615,
+        "geh_mean": 0.0536,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.5996,
+        "ld_rmse": 1.3705,
+        "median_relative_error": 14.07
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.631596,
+          0.727589
+        ],
+        "p80": [
+          28.1476,
+          30.3555
+        ],
+        "tol_in_pct": [
+          59.36,
+          62.75
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 95,
+          "tol_in_pct": 47.5,
+          "p80": 61.2639,
+          "r2": 0.101418
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 746,
+          "tol_in_pct": 54.81,
+          "p80": 36.9091,
+          "r2": 0.433171
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 1025,
+          "tol_in_pct": 63.35,
+          "p80": 23.3058,
+          "r2": 0.533778
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 350,
+          "tol_in_pct": 77.26,
+          "p80": 15.2801,
+          "r2": 0.731862
+        }
+      ],
+      "tol_inclus": 2216,
+      "tol_total": 3632,
+      "err_p80_pct": 29.27,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 190.5
+    },
+    {
+      "run_name": "A2_Full_ratio_fcOH",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111111111",
+      "description": "Full + ratio_PLTV + fc_1..fc_5",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "avg_distance_before_m",
+        "avg_distance_after_m",
+        "avg_min_distance_m",
+        "truck_avg_distance_m",
+        "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m",
+        "truck_avg_min_distance_m",
+        "ratio_PLTV",
+        "fc_1",
+        "fc_2",
+        "fc_3",
+        "fc_4",
+        "fc_5"
+      ],
+      "n_inputs": 16,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.6657,
+        "mae": 0.3767,
+        "mape": 21.85,
+        "r_squared": 0.680615,
+        "geh_mean": 0.0536,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.5996,
+        "ld_rmse": 1.3705,
+        "median_relative_error": 14.07
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.631596,
+          0.727589
+        ],
+        "p80": [
+          28.1476,
+          30.3555
+        ],
+        "tol_in_pct": [
+          59.36,
+          62.75
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 95,
+          "tol_in_pct": 47.5,
+          "p80": 61.2639,
+          "r2": 0.101418
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 746,
+          "tol_in_pct": 54.81,
+          "p80": 36.9091,
+          "r2": 0.433171
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 1025,
+          "tol_in_pct": 63.35,
+          "p80": 23.3058,
+          "r2": 0.533778
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 350,
+          "tol_in_pct": 77.26,
+          "p80": 15.2801,
+          "r2": 0.731862
+        }
+      ],
+      "tol_inclus": 2216,
+      "tol_total": 3632,
+      "err_p80_pct": 29.27,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 190.4
+    },
+    {
+      "run_name": "A2_Full_robust",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111",
+      "description": "Full 11 with RobustScaler-encoded numeric features (rs_*)",
+      "input_cols": [
+        "year_mapped",
+        "rs_TMJOFCDTV",
+        "rs_TMJOFCDPL",
+        "functional_class",
+        "rs_avg_distance_before_m",
+        "rs_avg_distance_after_m",
+        "rs_avg_min_distance_m",
+        "rs_truck_avg_distance_m",
+        "rs_truck_avg_distance_before_m",
+        "rs_truck_avg_distance_after_m",
+        "rs_truck_avg_min_distance_m"
+      ],
+      "n_inputs": 11,
+      "on_off_norm": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "robust_scaled": true,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.664,
+        "mae": 0.3718,
+        "mape": 20.46,
+        "r_squared": 0.682218,
+        "geh_mean": 0.0523,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.5945,
+        "ld_rmse": 1.3938,
+        "median_relative_error": 13.97
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.633124,
+          0.730493
+        ],
+        "p80": [
+          26.6999,
+          28.7916
+        ],
+        "tol_in_pct": [
+          60.49,
+          63.74
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 97,
+          "tol_in_pct": 48.5,
+          "p80": 62.1634,
+          "r2": 0.070613
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 814,
+          "tol_in_pct": 59.81,
+          "p80": 34.5836,
+          "r2": 0.483475
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 1021,
+          "tol_in_pct": 63.1,
+          "p80": 23.3315,
+          "r2": 0.540886
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 325,
+          "tol_in_pct": 71.74,
+          "p80": 16.7547,
+          "r2": 0.687393
+        }
+      ],
+      "tol_inclus": 2257,
+      "tol_total": 3632,
+      "err_p80_pct": 27.73,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 185.5
+    },
+    {
+      "run_name": "A2_Full_yearEmb3",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111",
+      "description": "Full 11 + year_embedding emulation (dim=3 sinusoidal)",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "functional_class",
+        "avg_distance_before_m",
+        "avg_distance_after_m",
+        "avg_min_distance_m",
+        "truck_avg_distance_m",
+        "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m",
+        "truck_avg_min_distance_m",
+        "yemb1",
+        "yemb2",
+        "yemb3"
+      ],
+      "n_inputs": 14,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.664,
+        "mae": 0.3718,
+        "mape": 20.46,
+        "r_squared": 0.682218,
+        "geh_mean": 0.0523,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.5945,
+        "ld_rmse": 1.3938,
+        "median_relative_error": 13.97
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.633124,
+          0.730493
+        ],
+        "p80": [
+          26.6999,
+          28.7916
+        ],
+        "tol_in_pct": [
+          60.49,
+          63.74
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 97,
+          "tol_in_pct": 48.5,
+          "p80": 62.1634,
+          "r2": 0.070613
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 814,
+          "tol_in_pct": 59.81,
+          "p80": 34.5836,
+          "r2": 0.483475
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 1021,
+          "tol_in_pct": 63.1,
+          "p80": 23.3315,
+          "r2": 0.540886
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 325,
+          "tol_in_pct": 71.74,
+          "p80": 16.7547,
+          "r2": 0.687393
+        }
+      ],
+      "tol_inclus": 2257,
+      "tol_total": 3632,
+      "err_p80_pct": 27.73,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 195.5
+    },
+    {
+      "run_name": "A2_Compact6_logTV_fcOH",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111111",
+      "description": "[year, TMJOFCDTV, log_TMJOFCDTV, TMJOFCDPL, fc_1..fc_5]",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "log_TMJOFCDTV",
+        "TMJOFCDPL",
+        "fc_1",
+        "fc_2",
+        "fc_3",
+        "fc_4",
+        "fc_5"
+      ],
+      "n_inputs": 9,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.7,
+        "mae": 0.4027,
+        "mape": 22.3,
+        "r_squared": 0.646795,
+        "geh_mean": 0.0567,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.6298,
+        "ld_rmse": 1.4466,
+        "median_relative_error": 15.58
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.594566,
+          0.696315
+        ],
+        "p80": [
+          28.9415,
+          30.9934
+        ],
+        "tol_in_pct": [
+          55.48,
+          58.78
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 98,
+          "tol_in_pct": 49.0,
+          "p80": 66.139,
+          "r2": -0.001115
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 752,
+          "tol_in_pct": 55.25,
+          "p80": 34.4876,
+          "r2": 0.418286
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 919,
+          "tol_in_pct": 56.8,
+          "p80": 26.7243,
+          "r2": 0.497116
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 306,
+          "tol_in_pct": 67.55,
+          "p80": 20.0021,
+          "r2": 0.626466
+        }
+      ],
+      "tol_inclus": 2075,
+      "tol_total": 3632,
+      "err_p80_pct": 29.97,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 185.4
+    },
+    {
+      "run_name": "A2_Compact6_ratio_robust",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_111111",
+      "description": "[year, rs_TMJOFCDTV, rs_TMJOFCDPL, ratio_PLTV, functional_class, rs_avg_min_distance_m]",
+      "input_cols": [
+        "year_mapped",
+        "rs_TMJOFCDTV",
+        "rs_TMJOFCDPL",
+        "ratio_PLTV",
+        "functional_class",
+        "rs_avg_min_distance_m"
+      ],
+      "n_inputs": 6,
+      "on_off_norm": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false
+      ],
+      "robust_scaled": true,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.6942,
+        "mae": 0.3968,
+        "mape": 21.66,
+        "r_squared": 0.652696,
+        "geh_mean": 0.0555,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.6251,
+        "ld_rmse": 1.4305,
+        "median_relative_error": 15.3
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.603489,
+          0.699239
+        ],
+        "p80": [
+          28.4269,
+          30.2765
+        ],
+        "tol_in_pct": [
+          56.88,
+          60.13
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 97,
+          "tol_in_pct": 48.5,
+          "p80": 66.5222,
+          "r2": 0.020967
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 783,
+          "tol_in_pct": 57.53,
+          "p80": 33.9401,
+          "r2": 0.433836
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 938,
+          "tol_in_pct": 57.97,
+          "p80": 24.8669,
+          "r2": 0.517735
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 304,
+          "tol_in_pct": 67.11,
+          "p80": 18.2591,
+          "r2": 0.597389
+        }
+      ],
+      "tol_inclus": 2122,
+      "tol_total": 3632,
+      "err_p80_pct": 29.19,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 170.4
+    },
+    {
+      "run_name": "A2_Min4",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_1111",
+      "description": "[year, TMJOFCDTV, TMJOFCDPL, functional_class]",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "functional_class"
+      ],
+      "n_inputs": 4,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        false
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.7216,
+        "mae": 0.4362,
+        "mape": 25.54,
+        "r_squared": 0.624756,
+        "geh_mean": 0.0618,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.6558,
+        "ld_rmse": 1.4404,
+        "median_relative_error": 17.35
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.578028,
+          0.671098
+        ],
+        "p80": [
+          31.6391,
+          33.4792
+        ],
+        "tol_in_pct": [
+          51.35,
+          54.93
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 92,
+          "tol_in_pct": 46.0,
+          "p80": 62.9643,
+          "r2": 0.00746
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 691,
+          "tol_in_pct": 50.77,
+          "p80": 36.1965,
+          "r2": 0.383377
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 853,
+          "tol_in_pct": 52.72,
+          "p80": 29.4428,
+          "r2": 0.455631
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 292,
+          "tol_in_pct": 64.46,
+          "p80": 21.2036,
+          "r2": 0.575748
+        }
+      ],
+      "tol_inclus": 1928,
+      "tol_total": 3632,
+      "err_p80_pct": 32.48,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 185.4
+    },
+    {
+      "run_name": "A2_Min5_ratio",
+      "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_1111",
+      "description": "[year, TMJOFCDTV, TMJOFCDPL, ratio_PLTV, functional_class]",
+      "input_cols": [
+        "year_mapped",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "ratio_PLTV",
+        "functional_class"
+      ],
+      "n_inputs": 5,
+      "on_off_norm": [
+        false,
+        true,
+        true,
+        true,
+        false
+      ],
+      "robust_scaled": false,
+      "neurons_factors": [
+        3.0,
+        2.0,
+        1.0
+      ],
+      "dropout": 0.025,
+      "min_epochs": 1000,
+      "max_epochs": 1250,
+      "batch_size": 256,
+      "learning_rate": 0.01,
+      "activation": "elu",
+      "loss": "mse",
+      "test_size": 0.05,
+      "use_batch_norm": false,
+      "target_log_transform": false,
+      "use_flag_permanent_weighting": false,
+      "use_flag_recent_year_weighting": false,
+      "metrics": {
+        "rmse": 0.7216,
+        "mae": 0.4362,
+        "mape": 25.54,
+        "r_squared": 0.624756,
+        "geh_mean": 0.0618,
+        "geh_pct_below_5": 100.0,
+        "n_samples": 3632,
+        "hd_rmse": 0.6558,
+        "ld_rmse": 1.4404,
+        "median_relative_error": 17.35
+      },
+      "metrics_ci95": {
+        "r2": [
+          0.578028,
+          0.671098
+        ],
+        "p80": [
+          31.6391,
+          33.4792
+        ],
+        "tol_in_pct": [
+          51.35,
+          54.93
+        ]
+      },
+      "metrics_by_tmja_bucket": [
+        {
+          "bucket": "0-1k",
+          "range": [
+            0.0,
+            1000.0
+          ],
+          "n_samples": 200,
+          "tol_in_n": 92,
+          "tol_in_pct": 46.0,
+          "p80": 62.9643,
+          "r2": 0.00746
+        },
+        {
+          "bucket": "1k-5k",
+          "range": [
+            1000.0,
+            5000.0
+          ],
+          "n_samples": 1361,
+          "tol_in_n": 691,
+          "tol_in_pct": 50.77,
+          "p80": 36.1965,
+          "r2": 0.383377
+        },
+        {
+          "bucket": "5k-20k",
+          "range": [
+            5000.0,
+            20000.0
+          ],
+          "n_samples": 1618,
+          "tol_in_n": 853,
+          "tol_in_pct": 52.72,
+          "p80": 29.4428,
+          "r2": 0.455631
+        },
+        {
+          "bucket": "20k+",
+          "range": [
+            20000.0,
+            null
+          ],
+          "n_samples": 453,
+          "tol_in_n": 292,
+          "tol_in_pct": 64.46,
+          "p80": 21.2036,
+          "r2": 0.575748
+        }
+      ],
+      "tol_inclus": 1928,
+      "tol_total": 3632,
+      "err_p80_pct": 32.48,
+      "barplot_broken": false,
+      "broken": false,
+      "broken_reasons": [],
+      "train_seconds": 180.4
+    }
+  ]
+}

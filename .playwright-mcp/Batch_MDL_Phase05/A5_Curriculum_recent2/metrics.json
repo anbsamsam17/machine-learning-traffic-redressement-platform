@@ -1,0 +1,221 @@
+{
+  "config_idx": 12,
+  "name": "A5_Curriculum_recent2",
+  "overrides": {
+    "use_curriculum": true,
+    "use_flag_recent_year_weighting": true,
+    "recent_year_priority_weight": 2.0
+  },
+  "bootstrap_iter": 1000,
+  "wall_seconds": 124.1,
+  "run_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111",
+  "n_inputs": 11,
+  "input_cols": [
+    "year_mapped",
+    "TMJOFCDTV",
+    "TMJOFCDPL",
+    "functional_class",
+    "avg_distance_before_m",
+    "avg_distance_after_m",
+    "avg_min_distance_m",
+    "truck_avg_distance_m",
+    "truck_avg_distance_before_m",
+    "truck_avg_distance_after_m",
+    "truck_avg_min_distance_m"
+  ],
+  "on_off_norm": [
+    false,
+    true,
+    true,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "training_flags": {
+    "activation": "elu",
+    "loss": "mse",
+    "dropout": 0.025,
+    "neurons_factors": [
+      3.0,
+      2.0,
+      1.0
+    ],
+    "learning_rate": 0.01,
+    "batch_size": 256,
+    "use_batch_norm": false,
+    "epochs_requested": 1250,
+    "epochs_trained": 1250,
+    "test_size": 0.05,
+    "patience": 30,
+    "reduce_lr_factor": 0.5,
+    "reduce_lr_patience": 10,
+    "use_flag_permanent_weighting": false,
+    "flag_priority_weight": 4.0,
+    "use_flag_recent_year_weighting": true,
+    "recent_year_priority_weight": 2.0,
+    "use_flag_comptage_weighting": false,
+    "use_hard_example_mining": false,
+    "hard_example_mining_note": "",
+    "use_curriculum": true,
+    "curriculum_phase_a_epochs": 375,
+    "use_quantile_head": null,
+    "target_log_transform": null,
+    "n_seeds": 1,
+    "seed_index": 0,
+    "seed": 1750
+  },
+  "metrics": {
+    "rmse": 0.7296,
+    "mae": 0.448,
+    "mape": 25.94,
+    "r_squared": 0.616302,
+    "geh_mean": 0.0631,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3632,
+    "hd_rmse": 0.6721,
+    "ld_rmse": 1.3841,
+    "median_relative_error": 17.57
+  },
+  "metrics_ci95": {
+    "r2": [
+      0.568515,
+      0.661907
+    ],
+    "p80": [
+      32.4627,
+      34.1576
+    ],
+    "tol_in_pct": [
+      50.5,
+      53.83
+    ]
+  },
+  "metrics_by_tmja_bucket": [
+    {
+      "bucket": "0-1k",
+      "range": [
+        0.0,
+        1000.0
+      ],
+      "n_samples": 200,
+      "tol_in_n": 89,
+      "tol_in_pct": 44.5,
+      "p80": 59.2113,
+      "r2": 0.083455
+    },
+    {
+      "bucket": "1k-5k",
+      "range": [
+        1000.0,
+        5000.0
+      ],
+      "n_samples": 1361,
+      "tol_in_n": 707,
+      "tol_in_pct": 51.95,
+      "p80": 38.7222,
+      "r2": 0.379237
+    },
+    {
+      "bucket": "5k-20k",
+      "range": [
+        5000.0,
+        20000.0
+      ],
+      "n_samples": 1618,
+      "tol_in_n": 846,
+      "tol_in_pct": 52.29,
+      "p80": 30.1218,
+      "r2": 0.424909
+    },
+    {
+      "bucket": "20k+",
+      "range": [
+        20000.0,
+        null
+      ],
+      "n_samples": 453,
+      "tol_in_n": 255,
+      "tol_in_pct": 56.29,
+      "p80": 22.647,
+      "r2": 0.527465
+    }
+  ],
+  "drift_by_year": [
+    {
+      "year_mapped": 1,
+      "year_label": "2019",
+      "n_samples": 222,
+      "r2": 0.419973,
+      "mae": 0.352,
+      "tol_in_pct": 48.65,
+      "p80": 35.4086
+    },
+    {
+      "year_mapped": 2,
+      "year_label": "2020",
+      "n_samples": 266,
+      "r2": 0.669656,
+      "mae": 0.3789,
+      "tol_in_pct": 46.99,
+      "p80": 33.9192
+    },
+    {
+      "year_mapped": 3,
+      "year_label": "2021",
+      "n_samples": 347,
+      "r2": 0.77101,
+      "mae": 0.3458,
+      "tol_in_pct": 54.47,
+      "p80": 32.0506
+    },
+    {
+      "year_mapped": 4,
+      "year_label": "2022",
+      "n_samples": 390,
+      "r2": 0.750137,
+      "mae": 0.3496,
+      "tol_in_pct": 50.77,
+      "p80": 30.2684
+    },
+    {
+      "year_mapped": 5,
+      "year_label": "2023",
+      "n_samples": 440,
+      "r2": 0.620695,
+      "mae": 0.3936,
+      "tol_in_pct": 47.27,
+      "p80": 31.0245
+    },
+    {
+      "year_mapped": 6,
+      "year_label": "2024",
+      "n_samples": 453,
+      "r2": 0.533534,
+      "mae": 0.4363,
+      "tol_in_pct": 47.02,
+      "p80": 32.6572
+    },
+    {
+      "year_mapped": 7,
+      "year_label": "2025",
+      "n_samples": 1514,
+      "r2": 0.600303,
+      "mae": 0.5423,
+      "tol_in_pct": 35.6,
+      "p80": 49.0218
+    }
+  ],
+  "tol_in_pct": 52.23,
+  "tol_in_n": 1897,
+  "tol_total": 3632,
+  "err_rel_p80": 33.3102,
+  "broken": false,
+  "broken_reason": null,
+  "best_val_loss": 0.396507,
+  "server_model_dir": "C:\\Users\\SamirANBRI\\Desktop\\AppRedressement\\mdl-redressement-portfolio\\tmp_workdir\\2f525accbd3749bf92876e9c19c51fdb\\models"
+}

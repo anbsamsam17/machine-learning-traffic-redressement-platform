@@ -1,0 +1,107 @@
+{
+  "run_name": "A6_ratioPLTV_logTMJOFCDTV_permX2",
+  "config_id": 6,
+  "actual_model_names": [
+    "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_1111111111111"
+  ],
+  "input_cols": [
+    "year_mapped",
+    "TMJOFCDTV",
+    "TMJOFCDPL",
+    "functional_class",
+    "avg_distance_before_m",
+    "avg_distance_after_m",
+    "avg_min_distance_m",
+    "truck_avg_distance_m",
+    "truck_avg_distance_before_m",
+    "truck_avg_distance_after_m",
+    "truck_avg_min_distance_m",
+    "ratio_PLTV",
+    "log_TMJOFCDTV"
+  ],
+  "n_inputs": 13,
+  "on_off_norm": [
+    false,
+    true,
+    true,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "neurons_factors": [
+    3.0,
+    2.0,
+    1.0
+  ],
+  "dropout": 0.025,
+  "min_epochs": 1000,
+  "max_epochs": 1250,
+  "batch_size": 256,
+  "learning_rate": 0.01,
+  "activation": "elu",
+  "loss": "mse",
+  "test_size": 0.05,
+  "use_batch_norm": false,
+  "optimizer": null,
+  "weight_decay": null,
+  "use_skip_connection": false,
+  "norm_layer": null,
+  "scaler": null,
+  "use_year_embedding": false,
+  "use_flag_permanent_weighting": true,
+  "flag_priority_weight": 2.0,
+  "use_flag_recent_year_weighting": false,
+  "recent_year_priority_weight": 2.0,
+  "add_pl_tv_ratio": true,
+  "log_transform_cols": [
+    "TMJOFCDTV"
+  ],
+  "n_seeds": 1,
+  "metrics": {
+    "rmse": 0.6614,
+    "mae": 0.3682,
+    "mape": 20.24,
+    "r_squared": 0.684679,
+    "geh_mean": 0.052,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3632,
+    "hd_rmse": 0.5913,
+    "ld_rmse": 1.3951,
+    "median_relative_error": 13.93
+  },
+  "metrics_ci95": {
+    "r2": [
+      0.635643,
+      0.732705
+    ],
+    "p80": [
+      26.811,
+      28.8945
+    ],
+    "tol_in_pct": [
+      59.66,
+      63.16
+    ]
+  },
+  "tol_inclus": 2229,
+  "tol_total": 3632,
+  "err_p80_pct": 27.83,
+  "barplot_broken": false,
+  "broken": false,
+  "broken_reasons": [],
+  "train_seconds": 113.1,
+  "per_seed_metrics": null,
+  "server_model_dir": "C:\\Users\\SAMIRA~1\\AppData\\Local\\Temp\\mdl_workdir_a6\\8984223759964588a9d0b3aac1711453\\models",
+  "server_backup_dir": "C:\\Users\\SAMIRA~1\\AppData\\Local\\Temp\\mdl_workdir_a6\\8984223759964588a9d0b3aac1711453\\models_backup_A6_ratioPLTV_logTMJOFCDTV_permX2",
+  "produced_model_names": [
+    "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_1111111111111"
+  ],
+  "fixup_note": "Validation file was augmented with ratio_PLTV + log_TMJOFCDTV before /api/evaluation/run because the evaluation router doesn't yet derive feature-engineered columns at inference time."
+}

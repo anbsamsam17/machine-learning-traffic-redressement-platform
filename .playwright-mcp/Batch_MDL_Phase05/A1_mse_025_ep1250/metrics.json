@@ -1,0 +1,132 @@
+{
+  "run_name": "A1_mse_025_ep1250",
+  "actual_model_name": "elu_lr0.01_ep1250_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111",
+  "input_cols": [
+    "year_mapped",
+    "TMJOFCDTV",
+    "TMJOFCDPL",
+    "functional_class",
+    "avg_distance_before_m",
+    "avg_distance_after_m",
+    "avg_min_distance_m",
+    "truck_avg_distance_m",
+    "truck_avg_distance_before_m",
+    "truck_avg_distance_after_m",
+    "truck_avg_min_distance_m"
+  ],
+  "n_inputs": 11,
+  "on_off_norm": [
+    false,
+    true,
+    true,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "neurons_factors": [
+    3.0,
+    2.0,
+    1.0
+  ],
+  "dropout": 0.025,
+  "min_epochs": 1250,
+  "batch_size": 256,
+  "learning_rate": 0.01,
+  "activation": "elu",
+  "loss": "mse",
+  "test_size": 0.05,
+  "use_batch_norm": false,
+  "target_log_transform": false,
+  "use_flag_permanent_weighting": false,
+  "use_flag_recent_year_weighting": false,
+  "use_hard_example_mining": false,
+  "use_curriculum": false,
+  "metrics": {
+    "rmse": 0.667,
+    "mae": 0.3794,
+    "mape": 21.88,
+    "r_squared": 0.679349,
+    "geh_mean": 0.0539,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3632,
+    "hd_rmse": 0.5982,
+    "ld_rmse": 1.3922,
+    "median_relative_error": 14.32
+  },
+  "metrics_ci95": {
+    "r2": [
+      0.630665,
+      0.727043
+    ],
+    "p80": [
+      27.9783,
+      30.1429
+    ],
+    "tol_in_pct": [
+      58.62,
+      62.01
+    ]
+  },
+  "metrics_by_tmja_bucket": [
+    {
+      "bucket": "0-1k",
+      "range": [
+        0.0,
+        1000.0
+      ],
+      "n_samples": 200,
+      "tol_in_n": 96,
+      "tol_in_pct": 48.0,
+      "p80": 63.5151,
+      "r2": 0.072671
+    },
+    {
+      "bucket": "1k-5k",
+      "range": [
+        1000.0,
+        5000.0
+      ],
+      "n_samples": 1361,
+      "tol_in_n": 779,
+      "tol_in_pct": 57.24,
+      "p80": 34.7419,
+      "r2": 0.456086
+    },
+    {
+      "bucket": "5k-20k",
+      "range": [
+        5000.0,
+        20000.0
+      ],
+      "n_samples": 1618,
+      "tol_in_n": 977,
+      "tol_in_pct": 60.38,
+      "p80": 25.0788,
+      "r2": 0.538763
+    },
+    {
+      "bucket": "20k+",
+      "range": [
+        20000.0,
+        null
+      ],
+      "n_samples": 453,
+      "tol_in_n": 339,
+      "tol_in_pct": 74.83,
+      "p80": 16.2949,
+      "r2": 0.702025
+    }
+  ],
+  "tol_inclus": 2191,
+  "tol_total": 3632,
+  "err_p80_pct": 29.22,
+  "barplot_broken": false,
+  "broken": false,
+  "broken_reasons": [],
+  "train_seconds": 239.2
+}

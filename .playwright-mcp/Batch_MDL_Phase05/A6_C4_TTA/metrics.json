@@ -1,0 +1,58 @@
+{
+  "run_name": "A6_C4_TTA",
+  "config_id": 13,
+  "mode": "tta_reeval",
+  "parent_run_name": "A6_AdamW_skip_LN_permX2_recX2",
+  "parent_config_id": 4,
+  "tta_iter": 5,
+  "tta_noise_std": 0.01,
+  "actual_model_name": "elu_lr0.01_ep1000_mse_drp0.025_nf3.0x2.0x1.0_bs256_fmask_11111111111_adamw_wd0.0001_skip_normlayer",
+  "metrics": {
+    "rmse": 0.6785,
+    "mae": 0.402,
+    "mape": 23.6,
+    "r_squared": 0.668164,
+    "geh_mean": 0.0574,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3632,
+    "hd_rmse": 0.6131,
+    "ld_rmse": 1.3826,
+    "median_relative_error": 15.36
+  },
+  "metrics_ci95": {
+    "r2": [
+      0.619989,
+      0.713343
+    ],
+    "p80": [
+      30.1907,
+      32.3893
+    ],
+    "tol_in_pct": [
+      55.89,
+      59.17
+    ]
+  },
+  "tol_inclus": 2087,
+  "tol_total": 3632,
+  "err_p80_pct": 31.29,
+  "barplot_broken": false,
+  "broken": false,
+  "broken_reasons": [],
+  "eval_seconds": 10.3,
+  "parent_metrics": {
+    "rmse": 0.6786,
+    "mae": 0.402,
+    "mape": 23.6,
+    "r_squared": 0.668137,
+    "geh_mean": 0.0574,
+    "geh_pct_below_5": 100.0,
+    "n_samples": 3632,
+    "hd_rmse": 0.6131,
+    "ld_rmse": 1.3823,
+    "median_relative_error": 15.38
+  },
+  "parent_tol_inclus": 2080,
+  "parent_tol_total": 3632,
+  "parent_err_p80_pct": 31.11
+}

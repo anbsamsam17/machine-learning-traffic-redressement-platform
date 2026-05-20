@@ -151,13 +151,13 @@ export function SamCoachingPanel() {
         <div className="flex-1 min-w-0 space-y-4">
           <header className="space-y-1 pr-8">
             <h2 className="text-base sm:text-lg font-semibold text-text leading-tight">
-              Voici mes recommandations pour ton grid…
+              Configuration par défaut : <span className="font-mono text-accent">MDL_Lyon_TV_BEST</span>
             </h2>
             <p className="text-xs text-text-muted">
-              Tous les champs ci-dessous ont une info-bulle dédiée
+              Baseline production validée — tol 66.41 %, p80 26.34, R² 0.808 sur 3632 capteurs GrandLyon (seed 1751). Chaque champ ci-dessous a une info-bulle dédiée
               (icône&nbsp;
               <span className="inline-block size-3 rounded-full border border-accent/50 align-middle" />
-              ) pour creuser un par un.
+              ) qui explique le défaut choisi.
             </p>
           </header>
 
@@ -235,7 +235,7 @@ export function SamCoachingPanel() {
               className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-text-muted mb-2"
             >
               <Target size={12} aria-hidden="true" className="text-accent" />
-              Stratégie batch recommandée
+              Stratégie recommandée
             </h3>
             <div className="flex flex-wrap gap-1.5 mb-2">
               <StrategyChip>{strategy.models}</StrategyChip>
@@ -269,8 +269,8 @@ export function SamCoachingPanel() {
                 )}
               />
               {advancedOpen
-                ? "Masquer les recommandations avancées"
-                : "Voir les recommandations avancées"}
+                ? "Masquer les Paramètres Machine Learning Avancés"
+                : "Voir les Paramètres Machine Learning Avancés"}
             </button>
             {advancedOpen && (
               <ul

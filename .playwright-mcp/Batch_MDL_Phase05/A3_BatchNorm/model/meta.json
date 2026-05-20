@@ -1,0 +1,14 @@
+{
+  "saved_at": "2026-05-20T06:12:08.292270Z",
+  "python_version": "3.11.9",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "hostname": "AnbriSamir",
+  "seed": 1750,
+  "data_sha256": "f1f82587cb5202382324e25f19fff37c0e50cf46dd2dfa231633599751f299ec",
+  "tf_version": "2.21.0",
+  "keras_version": "3.14.1",
+  "numpy_version": "2.4.4",
+  "sklearn_version": "1.8.0",
+  "git_sha": "67fdf9094add722a90f5ede856f35e0c5481bc28",
+  "format": "keras-native+legacy-h5"
+}
