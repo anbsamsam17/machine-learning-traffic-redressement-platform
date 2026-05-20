@@ -75,6 +75,17 @@ class EvalResponse(BaseModel):
     # on low- or high-traffic sensors. Empty list when TMJOBCTV/TMJABCTV
     # is absent from the validation data.
     metrics_by_tmja_bucket: list[dict[str, Any]] = Field(default_factory=list)
+    # P4.1 — calibration scatter (obs vs pred). None when y_true/y_pred empty.
+    # Shape: {"obs": [...], "pred": [...], "n": int}.
+    calibration_data: dict[str, Any] | None = None
+    # P4.2 — residual boxplot by functional_class. List of per-class entries
+    # {"fc": 1..5, "residuals": [...], "n": int, "median": float, ...}.
+    # Empty list when functional_class (or fc_1..fc_5 one-hot) is absent.
+    residuals_by_fc: list[dict[str, Any]] = Field(default_factory=list)
+    # P4.3 — annual drift table. One entry per year_mapped value with at
+    # least 10 samples; {"year_mapped": int, "year_label": str, "n_samples":
+    # int, "r2": float, "mae": float, "tol_in_pct": float, "p80": float}.
+    drift_by_year: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReportResponse(BaseModel):
@@ -495,6 +506,245 @@ def _stratify_by_tmja(
             entry["low_sample_warning"] = True
         results.append(entry)
 
+    return results
+
+
+# ---------------------------------------------------------------------------
+# P4.1 — Calibration data (predicted vs observed scatter)
+# ---------------------------------------------------------------------------
+
+# Hard cap on the number of (obs, pred) pairs persisted in the session. The
+# calibration plot only needs a representative cloud — when n grows much
+# beyond 5k points the Plotly trace becomes slow to render in the browser
+# and the JSON payload bloats the Redis backend. We downsample with a fixed
+# seed so the plot is deterministic across reloads.
+_CALIBRATION_MAX_POINTS = 5000
+
+
+def _compute_calibration_data(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    max_points: int = _CALIBRATION_MAX_POINTS,
+    seed: int = 1750,
+) -> dict[str, Any] | None:
+    """Return a JSON-serialisable {"obs", "pred", "n"} dict.
+
+    Drops non-finite pairs and downsamples (with a fixed seed) when the
+    cloud exceeds ``max_points``. Returns ``None`` when no valid pair
+    survives so the caller can short-circuit to an empty-state message.
+    """
+    obs = np.asarray(y_true, dtype=np.float64).ravel()
+    pred = np.asarray(y_pred, dtype=np.float64).ravel()
+    if obs.size == 0 or obs.size != pred.size:
+        return None
+    finite = np.isfinite(obs) & np.isfinite(pred)
+    obs = obs[finite]
+    pred = pred[finite]
+    if obs.size == 0:
+        return None
+    n_full = int(obs.size)
+    if obs.size > max_points:
+        rng = np.random.default_rng(seed)
+        idx = rng.choice(obs.size, size=max_points, replace=False)
+        idx.sort()
+        obs = obs[idx]
+        pred = pred[idx]
+    return {
+        "obs": [round(float(v), 6) for v in obs],
+        "pred": [round(float(v), 6) for v in pred],
+        "n": n_full,
+        "n_plotted": int(obs.size),
+    }
+
+
+# ---------------------------------------------------------------------------
+# P4.2 — Residual boxplot by functional_class
+# ---------------------------------------------------------------------------
+
+def _resolve_functional_class(df: pd.DataFrame) -> pd.Series | None:
+    """Return a per-row integer ``functional_class`` series (1..5) when
+    derivable from ``df``.
+
+    Two encodings are supported:
+        * a raw ``functional_class`` (or ``FunctionalClass``) numeric column;
+        * the one-hot trio ``fc_1`` .. ``fc_5`` (any subset present is
+          recombined into the original integer class via argmax).
+
+    Returns ``None`` when neither encoding is present so the caller can
+    skip the section gracefully.
+    """
+    for cand in ("functional_class", "FunctionalClass", "FC", "fc"):
+        if cand in df.columns:
+            s = pd.to_numeric(df[cand], errors="coerce")
+            if s.notna().any():
+                return s
+    # One-hot fallback. We require at least two fc_* columns to recombine
+    # meaningfully — a single fc_3 column tells us nothing about the rows
+    # whose fc_3 == 0.
+    onehot_cols = [c for c in df.columns if c.startswith("fc_") and c[3:].isdigit()]
+    if len(onehot_cols) >= 2:
+        try:
+            mat = df[onehot_cols].apply(pd.to_numeric, errors="coerce").fillna(0).to_numpy()
+            class_ids = np.array([int(c.split("_", 1)[1]) for c in onehot_cols])
+            # Rows with all zeros stay NaN (no class).
+            row_max = mat.max(axis=1)
+            argmax_idx = mat.argmax(axis=1)
+            picked = class_ids[argmax_idx].astype(float)
+            picked[row_max <= 0] = np.nan
+            return pd.Series(picked, index=df.index)
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _compute_residuals_by_fc(
+    df: pd.DataFrame,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> list[dict[str, Any]]:
+    """Group residuals (pred - obs) by functional_class.
+
+    Returns an empty list when the class column cannot be resolved (caller
+    renders an empty-state message). One dict per class actually present,
+    ordered by class id ascending. Each dict carries the raw residuals
+    array (truncated to 2000 points per class) plus pre-computed summary
+    stats so the front-end can render either a boxplot or a table.
+    """
+    fc_series = _resolve_functional_class(df)
+    if fc_series is None:
+        return []
+
+    obs = np.asarray(y_true, dtype=np.float64).ravel()
+    pred = np.asarray(y_pred, dtype=np.float64).ravel()
+    if obs.size == 0 or obs.size != pred.size or len(fc_series) != obs.size:
+        return []
+
+    residuals = pred - obs
+    fc_vals = pd.to_numeric(fc_series, errors="coerce").to_numpy(dtype=np.float64)
+
+    results: list[dict[str, Any]] = []
+    # Iterate over classes 1..5 (canonical range) plus any extra integer
+    # actually present, just in case the schema ever grows.
+    unique_classes = sorted(
+        {int(v) for v in fc_vals if np.isfinite(v) and float(v).is_integer()}
+    )
+    for fc in unique_classes:
+        mask = np.isfinite(fc_vals) & (fc_vals == fc) & np.isfinite(residuals)
+        if not mask.any():
+            continue
+        res_b = residuals[mask]
+        # Cap at 2000 points to keep the JSON payload small. A 2k-point
+        # box plot is visually indistinguishable from a 20k-point one.
+        if res_b.size > 2000:
+            rng = np.random.default_rng(1750 + fc)
+            idx = rng.choice(res_b.size, size=2000, replace=False)
+            idx.sort()
+            res_sample = res_b[idx]
+        else:
+            res_sample = res_b
+        results.append({
+            "fc": int(fc),
+            "n": int(res_b.size),
+            "median": round(float(np.median(res_b)), 4),
+            "mean": round(float(np.mean(res_b)), 4),
+            "q1": round(float(np.percentile(res_b, 25)), 4),
+            "q3": round(float(np.percentile(res_b, 75)), 4),
+            "min": round(float(np.min(res_b)), 4),
+            "max": round(float(np.max(res_b)), 4),
+            "residuals": [round(float(v), 4) for v in res_sample],
+        })
+    return results
+
+
+# ---------------------------------------------------------------------------
+# P4.3 — Annual drift table (R², MAE, tol_in_pct per year)
+# ---------------------------------------------------------------------------
+
+_DRIFT_MIN_SAMPLES = 10
+
+
+def _compute_drift_by_year(
+    df: pd.DataFrame,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    year_value_mapping: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
+    """Compute per-year (R², MAE, tol_in_pct, p80) on ``year_mapped``.
+
+    ``year_mapped`` is the encoded year feature the model actually consumes
+    (1..7 in the canonical 2019..2025 mapping). ``year_value_mapping`` is
+    the reverse lookup we use to label each row of the table; when None
+    or missing entries, we fall back to ``"year_<n>"``.
+
+    Returns an empty list when ``year_mapped`` is absent from ``df`` so
+    the caller can render an empty-state message. Years with fewer than
+    ``_DRIFT_MIN_SAMPLES`` rows are skipped.
+    """
+    if "year_mapped" not in df.columns:
+        return []
+
+    obs = np.asarray(y_true, dtype=np.float64).ravel()
+    pred = np.asarray(y_pred, dtype=np.float64).ravel()
+    if obs.size == 0 or obs.size != pred.size:
+        return []
+
+    ym = pd.to_numeric(df["year_mapped"], errors="coerce").to_numpy(dtype=np.float64)
+    if ym.size != obs.size:
+        return []
+
+    # Reverse mapping for labelling. The frontend stores
+    # {"2019": 1.0, "2020": 2.0, ...} → invert to {1: "2019", 2: "2020", ...}.
+    inv_label: dict[int, str] = {}
+    if year_value_mapping:
+        for label, val in year_value_mapping.items():
+            try:
+                key = int(round(float(val)))
+                inv_label[key] = str(label)
+            except (TypeError, ValueError):
+                continue
+
+    unique_years = sorted(
+        {int(round(v)) for v in ym if np.isfinite(v)}
+    )
+    results: list[dict[str, Any]] = []
+    for year_val in unique_years:
+        mask = np.isfinite(ym) & (np.round(ym).astype(int) == year_val)
+        mask &= np.isfinite(obs) & np.isfinite(pred)
+        n = int(mask.sum())
+        if n < _DRIFT_MIN_SAMPLES:
+            continue
+        obs_b = obs[mask]
+        pred_b = pred[mask]
+        res_b = obs_b - pred_b
+        mae = float(np.mean(np.abs(res_b)))
+
+        ss_res = float(np.sum(res_b ** 2))
+        ss_tot = float(np.sum((obs_b - np.mean(obs_b)) ** 2))
+        r2 = (1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+        # tol_in_pct: same definition as the global metric — |pred-obs|/obs
+        # within 15% (the default tolerance used elsewhere in the report).
+        nonzero = obs_b != 0
+        tol_in_pct = float("nan")
+        if nonzero.any():
+            err_rel = np.abs((obs_b[nonzero] - pred_b[nonzero]) / obs_b[nonzero]) * 100.0
+            tol_in_pct = 100.0 * float(np.mean(err_rel <= 15.0))
+
+        # p80 of |obs - pred| / obs * 100.
+        p80 = float("nan")
+        if nonzero.any():
+            err_rel = np.abs((obs_b[nonzero] - pred_b[nonzero]) / obs_b[nonzero]) * 100.0
+            p80 = float(np.nanpercentile(err_rel, 80))
+
+        results.append({
+            "year_mapped": int(year_val),
+            "year_label": inv_label.get(year_val, f"year_{year_val}"),
+            "n_samples": n,
+            "r2": round(r2, 6),
+            "mae": round(mae, 4),
+            "tol_in_pct": round(tol_in_pct, 2) if math.isfinite(tol_in_pct) else None,
+            "p80": round(p80, 4) if math.isfinite(p80) else None,
+        })
     return results
 
 
@@ -1104,6 +1354,181 @@ def _build_sensitivity_section_html(
 </script>"""
 
 
+def _make_calibration_plot_html(
+    calibration_data: dict[str, Any] | None,
+) -> str:
+    """Render the P4.1 calibration scatter (pred vs obs) + y=x reference.
+
+    Returns an empty-state ``<p>`` when ``calibration_data`` is None or empty.
+    """
+    if not calibration_data:
+        return (
+            '<p style="color:#888;font-style:italic;">'
+            'Donnees indisponibles &mdash; vecteurs obs/pred vides.</p>'
+        )
+    obs = calibration_data.get("obs") or []
+    pred = calibration_data.get("pred") or []
+    if not obs or not pred:
+        return (
+            '<p style="color:#888;font-style:italic;">'
+            'Donnees indisponibles &mdash; vecteurs obs/pred vides.</p>'
+        )
+
+    import plotly.graph_objects as go
+    import plotly.io as pio
+
+    obs_arr = np.asarray(obs, dtype=np.float64)
+    pred_arr = np.asarray(pred, dtype=np.float64)
+    finite = np.isfinite(obs_arr) & np.isfinite(pred_arr)
+    if not finite.any():
+        return (
+            '<p style="color:#888;font-style:italic;">'
+            'Donnees indisponibles &mdash; aucune paire (obs, pred) finie.</p>'
+        )
+    obs_arr = obs_arr[finite]
+    pred_arr = pred_arr[finite]
+
+    lo = float(min(obs_arr.min(), pred_arr.min()))
+    hi = float(max(obs_arr.max(), pred_arr.max()))
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        hi = lo + 1.0
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=obs_arr.tolist(),
+        y=pred_arr.tolist(),
+        mode="markers",
+        name="Capteurs",
+        marker=dict(
+            size=6,
+            color="#0057b7",
+            opacity=0.55,
+            line=dict(width=0),
+        ),
+        hovertemplate=(
+            "<b>Observe</b> : %{x:.2f}<br>"
+            "<b>Predit</b> : %{y:.2f}<extra></extra>"
+        ),
+    ))
+    fig.add_trace(go.Scatter(
+        x=[lo, hi],
+        y=[lo, hi],
+        mode="lines",
+        name="y = x (parfait)",
+        line=dict(color="#e74c3c", width=2, dash="dash"),
+        hoverinfo="skip",
+    ))
+    n_full = int(calibration_data.get("n", len(obs_arr)))
+    n_plotted = int(calibration_data.get("n_plotted", len(obs_arr)))
+    subtitle = ""
+    if n_plotted < n_full:
+        subtitle = f" (echantillon {n_plotted} sur {n_full})"
+    fig.update_layout(
+        template="plotly_white",
+        title=f"Calibration : predit vs observe{subtitle}",
+        xaxis_title="Observe (y_true)",
+        yaxis_title="Predit (y_pred)",
+        margin=dict(l=50, r=40, t=60, b=60),
+        hoverlabel=dict(bgcolor="white", font_size=12, font_family="Manrope,sans-serif"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return pio.to_html(fig, include_plotlyjs=False, full_html=False)
+
+
+def _make_residuals_by_fc_html(
+    residuals_by_fc: list[dict[str, Any]] | None,
+) -> str:
+    """Render the P4.2 residual boxplot grouped by functional_class."""
+    if not residuals_by_fc:
+        return (
+            '<p style="color:#888;font-style:italic;">'
+            'Donnees indisponibles &mdash; colonne <code>functional_class</code> '
+            '(ou one-hot <code>fc_1..fc_5</code>) absente du jeu de validation.</p>'
+        )
+
+    import plotly.graph_objects as go
+    import plotly.io as pio
+
+    fig = go.Figure()
+    palette = ["#0057b7", "#1a80e8", "#16a085", "#f39c12", "#e74c3c", "#6c5ce7", "#444"]
+    for i, entry in enumerate(residuals_by_fc):
+        fc = entry.get("fc", "?")
+        residuals = entry.get("residuals") or []
+        if not residuals:
+            continue
+        fig.add_trace(go.Box(
+            y=residuals,
+            name=f"FC {fc}",
+            marker_color=palette[i % len(palette)],
+            boxmean=True,
+            hovertemplate=(
+                f"<b>Classe fonctionnelle</b> : {fc}<br>"
+                "<b>Residu</b> : %{y:.4f}<extra></extra>"
+            ),
+        ))
+    if not fig.data:
+        return (
+            '<p style="color:#888;font-style:italic;">'
+            'Donnees indisponibles &mdash; aucun residu calculable par classe.</p>'
+        )
+    fig.add_shape(
+        type="line", xref="paper", yref="y",
+        x0=0, x1=1, y0=0, y1=0,
+        line=dict(color="#999", width=1, dash="dot"),
+    )
+    fig.update_layout(
+        template="plotly_white",
+        title="Residus par classe fonctionnelle",
+        xaxis_title="Classe fonctionnelle",
+        yaxis_title="Residu (pred &minus; obs)",
+        showlegend=False,
+        margin=dict(l=50, r=40, t=60, b=60),
+        hoverlabel=dict(bgcolor="white", font_size=12, font_family="Manrope,sans-serif"),
+    )
+    return pio.to_html(fig, include_plotlyjs=False, full_html=False)
+
+
+def _make_drift_by_year_html(
+    drift_by_year: list[dict[str, Any]] | None,
+) -> str:
+    """Render the P4.3 annual drift table."""
+    if not drift_by_year:
+        return (
+            '<p style="color:#888;font-style:italic;">'
+            'Donnees indisponibles &mdash; colonne <code>year_mapped</code> absente '
+            'ou aucune annee n a au moins 10 echantillons.</p>'
+        )
+    headers = [
+        "Annee", "N", "R&sup2;", "MAE", "Tol. inclus (%)", "p80 err.rel (%)",
+    ]
+    thead = "<tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr>"
+    rows: list[str] = []
+    for entry in drift_by_year:
+        label = _html.escape(str(entry.get("year_label", "-")))
+        ym = entry.get("year_mapped")
+        if ym is not None:
+            label += (
+                f' <small style="color:#56637a;font-weight:500;">'
+                f'(year_mapped={ym})</small>'
+            )
+        rows.append(
+            "<tr>"
+            f"<td>{label}</td>"
+            f"<td>{int(entry.get('n_samples', 0))}</td>"
+            f"<td>{_fmt(entry.get('r2'), digits=4)}</td>"
+            f"<td>{_fmt(entry.get('mae'))}</td>"
+            f"<td>{_fmt(entry.get('tol_in_pct'))}</td>"
+            f"<td>{_fmt(entry.get('p80'))}</td>"
+            "</tr>"
+        )
+    return (
+        '<table id="driftByYearTable" class="display" style="width:100%">'
+        f'<thead>{thead}</thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '</table>'
+    )
+
+
 def _generate_html_report(
     metrics: MetricsResult,
     model_name: str,
@@ -1114,6 +1539,9 @@ def _generate_html_report(
     sensitivity_html: str | None = None,
     metrics_ci95: dict[str, list[float] | None] | None = None,
     metrics_by_tmja_bucket: list[dict[str, Any]] | None = None,
+    calibration_data: dict[str, Any] | None = None,
+    residuals_by_fc: list[dict[str, Any]] | None = None,
+    drift_by_year: list[dict[str, Any]] | None = None,
 ) -> str:
     """Generate a self-contained HTML evaluation report matching the original Streamlit style.
 
@@ -1137,6 +1565,15 @@ def _generate_html_report(
     metrics_ci95 : dict | None
         Bootstrap CI95 intervals (P1.1) keyed by ``tol_in_pct`` / ``p80`` /
         ``r2``. Each value is ``[ci_low, ci_high]`` or ``None`` when skipped.
+    calibration_data : dict | None
+        P4.1 — {"obs": [...], "pred": [...], "n": int} for the predicted
+        vs observed scatter. None falls back to an empty-state message.
+    residuals_by_fc : list[dict] | None
+        P4.2 — per-functional-class residual summaries. Empty list falls
+        back to an empty-state message.
+    drift_by_year : list[dict] | None
+        P4.3 — per-year metrics rows. Empty list falls back to an
+        empty-state message.
     """
 
     # --- Build stats row (same structure as original rows[]) ---
@@ -1387,6 +1824,45 @@ def _generate_html_report(
             'absente des donnees de validation.</p>\n'
         )
 
+    # --- P4.1 Calibration plot ---
+    calibration_plot_inner = _make_calibration_plot_html(calibration_data)
+    calibration_section_html = (
+        '  <h2>Calibration : predit vs observe</h2>\n'
+        '  <p class="hint">Chaque point est un capteur. La diagonale rouge '
+        '<code>y = x</code> represente une prediction parfaite. Un nuage '
+        'systematiquement en dessous (resp. au-dessus) indique un biais de '
+        'sous-estimation (resp. sur-estimation).</p>\n'
+        '  <div class="panel plot-wrap">\n'
+        f'    {calibration_plot_inner}\n'
+        '  </div>\n'
+    )
+
+    # --- P4.2 Residual boxplot by functional_class ---
+    residuals_plot_inner = _make_residuals_by_fc_html(residuals_by_fc)
+    residuals_section_html = (
+        '  <h2>Residus par classe fonctionnelle</h2>\n'
+        '  <p class="hint">Distribution des residus <code>pred &minus; obs</code> '
+        'pour chaque classe fonctionnelle (FC). Une boite centree sur 0 indique '
+        'un modele non biaise sur cette classe ; une boite decalee revele un '
+        'biais systematique propre a la classe.</p>\n'
+        '  <div class="panel plot-wrap">\n'
+        f'    {residuals_plot_inner}\n'
+        '  </div>\n'
+    )
+
+    # --- P4.3 Drift by year ---
+    drift_inner = _make_drift_by_year_html(drift_by_year)
+    drift_section_html = (
+        '  <h2>Derive annuelle (metriques par annee)</h2>\n'
+        '  <p class="hint">Memes metriques recalculees pour chaque annee '
+        'presente dans le jeu de validation (au moins 10 echantillons). Une '
+        'forte variation du R&sup2; ou du tol_in entre annees suggere une '
+        'derive temporelle du modele.</p>\n'
+        '  <div class="panel">\n'
+        f'    {drift_inner}\n'
+        '  </div>\n'
+    )
+
     # --- Assemble full HTML ---
     html = f"""<!doctype html>
 <html>
@@ -1472,6 +1948,9 @@ def _generate_html_report(
   </div>
 
 {bucket_table_html}
+{calibration_section_html}
+{residuals_section_html}
+{drift_section_html}
   <h2>Barplot - TMJOBCTV vs TVr (validation)</h2>
   <div class="panel plot-wrap">
     {bar_html}
@@ -1513,6 +1992,15 @@ $(document).ready(function(){{
       searching: false,
       info: false,
       ordering: false,
+    }});
+  }}
+  if ($('#driftByYearTable').length) {{
+    // Up to 7 rows — no pagination / search / info needed; allow sorting.
+    $('#driftByYearTable').DataTable({{
+      paging: false,
+      searching: false,
+      info: false,
+      order: [[0, 'asc']],
     }});
   }}
 }});
@@ -2129,6 +2617,53 @@ async def run_evaluation(
             )
             metrics_by_tmja_bucket = []
 
+    # P4.1 — Calibration data (obs, pred). Always computed because y_true /
+    # y_pred are guaranteed non-empty at this point (early-exit above when
+    # len(sub) < 2). Stored under a stable session key so the cached
+    # /report/{session_id} endpoint can replay the section verbatim.
+    calibration_data: dict[str, Any] | None = None
+    try:
+        calibration_data = _compute_calibration_data(y_true, y_pred)
+    except Exception as exc:  # noqa: BLE001 — non-blocking by design
+        logger.warning("Calibration data computation failed (non-blocking): %s", exc)
+        calibration_data = None
+
+    # P4.2 — Residual boxplot by functional_class. Gracefully empty when
+    # neither ``functional_class`` nor ``fc_*`` one-hot columns exist.
+    residuals_by_fc: list[dict[str, Any]] = []
+    try:
+        residuals_by_fc = _compute_residuals_by_fc(report_df, y_true, y_pred)
+        if not residuals_by_fc:
+            logger.debug(
+                "Residuals by FC skipped: functional_class column absent "
+                "from validation data."
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Residuals-by-FC computation failed (non-blocking): %s", exc)
+        residuals_by_fc = []
+
+    # P4.3 — Annual drift. Reads year_mapped + the inverse year_value_mapping
+    # (body override > training_config) so the table can show 2019..2025
+    # labels instead of the raw encoded value.
+    drift_by_year: list[dict[str, Any]] = []
+    try:
+        _year_mapping = (
+            body.year_value_mapping
+            or (training_config or {}).get("year_value_mapping")
+            or {}
+        )
+        drift_by_year = _compute_drift_by_year(
+            report_df, y_true, y_pred, year_value_mapping=_year_mapping,
+        )
+        if not drift_by_year:
+            logger.debug(
+                "Drift by year skipped: year_mapped absent or no year has "
+                "at least %d samples.", _DRIFT_MIN_SAMPLES,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Drift-by-year computation failed (non-blocking): %s", exc)
+        drift_by_year = []
+
     # Build sensitivity analysis section
     sensitivity_html = None
     try:
@@ -2161,6 +2696,9 @@ async def run_evaluation(
         sensitivity_html=sensitivity_html,
         metrics_ci95=metrics_ci95,
         metrics_by_tmja_bucket=metrics_by_tmja_bucket,
+        calibration_data=calibration_data,
+        residuals_by_fc=residuals_by_fc,
+        drift_by_year=drift_by_year,
     )
 
     # Store in session
@@ -2179,6 +2717,18 @@ async def run_evaluation(
     # on the key existing after a successful /run.
     session_manager.store_data(
         body.session_id, "metrics_by_tmja_bucket", metrics_by_tmja_bucket,
+    )
+    # P4.1/4.2/4.3 — persist the new sections so /report/{session_id}
+    # replays them without recomputing. ``calibration_data`` may be None
+    # (empty obs/pred); store None explicitly to keep the key shape stable.
+    session_manager.store_data(
+        body.session_id, "calibration_data", calibration_data,
+    )
+    session_manager.store_data(
+        body.session_id, "residuals_by_fc", residuals_by_fc,
+    )
+    session_manager.store_data(
+        body.session_id, "drift_by_year", drift_by_year,
     )
 
     # P1.4 — persist per-model evaluation artifacts so /api/evaluation/compare
@@ -2217,6 +2767,9 @@ async def run_evaluation(
         report_url=f"/api/evaluation/report/{body.session_id}",
         metrics_ci95=metrics_ci95,
         metrics_by_tmja_bucket=metrics_by_tmja_bucket,
+        calibration_data=calibration_data,
+        residuals_by_fc=residuals_by_fc,
+        drift_by_year=drift_by_year,
     )
 
 
@@ -2244,6 +2797,18 @@ async def get_report(
         cached_buckets = session_manager.get_data(
             session_id, "metrics_by_tmja_bucket", []
         )
+        # P4.1 / P4.2 / P4.3 — replay the new sections from session storage
+        # so the cached fallback report has the same shape as the freshly
+        # generated one.
+        cached_calibration = session_manager.get_data(
+            session_id, "calibration_data", None
+        )
+        cached_residuals_fc = session_manager.get_data(
+            session_id, "residuals_by_fc", []
+        )
+        cached_drift = session_manager.get_data(
+            session_id, "drift_by_year", []
+        )
 
         report_html = _generate_html_report(
             metrics=metrics,
@@ -2252,6 +2817,9 @@ async def get_report(
             y_true=y_true,
             y_pred=y_pred,
             metrics_by_tmja_bucket=cached_buckets,
+            calibration_data=cached_calibration,
+            residuals_by_fc=cached_residuals_fc,
+            drift_by_year=cached_drift,
         )
 
     return ReportResponse(session_id=session_id, report_html=report_html)
