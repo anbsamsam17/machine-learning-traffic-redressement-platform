@@ -123,12 +123,22 @@ for _setter, _label in (
 
 def _compile_model(model: keras.Model, learning_rate: float, loss: str) -> None:
     """Compile a model with the standard optimizer/loss/metrics triple."""
+    # Trigger custom loss registration (tolerance_aware, pinball_p80, pinball, huber)
+    from . import losses as _losses  # noqa: F401
+
     if loss == "huber":
         loss_fn = keras.losses.Huber(delta=1.0, name="huber")
     elif loss == "mae":
         loss_fn = keras.losses.MeanAbsoluteError(name="mae_loss")
-    else:
+    elif loss == "mse":
         loss_fn = keras.losses.MeanSquaredError(name="mse")
+    else:
+        # Route registered aliases ("tolerance_aware", "pinball_p80", "pinball")
+        # through keras.losses.get so custom losses participate.
+        try:
+            loss_fn = keras.losses.get(loss)
+        except Exception:
+            loss_fn = keras.losses.MeanSquaredError(name="mse")
 
     model.compile(
         optimizer=Adam(learning_rate=learning_rate),
