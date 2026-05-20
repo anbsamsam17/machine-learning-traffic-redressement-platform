@@ -49,7 +49,7 @@ import type {
   LandingModeContent,
 } from "@/components/landing/types";
 import { SamAvatar } from "@/components/avatar/SamAvatar";
-import { LandingBg } from "@/components/landing/animations/LandingBg";
+import { AnimatedBg } from "@/components/landing/animated-bg";
 import { landingContent as R } from "@/lib/content/landing";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ export default function HomePage() {
   return (
     <>
       {/* Animated background (full-viewport, behind everything) */}
-      <LandingBg />
+      <AnimatedBg />
 
       {/* Avoid nested <main> — the root layout already wraps children in
           <main id="main-content">. We use a <div> here with a region label

@@ -210,6 +210,49 @@ select option {
   border-color: rgba(99, 102, 241, 0.35) !important;
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+ * Landing animated background — drifting gradient blobs.
+ * Used by <AnimatedBg /> (components/landing/animated-bg.tsx).
+ * Transform/opacity only → compositor-friendly. Reduced motion respected
+ * via the global guard above (animation-duration: 0.01ms !important).
+ * ──────────────────────────────────────────────────────────────────── */
+@keyframes blob-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(8vw, 6vh, 0) scale(1.08);
+  }
+}
+@keyframes blob-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-6vw, 8vh, 0) scale(0.94);
+  }
+}
+@keyframes blob-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(4vw, -7vh, 0) scale(1.05);
+  }
+}
+.animate-blob-a {
+  animation: blob-a 22s ease-in-out infinite;
+}
+.animate-blob-b {
+  animation: blob-b 28s ease-in-out infinite;
+}
+.animate-blob-c {
+  animation: blob-c 26s ease-in-out infinite;
+}
+
 /* Pipeline stepper — subtle glow pulse on the active step button.
    Drives the .animate-pulse-glow utility used in components/pipeline/stepper.tsx
    (Tache 2: highlight the active step). Kept low-amplitude so it never
