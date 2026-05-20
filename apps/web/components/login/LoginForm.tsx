@@ -114,7 +114,13 @@ export function LoginForm() {
 
         <button
           type="submit"
+          // Explicit tabIndex={0} — defensive against any ancestor (e.g.
+          // PageEnter / GSAP timeline) leaving a stale tabindex on the
+          // wrapper that could otherwise drop the button out of the
+          // natural tab sequence after email → password.
+          tabIndex={0}
           disabled={loading}
+          aria-disabled={loading}
           className="w-full rounded-md border border-indigo-500/60 bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? "Connexion…" : "Se connecter"}

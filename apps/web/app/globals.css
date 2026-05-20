@@ -87,6 +87,16 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans);
   min-height: 100vh;
+  /* Tablet polish (768x1024 viewport) — a fixed-width chip / pre / table
+     occasionally overflows the viewport and triggers a horizontal scroll
+     bar. We clip at the document level: pages opt out by wrapping any
+     intentionally wide element in `overflow-x-auto`. Vertical scroll is
+     unaffected. */
+  overflow-x: clip;
+}
+
+html {
+  overflow-x: clip;
 }
 
 /* Reduced motion — global guard.

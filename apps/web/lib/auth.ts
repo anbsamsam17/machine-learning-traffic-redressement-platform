@@ -24,7 +24,11 @@ export function setToken(token: string): void {
 export function removeToken(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
-  document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`;
+  // Expire the cookie via both `max-age=0` and a past `expires` date so
+  // every UA (incl. older Safari) honours the invalidation on the first
+  // attempt. SameSite must match the original (Lax) set in setToken().
+  document.cookie = `${TOKEN_KEY}=; path=/; max-age=0; SameSite=Lax`;
+  document.cookie = `${TOKEN_KEY}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
 }
 
 export function isAuthenticated(): boolean {

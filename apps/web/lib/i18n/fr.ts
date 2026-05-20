@@ -37,7 +37,6 @@ export const fr = {
       config: "Configuration",
       training: "Entrainement",
       evaluation: "Evaluation",
-      extrapolation: "Extrapolation",
     },
     donnees: {
       title: "Etape 1 — Donnees",
@@ -60,11 +59,6 @@ export const fr = {
       title: "Etape 4 — Evaluation",
       runBtn: "Lancer l'evaluation",
       reportTitle: "Rapport d'evaluation",
-    },
-    extrapolation: {
-      title: "Etape 5 — Extrapolation",
-      runBtn: "Lancer l'extrapolation",
-      reportTitle: "Rapport d'extrapolation",
     },
   },
   auth: {

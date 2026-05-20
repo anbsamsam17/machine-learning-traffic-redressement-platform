@@ -30,7 +30,7 @@ const FEATURES: Feature[] = [
   {
     icon: Activity,
     title: "Modélisation",
-    desc: "Redressement & extrapolation",
+    desc: "Redressement & évaluation",
     accent: "text-emerald-400",
   },
 ];

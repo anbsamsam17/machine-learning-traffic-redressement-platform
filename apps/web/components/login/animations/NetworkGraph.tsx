@@ -96,8 +96,10 @@ export function NetworkGraph({ className }: NetworkGraphProps): React.ReactEleme
       <svg
         viewBox="0 0 200 120"
         width="100%"
-        height="auto"
-        style={{ display: "block" }}
+        // SVG `height` requires a numeric/length value — `"auto"` is invalid
+        // and emits a React DOM warning. Drop the attribute and let the
+        // intrinsic aspect-ratio of viewBox + width=100% size the element.
+        style={{ display: "block", height: "auto" }}
       >
         {/* Static edges (low-opacity indigo lattice) */}
         {EDGES.map(([fromIdx, toIdx], i) => {

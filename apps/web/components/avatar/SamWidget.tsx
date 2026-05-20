@@ -20,7 +20,8 @@ import { SAM_MOOD_TOKENS, samMoodImage } from "@/lib/sam/moods";
  * - Reads `useSamStore` for mood / message / visibility.
  * - Auto-fades the message bubble after 4s for non-persistent moods
  *   (analysing & thinking remain shown until cleared).
- * - Click opens a small detail panel (mood label + Reset button).
+ * - Click on the avatar re-summons the page-level bubble (handy after the
+ *   auto-dismiss timer). Acts as a toggle when the bubble is already shown.
  * - Idle float animation, skipped under prefers-reduced-motion.
  * - Uses the cutout (transparent) assets — no opaque card around the
  *   silhouette, only a soft mood-tinted glow.
@@ -77,6 +78,14 @@ export function SamWidget() {
     return () => window.clearTimeout(t);
   }, [message, mood, activeToastCount]);
 
+  // Click handler — re-summons the bubble after the 4s auto-dismiss, or
+  // collapses it when already shown. No-op when no message is registered
+  // for the current route (page-binder hasn't pushed anything yet).
+  const handleAvatarClick = React.useCallback(() => {
+    if (!message) return;
+    setShowBubble((v) => !v);
+  }, [message]);
+
   // Hide on auth pages.
   const onAuthPage = pathname === "/login" || pathname === "/register";
   if (!visible || onAuthPage) return null;
@@ -122,23 +131,56 @@ export function SamWidget() {
       </AnimatePresence>
 
       {/* Avatar — cutout silhouette (~128px) with mood-tinted glow.
-          Non-interactive: Sam is a passive companion, no click-to-reset. */}
+          Click toggles the bubble back on after auto-dismiss; falls back
+          to a static <div> render when no message is registered for the
+          route so we never expose a dead button to AT users. */}
       <motion.div
-        role="img"
-        aria-label={`Sam (humeur courante: ${mood})`}
-        aria-describedby={message ? bubbleId : undefined}
         animate={floatAnim}
         style={{ filter: MOOD_DROP_SHADOW[mood] ?? MOOD_DROP_SHADOW.based }}
-        className="pointer-events-none relative size-32"
+        className="pointer-events-auto relative size-32"
       >
-        <Image
-          src={samMoodImage(mood)}
-          alt=""
-          fill
-          sizes="128px"
-          className="object-contain"
-          priority={false}
-        />
+        {message ? (
+          <button
+            type="button"
+            onClick={handleAvatarClick}
+            aria-label={
+              showBubble
+                ? `Masquer le message de Sam (humeur: ${mood})`
+                : `Afficher le message de Sam (humeur: ${mood})`
+            }
+            aria-expanded={showBubble}
+            aria-controls={bubbleId}
+            className={cn(
+              "block size-full rounded-full",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
+              "cursor-pointer"
+            )}
+          >
+            <Image
+              src={samMoodImage(mood)}
+              alt=""
+              fill
+              sizes="128px"
+              className="object-contain"
+              priority={false}
+            />
+          </button>
+        ) : (
+          <div
+            role="img"
+            aria-label={`Sam (humeur courante: ${mood})`}
+            className="block size-full"
+          >
+            <Image
+              src={samMoodImage(mood)}
+              alt=""
+              fill
+              sizes="128px"
+              className="object-contain"
+              priority={false}
+            />
+          </div>
+        )}
       </motion.div>
     </div>
   );

@@ -111,7 +111,17 @@ export function AppHeader() {
     // token + app state. `logout` always resolves, even on network error.
     await logout();
     reset();
-    router.push("/login");
+    setUserEmail(null);
+    // Hard navigation — bypass Next.js client cache so the middleware
+    // re-reads cookies on the *next* request (router.push alone left
+    // the user with a stale-looking header on the first click). The
+    // explicit replace + reload combo also flushes any cached
+    // /api/auth/me response held by SWR/TanStack queries elsewhere.
+    if (typeof window !== "undefined") {
+      window.location.replace("/login");
+      return;
+    }
+    router.replace("/login");
   }
 
   function toggleTheme() {

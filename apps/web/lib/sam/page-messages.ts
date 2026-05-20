@@ -83,11 +83,6 @@ export const PAGE_MESSAGES: Record<string, PageMessage> = {
     message: "Verifions la qualite de ton modele sur le jeu de validation.",
     subtitle: "GEH, MAE, R² et rapport detaille a la cle.",
   },
-  "/extrapolation": {
-    mood: "based",
-    message: "Applique ton modele entraine sur un jeu de donnees externe.",
-    subtitle: "Memes metriques que l'evaluation, sur tes nouveaux fichiers.",
-  },
   "/carte": {
     mood: "based",
     message: "Genere une carte de debits sur le reseau FCD.",

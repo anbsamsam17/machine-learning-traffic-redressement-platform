@@ -40,7 +40,7 @@ import type {
 type ModelSource = "session" | "upload";
 
 interface EvaluationFlowProps {
-  mode: "evaluation" | "extrapolation";
+  mode: "evaluation";
 }
 
 const COPY = {
@@ -57,20 +57,6 @@ const COPY = {
     reportTitle: "Rapport d'evaluation",
     reportDownloadPrefix: "Rapport_Evaluation_",
     toastDone: "Evaluation terminee",
-  },
-  extrapolation: {
-    title: "Extrapolation",
-    intro: (m: string) =>
-      `Testez un modele ${m} sur un fichier d'extrapolation. Validez la generalisation du modele sur des donnees externes.`,
-    fileSectionTitle: "1. Fichier d'extrapolation",
-    dropLabel: "Deposez votre fichier d'extrapolation",
-    dropDesc: "GeoJSON ou CSV avec nouvelles donnees (hors entrainement)",
-    noSessionFile: "fichier d'extrapolation",
-    runBtnIdle: "4. Lancer l'extrapolation",
-    runBtnBusy: "Extrapolation en cours...",
-    reportTitle: "Rapport d'extrapolation",
-    reportDownloadPrefix: "Rapport_Extrapolation_",
-    toastDone: "Extrapolation terminee",
   },
 } as const;
 
@@ -274,7 +260,7 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
   const unmappedCount = Object.values(colMapping).filter((v) => !v).length;
   const allMapped = requiredCols.length > 0 && unmappedCount === 0;
 
-  /* Run evaluation/extrapolation */
+  /* Run evaluation */
   const handleRun = useCallback(async () => {
     if (!validationFile) {
       toast.error("Selectionnez un fichier.");

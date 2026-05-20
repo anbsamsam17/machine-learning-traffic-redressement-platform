@@ -199,8 +199,6 @@ export type SamTrigger =
   | "training-error"
   | "evaluation-good"
   | "evaluation-bad"
-  | "extrapolation-started"
-  | "extrapolation-success"
   | "generic-error";
 
 export const SAM_TRIGGER_TO_MOOD: Record<SamTrigger, SamMood> = {
@@ -217,8 +215,6 @@ export const SAM_TRIGGER_TO_MOOD: Record<SamTrigger, SamMood> = {
   "training-error": "error",
   "evaluation-good": "goodjob",
   "evaluation-bad": "thinking",
-  "extrapolation-started": "thinking",
-  "extrapolation-success": "goodjob",
   "generic-error": "error",
 };
 
@@ -232,7 +228,6 @@ export function moodForPathname(pathname: string | null | undefined): SamMood {
   if (path.startsWith("/mapping") || path.startsWith("/config")) return "analysing";
   if (path.startsWith("/training")) return "thinking";
   if (path.startsWith("/evaluation")) return "based";
-  if (path.startsWith("/extrapolation")) return "thinking";
   if (path.startsWith("/carte")) return "based";
   return "based";
 }
