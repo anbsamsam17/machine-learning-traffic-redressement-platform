@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl } from "@/lib/api-url";
+import Link from "next/link";
 import {
   Download,
   Upload,
@@ -17,6 +18,7 @@ import {
   ArrowRight,
   Package,
   Server,
+  Database,
 } from "lucide-react";
 import { toast } from "sonner";
 import { samNotify, samMood } from "@/lib/sam-fallback";
@@ -471,6 +473,36 @@ export default function EvaluationPage() {
           Cette etape peut etre lancee independamment.
         </p>
       </div>
+
+      {/* Empty-state non-bloquant (Tache 1) — l'evaluation peut s'amorcer
+          sans session existante (upload validation + modeles externes), on
+          se contente donc d'une simple invitation discrete. */}
+      {!sessionId && !validationFile && (
+        <GlowCard glowColor="cyan">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-300 shrink-0">
+              <Database size={22} aria-hidden="true" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <h3 className="text-sm font-semibold text-white">
+                Demarrer une evaluation
+              </h3>
+              <p className="text-xs text-slate-300">
+                Tu peux evaluer un modele independamment : depose un fichier
+                de validation ci-dessous, puis choisis un modele (session
+                existante ou dossier local). Pour utiliser le pipeline
+                complet, importe d&apos;abord un jeu via{" "}
+                <strong>Etape 1 — Donnees</strong>.
+              </p>
+            </div>
+            <Link href="/donnees" className="shrink-0">
+              <NeonButton variant="ghost" icon={<ArrowRight size={14} />}>
+                Etape Donnees
+              </NeonButton>
+            </Link>
+          </div>
+        </GlowCard>
+      )}
 
       {/* 1. Fichier de validation */}
       <GlowCard>

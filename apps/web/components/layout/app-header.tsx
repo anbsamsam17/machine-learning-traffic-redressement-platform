@@ -144,7 +144,7 @@ export function AppHeader() {
         >
           <Home size={16} className="text-accent" aria-hidden="true" />
           <span className="font-semibold text-sm hidden sm:block">
-            MDL Redressement
+            Accueil
           </span>
         </button>
 

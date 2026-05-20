@@ -53,6 +53,9 @@ export default function PipelineLayout({
   const activeStep = pathToStep[pathname] ?? currentStep;
 
   function handleStepClick(step: number) {
+    // Tache 1: navigation libre — l'utilisateur peut sauter sur n'importe
+    // quelle etape, meme si les prerequis ne sont pas remplis. La page cible
+    // affichera un empty-state inline si besoin.
     goToStep(step);
     router.push(PIPELINE_STEPS[step].path);
   }
@@ -65,35 +68,43 @@ export default function PipelineLayout({
     }
   }
 
-  // APP-P1-6: per-step guards. Returns a message if we should NOT advance.
-  function getNextBlockReason(step: number): string | null {
+  // Per-step readiness flags — used by the Stepper to render the cyan check
+  // badge on steps whose prerequisites are met. Note: this is purely VISUAL,
+  // every step remains clickable (Tache 1).
+  const stepReady: boolean[] = [
+    Boolean(sessionId && mappingValidated && previewReady), // 0 Donnees
+    Boolean(trainingConfig),                                // 1 Configuration
+    false, // 2 Entrainement — has no persistent "done" flag in the store
+    false, // 3 Evaluation
+  ];
+
+  // Informational "why is the next button greyed?" hint — does NOT block
+  // clicks anymore. The button itself stays enabled so users can always
+  // advance; pages render an empty-state when prerequisites are missing.
+  function getNextHint(step: number): string | null {
     if (step === 0) {
-      // /donnees -> /config : require a validated mapping + preview
-      if (!sessionId) return "Charge un fichier d'abord";
+      if (!sessionId) return "Astuce : charge un fichier sur l'etape Donnees";
       if (!mappingValidated || !previewReady)
-        return "Valide le mapping des colonnes avant de continuer";
+        return "Astuce : valide le mapping des colonnes pour activer la suite";
     }
     if (step === 1) {
-      // /config -> /training : require a saved training config
-      if (!trainingConfig) return "Configure l'entrainement avant de continuer";
+      if (!trainingConfig) return "Astuce : enregistre une configuration pour activer l'entrainement";
     }
     if (step === 2) {
-      // /training -> /evaluation : require a session at minimum
-      if (!sessionId) return "Aucune session active";
+      if (!sessionId) return "Astuce : importe d'abord un jeu de donnees";
     }
     return null;
   }
 
-  const nextBlockReason = getNextBlockReason(activeStep);
-  const nextDisabled =
-    activeStep === PIPELINE_STEPS.length - 1 || nextBlockReason !== null;
+  const nextHint = getNextHint(activeStep);
+  const isLastStep = activeStep === PIPELINE_STEPS.length - 1;
 
   function handleNext() {
     if (activeStep >= PIPELINE_STEPS.length - 1) return;
-    const reason = getNextBlockReason(activeStep);
-    if (reason) {
-      toast.error(reason);
-      return;
+    const hint = getNextHint(activeStep);
+    if (hint) {
+      // On informe mais on n'empeche plus la navigation (Tache 1).
+      toast.info(hint);
     }
     const next = activeStep + 1;
     goToStep(next);
@@ -102,10 +113,15 @@ export default function PipelineLayout({
 
   return (
     <div className="bg-pipeline relative min-h-screen flex flex-col">
-      {/* Stepper */}
-      <div className="relative z-10 glass border-b border-white/[0.08] rounded-none">
-        <div className="max-w-5xl mx-auto px-4 py-3">
-          <Stepper currentStep={activeStep} onStepClick={handleStepClick} />
+      {/* Stepper — mis en evidence pour permettre la navigation libre entre
+          etapes (Tache 1 + 2). Largeur etendue + padding genereux. */}
+      <div className="sticky top-12 z-30 glass border-b border-white/[0.08] rounded-none backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-4 py-4 sm:py-5">
+          <Stepper
+            currentStep={activeStep}
+            onStepClick={handleStepClick}
+            stepReady={stepReady}
+          />
         </div>
       </div>
 
@@ -134,9 +150,9 @@ export default function PipelineLayout({
           </NeonButton>
           <NeonButton
             onClick={handleNext}
-            disabled={nextDisabled}
+            disabled={isLastStep}
             icon={<ArrowRight size={14} />}
-            title={nextBlockReason ?? undefined}
+            title={nextHint ?? undefined}
           >
             Continuer
           </NeonButton>

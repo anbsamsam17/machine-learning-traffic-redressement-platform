@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/api-url";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import Link from "next/link";
 import {
   Play,
   Square,
@@ -14,6 +15,9 @@ import {
   Cpu,
   ScrollText,
   ChevronRight,
+  Database,
+  Settings2,
+  ArrowRight,
 } from "lucide-react";
 import {
   LineChart,
@@ -244,21 +248,20 @@ export default function TrainingPage() {
   }
 
   async function handleStartTraining() {
-    // APP-P1-7: Hard guards — fail loudly with a toast instead of letting the
-    // API fail or bouncing the user back silently via a redirect.
+    // Tache 1 : on n'auto-redirige plus l'utilisateur. On informe via toast
+    // mais on le laisse sur la page — il peut naviguer via le stepper en
+    // haut s'il le souhaite. L'empty-state inline sur la page fournit deja
+    // un bouton direct vers l'etape manquante.
     if (!sessionId) {
-      toast.error("Pas de session active. Importe d'abord un fichier sur l'etape Donnees.");
-      router.push("/donnees");
+      toast.error("Pas de session active. Importe un fichier via l'etape Donnees.");
       return;
     }
     if (!mappingValidated) {
       toast.error("Valide d'abord le mapping des colonnes sur l'etape Donnees.");
-      router.push("/donnees");
       return;
     }
     if (!trainingConfig) {
-      toast.error("Aucune configuration trouvee. Retourne a l'etape Configuration.");
-      router.push("/config");
+      toast.error("Aucune configuration trouvee. Passe par l'etape Configuration.");
       return;
     }
     const dir = localOutputDir.trim();
@@ -398,6 +401,49 @@ export default function TrainingPage() {
         visible={showSuccessBanner}
         onClose={() => setShowSuccessBanner(false)}
       />
+
+      {/* Empty-state — prerequis manquants (Tache 1).
+          On rend la page mais on guide l'utilisateur vers les etapes
+          manquantes sans le forcer a y aller. */}
+      {(!sessionId || !mappingValidated || !trainingConfig) && status === "idle" && (
+        <GlowCard glowColor="cyan">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-300 shrink-0">
+              {!sessionId || !mappingValidated ? (
+                <Database size={22} aria-hidden="true" />
+              ) : (
+                <Settings2 size={22} aria-hidden="true" />
+              )}
+            </div>
+            <div className="flex-1 space-y-1">
+              <h3 className="text-sm font-semibold text-white">
+                {!sessionId
+                  ? "Aucun jeu de donnees charge"
+                  : !mappingValidated
+                    ? "Mapping de colonnes a valider"
+                    : "Configuration manquante"}
+              </h3>
+              <p className="text-xs text-slate-300">
+                {!sessionId
+                  ? "Pour entrainer un modele, importe d'abord un jeu de donnees via Etape 1 — Donnees."
+                  : !mappingValidated
+                    ? "Valide le mapping des colonnes sur l'etape Donnees pour continuer."
+                    : "Definis une configuration d'entrainement sur l'etape Configuration."}
+              </p>
+            </div>
+            <Link
+              href={!sessionId || !mappingValidated ? "/donnees" : "/config"}
+              className="shrink-0"
+            >
+              <NeonButton icon={<ArrowRight size={14} />}>
+                {!sessionId || !mappingValidated
+                  ? "Aller a Donnees"
+                  : "Aller a Configuration"}
+              </NeonButton>
+            </Link>
+          </div>
+        </GlowCard>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">
