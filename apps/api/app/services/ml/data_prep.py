@@ -3,10 +3,24 @@
 Exact reproduction of ``prepare_training_data()`` from
 ``xScripts/CreateMDL_TV.py`` / ``CreateMDL_PL.py``, unified via
 ``ModelTypeConfig``.
+
+Phase 2A / 2B additions (all opt-in via config flags — defaults preserve
+the original behaviour):
+
+* P2A.4 – continuous sample weights ``log1p(TMJOBCTV)`` instead of the
+  binary flag-based weighting. Sum is renormalised to ``N_train`` to keep
+  the effective learning rate stable.
+* P2A.5 – target transform ``log1p(TxPen)`` applied BEFORE normalisation.
+  The flag is round-tripped via the artifact ``training_config`` dict so
+  evaluation can apply ``expm1`` at inference.
+* P2B.1 – derived feature ``ratio_PLTV = TMJOFCDPL / max(TMJOFCDTV, 1)``.
+* P2B.2 – per-column ``log1p`` augmentation under ``log_<col>``.
+* P2B.3 – one-hot expansion of ``functional_class`` into ``fc_1..fc_5``.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -14,6 +28,12 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from .types import ModelTypeConfig
+
+logger = logging.getLogger(__name__)
+
+# Functional class levels we materialise as one-hot columns. The HERE
+# road-network spec defines exactly five levels (1 = highway … 5 = local).
+_FUNCTIONAL_CLASS_LEVELS: tuple[int, ...] = (1, 2, 3, 4, 5)
 
 
 def _resolve_aliases(
@@ -83,6 +103,117 @@ def _apply_year_mapping(
     return df
 
 
+# ---------------------------------------------------------------------------
+# P2B.1 / P2B.2 / P2B.3 — feature engineering helpers
+# ---------------------------------------------------------------------------
+
+def _fe_settings(
+    type_config: ModelTypeConfig, config: dict[str, Any]
+) -> dict[str, Any]:
+    """Resolve feature-engineering flags from *type_config* and *config*.
+
+    The config dict can either nest the flags under ``feature_engineering``
+    (preferred — matches the task spec) or expose them at the top level.
+    Either form silently falls back to ``ModelTypeConfig`` defaults so
+    existing callers behave unchanged.
+    """
+    fe = dict(config.get("feature_engineering") or {})
+
+    def _get(key: str, default: Any) -> Any:
+        if key in fe:
+            return fe[key]
+        if key in config:
+            return config[key]
+        return default
+
+    return {
+        "add_pl_tv_ratio": bool(
+            _get("add_pl_tv_ratio", type_config.add_pl_tv_ratio)
+        ),
+        "log_transform_cols": list(
+            _get("log_transform_cols", type_config.log_transform_cols)
+        ),
+        "one_hot_functional_class": bool(
+            _get(
+                "one_hot_functional_class",
+                type_config.one_hot_functional_class,
+            )
+        ),
+    }
+
+
+def _add_pl_tv_ratio(df: pd.DataFrame) -> pd.DataFrame:
+    """P2B.1 — add ``ratio_PLTV = TMJOFCDPL / max(TMJOFCDTV, 1)``."""
+    if "TMJOFCDPL" not in df.columns or "TMJOFCDTV" not in df.columns:
+        logger.debug(
+            "ratio_PLTV skipped: missing TMJOFCDPL or TMJOFCDTV (have=%s)",
+            sorted(df.columns.tolist()),
+        )
+        return df
+
+    df = df.copy()
+    pl = pd.to_numeric(df["TMJOFCDPL"], errors="coerce")
+    tv = pd.to_numeric(df["TMJOFCDTV"], errors="coerce")
+    # Guard against zero / NaN denominators: floor to 1.
+    denom = tv.where(tv >= 1.0, 1.0)
+    df["ratio_PLTV"] = (pl / denom).astype(float)
+    return df
+
+
+def _apply_log_transform_cols(
+    df: pd.DataFrame, cols: list[str]
+) -> pd.DataFrame:
+    """P2B.2 — for each col in *cols* add ``log_<col> = log1p(col)``."""
+    if not cols:
+        return df
+
+    new_cols: dict[str, pd.Series] = {}
+    for col in cols:
+        if col not in df.columns:
+            logger.debug("log_transform skipped: column '%s' not found", col)
+            continue
+        values = pd.to_numeric(df[col], errors="coerce")
+        # log1p is only defined for x >= -1; clip negatives to 0 so the
+        # transform never produces NaN purely because of bad source data.
+        values = values.where(values >= 0, 0)
+        new_cols[f"log_{col}"] = np.log1p(values)
+
+    if not new_cols:
+        return df
+
+    df = df.copy()
+    for name, series in new_cols.items():
+        df[name] = series
+    return df
+
+
+def _one_hot_functional_class(df: pd.DataFrame) -> pd.DataFrame:
+    """P2B.3 — expand integer ``functional_class`` into ``fc_1..fc_5``."""
+    if "functional_class" not in df.columns:
+        logger.debug("one_hot_functional_class skipped: column missing")
+        return df
+
+    df = df.copy()
+    fc = pd.to_numeric(df["functional_class"], errors="coerce")
+    for level in _FUNCTIONAL_CLASS_LEVELS:
+        df[f"fc_{level}"] = (fc == level).astype(int)
+    df = df.drop(columns=["functional_class"])
+    return df
+
+
+def _apply_feature_engineering(
+    df: pd.DataFrame, fe: dict[str, Any]
+) -> pd.DataFrame:
+    """Apply the configured P2B.* feature-engineering steps in order."""
+    if fe["add_pl_tv_ratio"]:
+        df = _add_pl_tv_ratio(df)
+    if fe["log_transform_cols"]:
+        df = _apply_log_transform_cols(df, fe["log_transform_cols"])
+    if fe["one_hot_functional_class"]:
+        df = _one_hot_functional_class(df)
+    return df
+
+
 def prepare_training_data(
     df_raw: pd.DataFrame,
     type_config: ModelTypeConfig,
@@ -118,7 +249,13 @@ def prepare_training_data(
     # Step 4: year mapping
     gdf = _apply_year_mapping(gdf, config)
 
-    # Step 5: check required columns
+    # Step 5: feature engineering (P2B.1 / P2B.2 / P2B.3). Done BEFORE the
+    # required-column check so user-supplied input_cols can reference the
+    # newly derived columns (ratio_PLTV, log_*, fc_1..fc_5).
+    fe = _fe_settings(type_config, config)
+    gdf = _apply_feature_engineering(gdf, fe)
+
+    # Step 6: check required columns
     required_cols = [*input_cols, *output_cols]
     missing_cols = [c for c in required_cols if c not in gdf.columns]
     if missing_cols:
@@ -135,6 +272,26 @@ def prepare_training_data(
     return df
 
 
+def _compute_log_flow_weights(
+    df: pd.DataFrame,
+    flow_col: str,
+) -> np.ndarray | None:
+    """P2A.4 — continuous sample weights from ``log1p(flow_col)``.
+
+    Returns ``None`` if the column is missing so the caller can fall back
+    to the binary flag-based weighting (or no weighting at all).
+    """
+    if flow_col not in df.columns:
+        logger.debug(
+            "log_flow_weighting requested but column '%s' missing", flow_col
+        )
+        return None
+    flow = pd.to_numeric(df[flow_col], errors="coerce").fillna(0.0)
+    # log1p is monotonic and well-defined for flow >= 0; clip negatives.
+    flow = flow.where(flow >= 0, 0.0)
+    return np.log1p(flow.values).astype(float)
+
+
 def split_train_valid(
     df: pd.DataFrame,
     input_cols: list[str],
@@ -144,13 +301,27 @@ def split_train_valid(
     use_flag_comptage_weighting: bool = False,
     flag_comptage_col: str = "flag_comptage",
     flag_priority_weight: float = 4.0,
+    *,
+    use_log_flow_weighting: bool = False,
+    log_flow_weighting_col: str = "TMJOBCTV",
+    target_log_transform: bool = False,
 ) -> dict[str, Any]:
     """Split into train / valid arrays and compute sample weights.
 
     Returns a dict with keys:
         x_full, y, idx_train, idx_valid,
         y_train, y_valid,
-        train_sample_weight, valid_sample_weight
+        train_sample_weight, valid_sample_weight,
+        target_log_transform  (echo of the flag — eval needs it to expm1)
+
+    Notes
+    -----
+    * When ``use_log_flow_weighting`` is True it OVERRIDES the binary
+      ``flag_comptage`` weighting and computes ``w = log1p(<flow_col>)``,
+      re-scaled so ``sum(w) == N_train``.
+    * When ``target_log_transform`` is True, ``y_train`` and ``y_valid``
+      are replaced with ``log1p(y)`` BEFORE normalization (the caller is
+      expected to z-score the transformed target as usual).
     """
     x_full = df[input_cols].values.astype(float)
     y = df[output_cols].values.astype(float)
@@ -168,31 +339,54 @@ def split_train_valid(
         y_train = y
         y_valid = None
 
-    # Sample weights
-    train_sample_weight = None
-    valid_sample_weight = None
-    if use_flag_comptage_weighting and flag_comptage_col in df.columns:
+    # P2A.5 — target log transform. Applied AFTER the split so we never
+    # leak validation rows into the training target moments.
+    if target_log_transform:
+        # log1p is defined for y >= -1; TxPen is a percentage (0..100ish)
+        # so it should always satisfy that, but we clip defensively to
+        # avoid NaNs from pathological inputs.
+        y_train = np.log1p(np.clip(y_train, a_min=-0.999_999, a_max=None))
+        if y_valid is not None:
+            y_valid = np.log1p(np.clip(y_valid, a_min=-0.999_999, a_max=None))
+
+    # ---- Sample weights ----------------------------------------------------
+    train_sample_weight: np.ndarray | None = None
+    valid_sample_weight: np.ndarray | None = None
+
+    all_sw: np.ndarray | None = None
+    if use_log_flow_weighting:
+        all_sw = _compute_log_flow_weights(df, log_flow_weighting_col)
+    if all_sw is None and use_flag_comptage_weighting and flag_comptage_col in df.columns:
         flag_series = pd.to_numeric(df[flag_comptage_col], errors="coerce").fillna(0)
         all_sw = np.where(
             flag_series.values == 1, flag_priority_weight, 1.0
         ).astype(float)
+
+    if all_sw is not None:
         train_sample_weight = all_sw[idx_train]
         if idx_valid is not None:
             valid_sample_weight = all_sw[idx_valid]
 
         # Normalise so sum(weights) == N_train: keeps the effective LR
         # stable and lets EarlyStopping compare losses across weighted /
-        # non-weighted runs.
+        # non-weighted runs. Same renormalisation rule applied to both
+        # the binary flag scheme (P0.5) and the new log scheme (P2A.4).
         n = len(train_sample_weight)
         total = float(train_sample_weight.sum())
         if total > 0:
             train_sample_weight = train_sample_weight * (n / total)
+        else:
+            # Degenerate: all weights == 0. Fall back to uniform so we do
+            # not produce a fit-time crash inside Keras.
+            train_sample_weight = np.ones(n, dtype=float)
 
         if valid_sample_weight is not None:
             n_v = len(valid_sample_weight)
             total_v = float(valid_sample_weight.sum())
             if total_v > 0:
                 valid_sample_weight = valid_sample_weight * (n_v / total_v)
+            else:
+                valid_sample_weight = np.ones(n_v, dtype=float)
 
     return {
         "x_full": x_full,
@@ -203,4 +397,7 @@ def split_train_valid(
         "y_valid": y_valid,
         "train_sample_weight": train_sample_weight,
         "valid_sample_weight": valid_sample_weight,
+        # Echoed back so the training pipeline can stamp the artifact's
+        # training_config dict — evaluation reads it to apply expm1.
+        "target_log_transform": bool(target_log_transform),
     }

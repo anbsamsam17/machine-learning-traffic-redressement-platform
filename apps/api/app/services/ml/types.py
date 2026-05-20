@@ -7,6 +7,11 @@ is fully parametric on ``ModelTypeConfig``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+# Public literal alias so callers can statically type the scaler choice
+# (used by normalize() and persisted in the artifact training_config).
+ScalerType = Literal["standard", "robust"]
 
 
 @dataclass(frozen=True)
@@ -50,6 +55,45 @@ class ModelTypeConfig:
     default_dropout: float               = 0.05
     default_test_size: float             = 0.05
     default_high_flow_threshold: float   = 1000.0
+
+    # --- P2A.4 / P2A.5 / P2B feature engineering defaults --------------------
+    # All flags below are additive: defaults preserve pre-refactor behaviour
+    # so existing tests / smoke scripts keep passing.
+
+    # P2A.4: continuous weighting via log1p(TMJOBCTV) instead of the binary
+    # flag_comptage / flag_y2025. False -> original binary weighting.
+    use_log_flow_weighting: bool = False
+    # Column read for log flow weighting (capteur reference). Defaults to the
+    # TV BC column; PL pipeline can override via config dict.
+    log_flow_weighting_col: str = "TMJOBCTV"
+
+    # P2A.5: target transform log1p(TxPen). When True, y_train and y_valid
+    # are log1p-transformed BEFORE normalization. Evaluation re-applies expm1.
+    target_log_transform: bool = False
+
+    # P2B.1: ratio feature TMJOFCDPL / max(TMJOFCDTV, 1) — kept ON by default
+    # but only added when both source columns are present (silent skip
+    # otherwise) so it cannot break upstream data flows.
+    add_pl_tv_ratio: bool = True
+
+    # P2B.2: list of columns to additionally expose as log1p(col) under the
+    # name "log_<col>". Originals are NEVER dropped.
+    log_transform_cols: list[str] = field(default_factory=list)
+
+    # P2B.3: one-hot expansion for functional_class. When True, columns
+    # fc_1..fc_5 replace the integer functional_class column.
+    one_hot_functional_class: bool = False
+
+    # P2B.5: scaler choice for normalize(). "standard" (mean/std, default
+    # = unchanged behaviour) or "robust" (median, IQR/1.349).
+    scaler: ScalerType = "standard"
+
+    # P2B.7: learned categorical embedding for the year_mapped column. When
+    # True, build_model() routes year_mapped through a small Embedding layer
+    # instead of feeding it as a scalar through the Dense stack. Default
+    # False preserves the legacy Sequential graph so previously trained
+    # checkpoints keep loading without surprise.
+    use_year_embedding: bool = False
 
 
 # ── TV configuration ────────────────────────────────────────────────────────
