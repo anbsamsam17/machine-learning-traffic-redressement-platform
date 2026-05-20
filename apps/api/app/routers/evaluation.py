@@ -70,6 +70,11 @@ class EvalResponse(BaseModel):
     # Keys: "tol_in_pct" -> [low, high], "p80" -> [low, high], "r2" -> [low, high].
     # None when bootstrap was skipped (n<30 or bootstrap_iter=0).
     metrics_ci95: dict[str, list[float] | None] | None = None
+    # P1.2 — same metrics (tol_in_pct, p80, r2, n_samples) recomputed per
+    # TMJOBCTV bucket so we can see whether the model fails specifically
+    # on low- or high-traffic sensors. Empty list when TMJOBCTV/TMJABCTV
+    # is absent from the validation data.
+    metrics_by_tmja_bucket: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReportResponse(BaseModel):
@@ -337,6 +342,160 @@ def _metric_tol_in_pct(
     n_valid = int(valid.sum())
     n_in = int((obs[valid] == 1).sum())
     return 100.0 * n_in / n_valid
+
+
+# ---------------------------------------------------------------------------
+# P1.2 — Stratified metrics by TMJOBCTV bucket
+# ---------------------------------------------------------------------------
+#
+# A single global tol_in_pct hides the fact that a model can be excellent
+# on high-traffic sensors but disastrous on the low-traffic tail (or vice
+# versa). The audit plan asks for the same metrics broken down into four
+# canonical buckets of observed traffic volume so reviewers can see where
+# the model actually fails.
+_TMJA_BUCKETS: list[tuple[str, float, float]] = [
+    ("0-1k", 0.0, 1000.0),
+    ("1k-5k", 1000.0, 5000.0),
+    ("5k-20k", 5000.0, 20000.0),
+    ("20k+", 20000.0, float("inf")),
+]
+
+# Buckets below this row count get a warning flag but are NOT dropped — the
+# caller may still want to surface them (and the empty cell tells the user
+# their validation set lacks coverage in that range).
+_TMJA_LOW_SAMPLE_THRESHOLD = 10
+
+
+def _stratify_by_tmja(
+    df: pd.DataFrame,
+    flow_col: str,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> list[dict[str, Any]]:
+    """Compute (tol_in_pct, p80, r2, n_samples) per TMJOBCTV bucket.
+
+    Parameters
+    ----------
+    df
+        Enriched evaluation DataFrame. Must contain ``flow_col`` (the observed
+        traffic volume column, e.g. TMJOBCTV / TMJABCTV). When the column is
+        present we also try to read pre-computed ``Tolerance_IN_OUT``,
+        ``TMJABCTV`` and ``TVr`` columns for the tol_in_pct / p80 metrics —
+        when they are missing we silently fall back to the (y_true, y_pred)
+        arrays so the function still returns 4 rows.
+    flow_col
+        Name of the flow column actually present in ``df`` (resolved by the
+        caller via the same lookup used for hd_rmse).
+    y_true, y_pred
+        Global aligned arrays (same length as ``df``). Used for the per-bucket
+        R-squared and as a fall-back for p80 when TVr/TMJABCTV are absent.
+
+    Returns
+    -------
+    list of dicts, one per bucket, always in the canonical order
+    (0-1k, 1k-5k, 5k-20k, 20k+). Buckets with no rows still appear with
+    ``n_samples=0`` and NaN metrics so the front-end can render an empty cell
+    without special-casing missing buckets. Returns ``[]`` when ``flow_col``
+    is not in ``df.columns`` (caller logs a warning).
+    """
+    if flow_col not in df.columns:
+        return []
+
+    flows = pd.to_numeric(df[flow_col], errors="coerce").to_numpy(dtype=np.float64)
+    n_total = flows.shape[0]
+    if n_total == 0 or n_total != len(y_true) or n_total != len(y_pred):
+        return []
+
+    # Pre-resolve auxiliary columns once. Tolerance_IN_OUT carries the
+    # 1/2/3 codes already computed against the (TVrmin, TVrmax) envelope,
+    # so we just count code==1 per bucket. TMJABCTV/TVr power the relative
+    # error p80 the same way the global metric does.
+    tol_codes: np.ndarray | None = None
+    if "Tolerance_IN_OUT" in df.columns:
+        tol_codes = pd.to_numeric(
+            df["Tolerance_IN_OUT"], errors="coerce"
+        ).to_numpy(dtype=np.float64)
+
+    obs_p80_arr: np.ndarray | None = None
+    pred_p80_arr: np.ndarray | None = None
+    if "TMJABCTV" in df.columns and "TVr" in df.columns:
+        obs_p80_arr = pd.to_numeric(df["TMJABCTV"], errors="coerce").to_numpy(
+            dtype=np.float64
+        )
+        pred_p80_arr = pd.to_numeric(df["TVr"], errors="coerce").to_numpy(
+            dtype=np.float64
+        )
+
+    results: list[dict[str, Any]] = []
+    for label, lo, hi in _TMJA_BUCKETS:
+        if math.isinf(hi):
+            mask = np.isfinite(flows) & (flows >= lo)
+            range_repr: list[float | None] = [lo, None]
+        else:
+            mask = np.isfinite(flows) & (flows >= lo) & (flows < hi)
+            range_repr = [lo, hi]
+        n = int(mask.sum())
+
+        # tol_in_pct: count of Tolerance_IN_OUT == 1 (the un-weighted ratio
+        # matches what _metric_tol_in_pct returns globally).
+        tol_in_pct_val: float = float("nan")
+        tol_in_n_val = 0
+        if n > 0 and tol_codes is not None:
+            codes_b = tol_codes[mask]
+            valid = ~np.isnan(codes_b)
+            if valid.any():
+                tol_in_n_val = int((codes_b[valid] == 1).sum())
+                tol_in_pct_val = 100.0 * tol_in_n_val / int(valid.sum())
+
+        # p80 of relative error |obs - pred| / obs * 100.
+        p80_val: float = float("nan")
+        if n > 0:
+            if obs_p80_arr is not None and pred_p80_arr is not None:
+                obs_b = obs_p80_arr[mask]
+                pred_b = pred_p80_arr[mask]
+            else:
+                # Fall back to the raw model output when TVr/TMJABCTV are
+                # absent — same fall-back the global p80 bootstrap uses.
+                obs_b = np.asarray(y_true, dtype=np.float64)[mask]
+                pred_b = np.asarray(y_pred, dtype=np.float64)[mask]
+            finite = np.isfinite(obs_b) & np.isfinite(pred_b) & (obs_b != 0)
+            if finite.any():
+                err_rel = np.abs(
+                    (obs_b[finite] - pred_b[finite]) / obs_b[finite]
+                ) * 100.0
+                p80_val = float(np.nanpercentile(err_rel, 80))
+
+        # R-squared (always on y_true/y_pred — those are the model's own
+        # raw target, identical to what _metric_r2 sees globally).
+        r2_val: float = float("nan")
+        if n > 0:
+            yt_b = np.asarray(y_true, dtype=np.float64)[mask]
+            yp_b = np.asarray(y_pred, dtype=np.float64)[mask]
+            finite = np.isfinite(yt_b) & np.isfinite(yp_b)
+            if finite.sum() >= 2:  # need >=2 points for a meaningful variance
+                yt_v = yt_b[finite]
+                yp_v = yp_b[finite]
+                ss_res = float(np.sum((yt_v - yp_v) ** 2))
+                ss_tot = float(np.sum((yt_v - np.mean(yt_v)) ** 2))
+                if ss_tot > 0:
+                    r2_val = 1.0 - ss_res / ss_tot
+
+        entry: dict[str, Any] = {
+            "bucket": label,
+            "range": range_repr,
+            "n_samples": n,
+            "tol_in_n": tol_in_n_val,
+            "tol_in_pct": (
+                round(tol_in_pct_val, 2) if math.isfinite(tol_in_pct_val) else None
+            ),
+            "p80": round(p80_val, 4) if math.isfinite(p80_val) else None,
+            "r2": round(r2_val, 6) if math.isfinite(r2_val) else None,
+        }
+        if 0 < n < _TMJA_LOW_SAMPLE_THRESHOLD:
+            entry["low_sample_warning"] = True
+        results.append(entry)
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -954,6 +1113,7 @@ def _generate_html_report(
     df: pd.DataFrame | None = None,
     sensitivity_html: str | None = None,
     metrics_ci95: dict[str, list[float] | None] | None = None,
+    metrics_by_tmja_bucket: list[dict[str, Any]] | None = None,
 ) -> str:
     """Generate a self-contained HTML evaluation report matching the original Streamlit style.
 
@@ -1173,6 +1333,60 @@ def _generate_html_report(
     ]
     tbody_row = '<tr style="background:#eafaf2;font-weight:700;">' + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
 
+    # --- P1.2 Stratification table per TMJOBCTV bucket ---
+    if metrics_by_tmja_bucket:
+        _bucket_headers = [
+            "Bucket TMJOBCTV", "N", "Tol. inclus (N)", "Tol. inclus (%)",
+            "p80 err.rel (%)", "R&sup2;",
+        ]
+        _bucket_thead = (
+            "<tr>" + "".join(f"<th>{h}</th>" for h in _bucket_headers) + "</tr>"
+        )
+        _bucket_rows: list[str] = []
+        for _b in metrics_by_tmja_bucket:
+            _warn = bool(_b.get("low_sample_warning"))
+            _row_style = (
+                ' style="background:#fff7ec;"' if _warn else ""
+            )
+            _label_cell = _html.escape(str(_b.get("bucket", "-")))
+            if _warn:
+                _label_cell += (
+                    ' <small style="color:#b97a00;font-weight:600;" '
+                    'title="Moins de 10 echantillons — fiabilite limitee.">'
+                    '(n&lt;10)</small>'
+                )
+            _bucket_rows.append(
+                f"<tr{_row_style}>"
+                f"<td>{_label_cell}</td>"
+                f"<td>{int(_b.get('n_samples', 0))}</td>"
+                f"<td>{int(_b.get('tol_in_n', 0))}</td>"
+                f"<td>{_fmt(_b.get('tol_in_pct'))}</td>"
+                f"<td>{_fmt(_b.get('p80'))}</td>"
+                f"<td>{_fmt(_b.get('r2'), digits=4)}</td>"
+                f"</tr>"
+            )
+        bucket_table_html = (
+            '  <h2>Metriques stratifiees par tranche de TMJOBCTV</h2>\n'
+            '  <p class="hint">Memes metriques recalculees sur 4 buckets de '
+            'volume de trafic observe. Permet de detecter un modele performant '
+            'globalement mais defaillant sur les capteurs faible/forte densite. '
+            'Une ligne sur fond orange indique moins de 10 echantillons '
+            '(metriques peu fiables).</p>\n'
+            '  <div class="panel">\n'
+            '    <table id="tmjaBucketTable" class="display" style="width:100%">\n'
+            f'      <thead>{_bucket_thead}</thead>\n'
+            f'      <tbody>{"".join(_bucket_rows)}</tbody>\n'
+            '    </table>\n'
+            '  </div>\n'
+        )
+    else:
+        bucket_table_html = (
+            '  <h2>Metriques stratifiees par tranche de TMJOBCTV</h2>\n'
+            '  <p class="hint" style="color:#888;font-style:italic;">'
+            'Stratification indisponible : colonne TMJOBCTV (ou TMJABCTV) '
+            'absente des donnees de validation.</p>\n'
+        )
+
     # --- Assemble full HTML ---
     html = f"""<!doctype html>
 <html>
@@ -1257,6 +1471,7 @@ def _generate_html_report(
     </table>
   </div>
 
+{bucket_table_html}
   <h2>Barplot - TMJOBCTV vs TVr (validation)</h2>
   <div class="panel plot-wrap">
     {bar_html}
@@ -1289,6 +1504,15 @@ $(document).ready(function(){{
     $('#outlierTable').DataTable({{
       pageLength: 25,
       order: [[7, 'desc']],
+    }});
+  }}
+  if ($('#tmjaBucketTable').length) {{
+    // 4 buckets total — no pagination / search / info needed.
+    $('#tmjaBucketTable').DataTable({{
+      paging: false,
+      searching: false,
+      info: false,
+      ordering: false,
     }});
   }}
 }});
@@ -1845,6 +2069,32 @@ async def run_evaluation(
         else:
             metrics_ci95["tol_in_pct"] = None
 
+    # P1.2 — Stratified metrics per TMJOBCTV bucket. Purely additive: the
+    # global metrics above are untouched. When neither TMJOBCTV nor its
+    # legacy alias TMJABCTV is available we log a warning and persist an
+    # empty list (front-end renders "stratification indisponible").
+    metrics_by_tmja_bucket: list[dict[str, Any]] = []
+    strat_flow_col: str | None = None
+    for _cand in ("TMJOBCTV", "TMJABCTV"):
+        if _cand in report_df.columns:
+            strat_flow_col = _cand
+            break
+    if strat_flow_col is None:
+        logger.warning(
+            "TMJA bucket stratification disabled: ni TMJOBCTV ni TMJABCTV "
+            "trouve dans les donnees de validation"
+        )
+    else:
+        try:
+            metrics_by_tmja_bucket = _stratify_by_tmja(
+                report_df, strat_flow_col, y_true, y_pred,
+            )
+        except Exception as exc:  # noqa: BLE001 — non-blocking by design
+            logger.warning(
+                "TMJA stratification failed (non-blocking): %s", exc,
+            )
+            metrics_by_tmja_bucket = []
+
     # Build sensitivity analysis section
     sensitivity_html = None
     try:
@@ -1876,6 +2126,7 @@ async def run_evaluation(
         df=report_df,
         sensitivity_html=sensitivity_html,
         metrics_ci95=metrics_ci95,
+        metrics_by_tmja_bucket=metrics_by_tmja_bucket,
     )
 
     # Store in session
@@ -1886,6 +2137,11 @@ async def run_evaluation(
     session_manager.store_data(body.session_id, "eval_model_name", model_name)
     if metrics_ci95 is not None:
         session_manager.store_data(body.session_id, "eval_metrics_ci95", metrics_ci95)
+    # P1.2 — always persist, even when empty list, so consumers can rely
+    # on the key existing after a successful /run.
+    session_manager.store_data(
+        body.session_id, "metrics_by_tmja_bucket", metrics_by_tmja_bucket,
+    )
 
     # P1.4 — persist per-model evaluation artifacts so /api/evaluation/compare
     # can pair predictions from two different runs against the SAME observation
@@ -1914,6 +2170,7 @@ async def run_evaluation(
         metrics=metrics,
         report_url=f"/api/evaluation/report/{body.session_id}",
         metrics_ci95=metrics_ci95,
+        metrics_by_tmja_bucket=metrics_by_tmja_bucket,
     )
 
 
@@ -1936,6 +2193,11 @@ async def get_report(
         model_name = session_manager.get_data(session_id, "eval_model_name", "modele")
         y_true = np.array(session_manager.get_data(session_id, "eval_y_true", []))
         y_pred = np.array(session_manager.get_data(session_id, "eval_y_pred", []))
+        # P1.2 — replay the persisted stratification if available so the
+        # regenerated fallback report still shows the bucket table.
+        cached_buckets = session_manager.get_data(
+            session_id, "metrics_by_tmja_bucket", []
+        )
 
         report_html = _generate_html_report(
             metrics=metrics,
@@ -1943,6 +2205,7 @@ async def get_report(
             training_config=None,
             y_true=y_true,
             y_pred=y_pred,
+            metrics_by_tmja_bucket=cached_buckets,
         )
 
     return ReportResponse(session_id=session_id, report_html=report_html)
