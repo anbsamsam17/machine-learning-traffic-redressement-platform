@@ -1687,6 +1687,27 @@ async def run_evaluation(
             "Set to 0 to skip entirely. When non-zero, must lie in [100, 10000]."
         ),
     ),
+    tta_iter: int = Query(
+        1,
+        ge=1,
+        le=20,
+        description=(
+            "P4.7 — Test-time augmentation iterations. Default 1 disables TTA "
+            "(behaviour identical to a single noise-free model.predict call). "
+            "Values > 1 average n forward passes with small Gaussian noise "
+            "injected in normalized feature space."
+        ),
+    ),
+    tta_noise_std: float = Query(
+        0.01,
+        ge=0.0,
+        le=0.1,
+        description=(
+            "P4.7 — Standard deviation of the Gaussian noise added in normalized "
+            "feature space (1.0 == one standard deviation per feature). Ignored "
+            "when tta_iter == 1."
+        ),
+    ),
     current_user: UserRecord = Depends(get_current_user),
 ) -> EvalResponse:
     """Run model evaluation on validation data.
@@ -1920,8 +1941,21 @@ async def run_evaluation(
     # Normalize and predict
     x_std_safe = np.where(x_std == 0, 1.0, x_std)
     X_norm = (X - x_mean) / x_std_safe
-    # B4: predict can take seconds on validation data sets - offload
-    y_pred_norm = (await asyncio.to_thread(model.predict, X_norm, verbose=0)).flatten()
+    # B4: predict can take seconds on validation data sets - offload.
+    # P4.7: route through apply_model_tta. With tta_iter=1 (the default) the
+    # function calls model.predict exactly once with no noise, so behaviour is
+    # bit-identical to the legacy path. Larger tta_iter averages predictions
+    # over several noisy forward passes for smoother inference.
+    from ..services.ml.evaluation_pipeline import apply_model_tta
+    y_pred_norm = (
+        await asyncio.to_thread(
+            apply_model_tta,
+            model,
+            X_norm.astype(np.float32),
+            tta_iter,
+            tta_noise_std,
+        )
+    ).flatten()
     y_pred = y_pred_norm * y_std + y_mean
 
     # Compute basic API metrics. The HD/LD split (hd_rmse/ld_rmse) must be
@@ -2135,6 +2169,10 @@ async def run_evaluation(
     session_manager.store_data(body.session_id, "eval_y_pred", y_pred.tolist())
     session_manager.store_data(body.session_id, "eval_report_html", report_html)
     session_manager.store_data(body.session_id, "eval_model_name", model_name)
+    # P4.7 — persist TTA parameters so the report (and any downstream
+    # auditing) can show whether TTA was used and with what intensity.
+    tta_params = {"n_iter": int(tta_iter), "noise_std": float(tta_noise_std)}
+    session_manager.store_data(body.session_id, "eval_tta", tta_params)
     if metrics_ci95 is not None:
         session_manager.store_data(body.session_id, "eval_metrics_ci95", metrics_ci95)
     # P1.2 — always persist, even when empty list, so consumers can rely
@@ -2149,7 +2187,14 @@ async def run_evaluation(
     session_manager.store_data(
         body.session_id,
         f"eval_artifact:{model_name}",
-        {"y_true": y_true.tolist(), "y_pred": y_pred.tolist()},
+        {
+            "y_true": y_true.tolist(),
+            "y_pred": y_pred.tolist(),
+            # P4.7 — track the TTA settings used for THIS artifact so paired
+            # comparisons (McNemar) can flag when two runs used different
+            # inference regimes.
+            "tta": tta_params,
+        },
     )
     # Maintain a roster of evaluated models in this session so consumers can
     # enumerate them without scanning every key in the backend.
@@ -2159,9 +2204,10 @@ async def run_evaluation(
         session_manager.store_data(body.session_id, "eval_model_roster", roster)
 
     logger.info(
-        "Evaluation done: session=%s model=%s RMSE=%.4f R2=%.4f GEH<5=%.1f%% bootstrap_iter=%d",
+        "Evaluation done: session=%s model=%s RMSE=%.4f R2=%.4f GEH<5=%.1f%% "
+        "bootstrap_iter=%d tta_iter=%d tta_noise_std=%.4f",
         body.session_id, model_name, metrics.rmse, metrics.r_squared, metrics.geh_pct_below_5,
-        bootstrap_iter,
+        bootstrap_iter, tta_iter, tta_noise_std,
     )
 
     return EvalResponse(

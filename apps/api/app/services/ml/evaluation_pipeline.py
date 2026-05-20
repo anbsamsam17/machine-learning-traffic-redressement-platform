@@ -49,6 +49,74 @@ def _resolve_eval_aliases(df: pd.DataFrame, type_config: ModelTypeConfig) -> pd.
 
 
 # ---------------------------------------------------------------------------
+# Test-time augmentation (TTA) — P4.7
+# ---------------------------------------------------------------------------
+
+def apply_model_tta(
+    model: Any,
+    x_norm: np.ndarray,
+    n_iter: int = 5,
+    noise_std: float = 0.01,
+    seed: int = 1750,
+) -> np.ndarray:
+    """Run inference with test-time augmentation (Gaussian noise + averaging).
+
+    The model is queried ``n_iter`` times. For ``n_iter == 1`` (the default
+    used by the API when TTA is OFF) the function performs a single
+    noise-free ``model.predict`` call and is therefore numerically identical
+    to vanilla inference — that's how we keep TTA fully backward-compatible.
+
+    When ``n_iter > 1``, each iteration adds zero-mean Gaussian noise of std
+    ``noise_std`` to the normalized input ``x_norm``. The seed sequence is
+    derived from ``seed + i`` so the result is fully reproducible across
+    runs. Predictions are averaged across iterations.
+
+    Parameters
+    ----------
+    model : keras.Model
+        A trained Keras/TF model accepting a ``(batch, n_features)`` array.
+    x_norm : np.ndarray
+        Input features ALREADY normalized (z-scored). Noise is therefore
+        expressed in units of one standard deviation: ``noise_std=0.01``
+        means a 1% smoothing of each feature.
+    n_iter : int, default 5
+        Number of forward passes. Must be ``>= 1``.
+    noise_std : float, default 0.01
+        Standard deviation of the additive Gaussian noise (in normalized
+        space). Ignored when ``n_iter == 1``.
+    seed : int, default 1750
+        Base seed for ``np.random.default_rng`` — matches the project-wide
+        reproducibility seed.
+
+    Returns
+    -------
+    np.ndarray
+        Mean prediction across the ``n_iter`` forward passes, with shape
+        ``model.predict(x_norm).shape``.
+    """
+    if n_iter < 1:
+        raise ValueError(f"n_iter must be >= 1, got {n_iter}")
+
+    x_norm = np.asarray(x_norm, dtype=np.float32)
+
+    # Fast path: a single noise-free call. Must be bit-identical to the
+    # legacy `model.predict(x_norm, verbose=0)` so TTA stays opt-in.
+    if n_iter == 1:
+        return model.predict(x_norm, verbose=0)
+
+    preds_sum: np.ndarray | None = None
+    for i in range(n_iter):
+        rng = np.random.default_rng(seed + i)
+        noise = rng.normal(0.0, noise_std, x_norm.shape).astype(np.float32)
+        x_aug = x_norm + noise
+        y_i = model.predict(x_aug, verbose=0)
+        preds_sum = y_i if preds_sum is None else preds_sum + y_i
+
+    assert preds_sum is not None  # n_iter >= 2 guarantees this
+    return preds_sum / float(n_iter)
+
+
+# ---------------------------------------------------------------------------
 # apply_model (unified TV / PL)
 # ---------------------------------------------------------------------------
 
