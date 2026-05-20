@@ -151,10 +151,9 @@ export function SamCoachingPanel() {
         <div className="flex-1 min-w-0 space-y-4">
           <header className="space-y-1 pr-8">
             <h2 className="text-base sm:text-lg font-semibold text-text leading-tight">
-              Bonjour ! Voici mes recommandations pour ton grid…
+              Voici mes recommandations pour ton grid…
             </h2>
             <p className="text-xs text-text-muted">
-              Calibration suggérée en synthèse de l&apos;audit Phase 1 → 5.
               Tous les champs ci-dessous ont une info-bulle dédiée
               (icône&nbsp;
               <span className="inline-block size-3 rounded-full border border-accent/50 align-middle" />

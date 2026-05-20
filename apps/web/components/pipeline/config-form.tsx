@@ -182,7 +182,7 @@ function Section({
   const panelId = `section-panel-${id}`;
   const btnId = `section-trigger-${id}`;
   return (
-    <div className="surface-elevated overflow-hidden">
+    <div className="surface-elevated overflow-visible">
       <h3 className="m-0">
         <button
           id={btnId}
@@ -497,6 +497,89 @@ function OptionalNumberInput({
   );
 }
 
+// ─── Optional slider input (toggle null vs value, slider when enabled) ──────
+function OptionalSliderInput({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  defaultValue,
+  help,
+  tooltipKey,
+  format,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  min: number;
+  max: number;
+  step: number;
+  defaultValue: number;
+  help?: string;
+  tooltipKey?: keyof typeof fieldTooltips;
+  format?: (v: number) => string;
+}) {
+  const enabled = value !== null;
+  const displayed = enabled ? (value as number) : defaultValue;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-medium text-text-muted flex items-center gap-1.5 min-w-0">
+          <span className="truncate">{label}</span>
+          {tooltipKey && fieldTooltips[tooltipKey] && (
+            <FieldInfo
+              purpose={fieldTooltips[tooltipKey].purpose}
+              recommendation={fieldTooltips[tooltipKey].recommendation}
+              label={label}
+            />
+          )}
+        </label>
+        <span
+          className={cn(
+            "text-xs font-mono tabular-nums px-2 py-0.5 rounded shrink-0",
+            enabled
+              ? "text-accent bg-accent-subtle"
+              : "text-text-subtle bg-bg-subtle"
+          )}
+        >
+          {enabled
+            ? format
+              ? format(displayed)
+              : displayed.toFixed(2)
+            : "désactivé"}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => onChange(e.target.checked ? defaultValue : null)}
+            className="w-3.5 h-3.5 accent-accent"
+          />
+          <span className="text-[11px] text-text-muted">Activer</span>
+        </label>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={displayed}
+          disabled={!enabled}
+          onChange={(e) => onChange(parseFloat(e.target.value))}
+          className={cn(
+            "flex-1 h-1 rounded-full appearance-none bg-bg-subtle cursor-pointer accent-accent",
+            !enabled && "opacity-40 cursor-not-allowed"
+          )}
+        />
+      </div>
+      {help && <p className="text-[10px] text-text-subtle">{help}</p>}
+    </div>
+  );
+}
+
 // ─── Slider with value display ──────────────────────────────────────────────
 function SliderInput({
   label,
@@ -547,6 +630,93 @@ function SliderInput({
       />
       {help && <p className="text-[10px] text-text-subtle">{help}</p>}
     </div>
+  );
+}
+
+// ─── ML advanced — group + card helpers (clean spacing & no overlap) ───────
+function MlGroup({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2 pt-3 first:pt-0 first:border-0 border-t border-border">
+      <h4 className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">
+        {title}
+      </h4>
+      {hint && (
+        <p className="text-[11px] text-text-subtle leading-snug">{hint}</p>
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{children}</div>
+    </div>
+  );
+}
+
+function MlCard({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-md border border-border bg-bg-elevated/60 p-3 min-w-0",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+// Variant of <Toggle> that lays out as a full row (label left, switch right)
+// — better for grid cells where the label needs to wrap.
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+  tooltipKey,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  tooltipKey?: keyof typeof fieldTooltips;
+}) {
+  const tip = tooltipKey ? fieldTooltips[tooltipKey] : undefined;
+  return (
+    <label className="flex items-center justify-between gap-3 cursor-pointer group select-none min-w-0">
+      <span className="flex items-center gap-1.5 text-xs text-text-muted group-hover:text-text transition-colors min-w-0">
+        <span className="min-w-0 break-words">{label}</span>
+        {tip && (
+          <FieldInfo
+            purpose={tip.purpose}
+            recommendation={tip.recommendation}
+            label={label}
+          />
+        )}
+      </span>
+      <span className="relative inline-flex shrink-0">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="sr-only peer"
+        />
+        <span className="w-8 h-[18px] rounded-full bg-bg-subtle peer-checked:bg-accent transition-colors" />
+        <span
+          className={cn(
+            "absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform duration-200",
+            checked && "translate-x-[14px]"
+          )}
+        />
+      </span>
+    </label>
   );
 }
 
@@ -1358,7 +1528,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
         {/* ───── 4. Avance ───── */}
         <Section
           id="advanced"
-          title="Avance"
+          title="Paramètres Avancés"
           icon={<Scale />}
           defaultOpen={false}
         >
@@ -1520,7 +1690,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
         {/* ───── 5. Phase 2A / 3 / 4 — Régularisation et architecture ML ───── */}
         <Section
           id="ml-advanced"
-          title="Phase 2/3 — ML avancé"
+          title="Paramètres Machine Learning Avancés"
           icon={<FlaskConical />}
           defaultOpen={false}
           badge="Phase 2A/3/4"
@@ -1532,128 +1702,140 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             version Phase 0-1.
           </p>
 
-          {/* Optimiseur et régularisation L2 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <RadioGroup
-              label="Optimiseur"
-              options={OPTIMIZER_OPTIONS}
-              value={optimizer}
-              onChange={setOptimizer}
-              tooltipKey="optimizer"
-            />
-            <SliderInput
-              label="Weight decay (L2 découplée)"
-              value={weightDecay}
-              onChange={setWeightDecay}
-              min={0}
-              max={0.01}
-              step={0.0001}
-              format={(v) => v.toExponential(1)}
-              help="Ignoré si optimiseur = adam. Plage 0..1e-2."
-              tooltipKey="weight_decay"
-            />
-          </div>
+          {/* Groupe : Optimiseur & régularisation */}
+          <MlGroup title="Optimiseur & régularisation">
+            <MlCard>
+              <RadioGroup
+                label="Optimiseur"
+                options={OPTIMIZER_OPTIONS}
+                value={optimizer}
+                onChange={setOptimizer}
+                tooltipKey="optimizer"
+              />
+            </MlCard>
+            <MlCard>
+              <SliderInput
+                label="Weight decay (L2 découplée)"
+                value={weightDecay}
+                onChange={setWeightDecay}
+                min={0}
+                max={0.01}
+                step={0.0001}
+                format={(v) => v.toExponential(1)}
+                help="Ignoré si optimiseur = adam. Plage 0..1e-2."
+                tooltipKey="weight_decay"
+              />
+            </MlCard>
+            <MlCard>
+              <OptionalSliderInput
+                label="Gradient clipnorm"
+                value={clipnorm}
+                onChange={setClipnorm}
+                min={0.1}
+                max={5.0}
+                step={0.1}
+                defaultValue={1.0}
+                format={(v) => v.toFixed(1)}
+                help="Plafonne la norme du gradient. Plage 0.1..5.0."
+                tooltipKey="clipnorm"
+              />
+            </MlCard>
+            <MlCard>
+              <RadioGroup
+                label="Couche de normalisation"
+                options={NORM_LAYER_OPTIONS}
+                value={normLayer}
+                onChange={setNormLayer}
+                tooltipKey="norm_layer"
+                help="`none` = legacy use_batch_norm pilote le comportement."
+              />
+            </MlCard>
+          </MlGroup>
 
-          {/* Skip connection + dropout schedule */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
-            <Toggle
-              label="Skip connection (entrée → dernière couche)"
-              checked={useSkipConnection}
-              onChange={setUseSkipConnection}
-              tooltipKey="use_skip_connection"
-            />
-            <RadioGroup
-              label="Schéma de dropout"
-              options={DROPOUT_SCHEDULE_OPTIONS}
-              value={dropoutSchedule}
-              onChange={setDropoutSchedule}
-              tooltipKey="dropout_schedule"
-            />
-          </div>
+          {/* Groupe : Architecture */}
+          <MlGroup title="Architecture">
+            <MlCard>
+              <ToggleRow
+                label="Skip connection (entrée → dernière couche)"
+                checked={useSkipConnection}
+                onChange={setUseSkipConnection}
+                tooltipKey="use_skip_connection"
+              />
+            </MlCard>
+            <MlCard>
+              <RadioGroup
+                label="Schéma de dropout"
+                options={DROPOUT_SCHEDULE_OPTIONS}
+                value={dropoutSchedule}
+                onChange={setDropoutSchedule}
+                tooltipKey="dropout_schedule"
+              />
+            </MlCard>
+            <MlCard>
+              <ToggleRow
+                label="Tête multi-quantile (q=0.2/0.5/0.8)"
+                checked={useQuantileHead}
+                onChange={setUseQuantileHead}
+                tooltipKey="use_quantile_head"
+              />
+            </MlCard>
+            <MlCard>
+              <ToggleRow
+                label="Embedding catégoriel pour l'année"
+                checked={useYearEmbedding}
+                onChange={setUseYearEmbedding}
+                tooltipKey="use_year_embedding"
+              />
+            </MlCard>
+          </MlGroup>
 
-          {/* Clipnorm + Norm layer */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
-            <OptionalNumberInput
-              label="Gradient clipnorm"
-              value={clipnorm}
-              onChange={setClipnorm}
-              min={0}
-              step={0.1}
-              placeholder="désactivé"
-              help="Plafonne la norme du gradient (ex: 1.0)."
-              tooltipKey="clipnorm"
-            />
-            <RadioGroup
-              label="Couche de normalisation"
-              options={NORM_LAYER_OPTIONS}
-              value={normLayer}
-              onChange={setNormLayer}
-              tooltipKey="norm_layer"
-              help="`none` = legacy use_batch_norm pilote le comportement."
-            />
-          </div>
+          {/* Groupe : Stratégie d'entraînement */}
+          <MlGroup title="Stratégie d'entraînement">
+            <MlCard>
+              <SliderInput
+                label="Nombre de seeds par combinaison (n_seeds)"
+                value={nSeeds}
+                onChange={(v) => setNSeeds(Math.round(v))}
+                min={1}
+                max={10}
+                step={1}
+                format={(v) => `${Math.round(v)}`}
+                help="1 = comportement legacy. 3-5 mesure la variance."
+                tooltipKey="n_seeds"
+              />
+            </MlCard>
+            <MlCard>
+              <ToggleRow
+                label="log1p sur la cible (target_log_transform)"
+                checked={targetLogTransform}
+                onChange={setTargetLogTransform}
+                tooltipKey="target_log_transform"
+              />
+            </MlCard>
+            <MlCard>
+              <ToggleRow
+                label="Apprentissage curriculaire (faible → fort débit)"
+                checked={useCurriculum}
+                onChange={setUseCurriculum}
+                tooltipKey="use_curriculum"
+              />
+            </MlCard>
+            <MlCard>
+              <ToggleRow
+                label="Hard example mining (boost erreurs > 15 %)"
+                checked={useHardExampleMining}
+                onChange={setUseHardExampleMining}
+                tooltipKey="use_hard_example_mining"
+              />
+            </MlCard>
+          </MlGroup>
 
-          {/* Multi-seed et tête quantile */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
-            <SliderInput
-              label="Nombre de seeds par combinaison (n_seeds)"
-              value={nSeeds}
-              onChange={(v) => setNSeeds(Math.round(v))}
-              min={1}
-              max={10}
-              step={1}
-              format={(v) => `${Math.round(v)}`}
-              help="1 = comportement legacy. 3-5 mesure la variance."
-              tooltipKey="n_seeds"
-            />
-            <Toggle
-              label="Tête multi-quantile (q=0.2/0.5/0.8)"
-              checked={useQuantileHead}
-              onChange={setUseQuantileHead}
-              tooltipKey="use_quantile_head"
-            />
-          </div>
-
-          {/* Embedding année + log target */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
-            <Toggle
-              label="Embedding catégoriel pour l'année"
-              checked={useYearEmbedding}
-              onChange={setUseYearEmbedding}
-              tooltipKey="use_year_embedding"
-            />
-            <Toggle
-              label="log1p sur la cible (target_log_transform)"
-              checked={targetLogTransform}
-              onChange={setTargetLogTransform}
-              tooltipKey="target_log_transform"
-            />
-          </div>
-
-          {/* Curriculum et hard example mining */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
-            <Toggle
-              label="Apprentissage curriculaire (faible → fort débit)"
-              checked={useCurriculum}
-              onChange={setUseCurriculum}
-              tooltipKey="use_curriculum"
-            />
-            <Toggle
-              label="Hard example mining (boost erreurs > 15 %)"
-              checked={useHardExampleMining}
-              onChange={setUseHardExampleMining}
-              tooltipKey="use_hard_example_mining"
-            />
-          </div>
-
-          {/* TTA et bootstrap (évaluation) */}
-          <div className="pt-3 border-t border-border space-y-4">
-            <p className="text-[11px] text-text-subtle">
-              Paramètres appliqués au moment de l&apos;évaluation (TTA et
-              intervalles bootstrap). Conservés ici pour limiter le va-et-vient
-              entre les étapes Configuration et Évaluation.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Groupe : Évaluation (TTA & bootstrap) */}
+          <MlGroup
+            title="Évaluation (TTA & bootstrap)"
+            hint="Paramètres appliqués au moment de l'évaluation. Conservés ici pour limiter le va-et-vient entre les étapes Configuration et Évaluation."
+          >
+            <MlCard>
               <SliderInput
                 label="TTA — itérations"
                 value={ttaIter}
@@ -1665,6 +1847,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 help="1 = pas de TTA. > 1 = moyenne sur N passes bruitées."
                 tooltipKey="tta_iter"
               />
+            </MlCard>
+            <MlCard>
               <SliderInput
                 label="TTA — écart-type du bruit"
                 value={ttaNoiseStd}
@@ -1676,24 +1860,31 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 help="Bruit gaussien sur les features normalisées."
                 tooltipKey="tta_noise_std"
               />
-            </div>
-            <div>
-              <NumberInput
+            </MlCard>
+            <MlCard className="lg:col-span-2">
+              <SliderInput
                 label="Bootstrap CI95 — nombre d'itérations"
                 value={bootstrapIter}
-                onChange={(v) => setBootstrapIter(Math.max(0, Math.round(v)))}
+                onChange={(v) => {
+                  const rounded = Math.round(v / 100) * 100;
+                  setBootstrapIter(Math.max(0, rounded));
+                }}
                 min={0}
+                max={10000}
                 step={100}
-                help="0 = désactivé. Sinon plage valide : 100..10000."
+                format={(v) =>
+                  v === 0 ? "désactivé" : v.toLocaleString("fr-FR")
+                }
+                help="0 = désactivé. Sinon plage valide : 100..10000 (pas de 100)."
                 tooltipKey="bootstrap_iter"
               />
-              {bootstrapIter !== 0 && (bootstrapIter < 100 || bootstrapIter > 10000) && (
+              {bootstrapIter !== 0 && bootstrapIter < 100 && (
                 <p className="text-[10px] text-warning mt-1">
-                  ⚠ Valeur invalide — utilisez 0 (désactivé) ou 100..10000.
+                  ⚠ Valeur invalide — utilisez 0 (désactivé) ou ≥ 100.
                 </p>
               )}
-            </div>
-          </div>
+            </MlCard>
+          </MlGroup>
         </Section>
       </div>
 

@@ -61,6 +61,13 @@ export function Tooltip({
   const [open, setOpen] = useState(false);
   const tooltipId = useId();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  // Auto-flip horizontal alignment when the trigger is near a viewport edge.
+  // Default "center"; switched to "start" or "end" if the centered popover
+  // would clip horizontally (avoids the "tooltips cut off" bug reported by
+  // testers when info-bubbles sit near the right edge of the ML section).
+  const [align, setAlign] = useState<"start" | "center" | "end">("center");
+  // Same for vertical: flip to "bottom" if there's not enough room above.
+  const [resolvedSide, setResolvedSide] = useState<TooltipSide>(side);
 
   // Dismiss on Escape (only when open).
   useEffect(() => {
@@ -72,13 +79,56 @@ export function Tooltip({
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Position offsets for each side — applied to the popover wrapper.
-  const positionClass: Record<TooltipSide, string> = {
-    top: "bottom-full left-1/2 -translate-x-1/2 mb-1.5",
-    right: "left-full top-1/2 -translate-y-1/2 ml-1.5",
-    bottom: "top-full left-1/2 -translate-x-1/2 mt-1.5",
-    left: "right-full top-1/2 -translate-y-1/2 mr-1.5",
-  };
+  // Recompute alignment when opening — uses the trigger's rect to decide
+  // whether a centered, left-anchored, or right-anchored popover fits.
+  useEffect(() => {
+    if (!open) return;
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const POPOVER_MAX_WIDTH = 280;
+    const POPOVER_MAX_HEIGHT = 140;
+    const MARGIN = 8;
+
+    if (side === "top" || side === "bottom") {
+      const centerX = rect.left + rect.width / 2;
+      const halfPopover = POPOVER_MAX_WIDTH / 2;
+      if (centerX - halfPopover < MARGIN) {
+        setAlign("start");
+      } else if (centerX + halfPopover > vw - MARGIN) {
+        setAlign("end");
+      } else {
+        setAlign("center");
+      }
+      // Vertical flip
+      if (side === "top" && rect.top < POPOVER_MAX_HEIGHT + MARGIN) {
+        setResolvedSide("bottom");
+      } else if (
+        side === "bottom" &&
+        vh - rect.bottom < POPOVER_MAX_HEIGHT + MARGIN
+      ) {
+        setResolvedSide("top");
+      } else {
+        setResolvedSide(side);
+      }
+    } else {
+      setResolvedSide(side);
+    }
+  }, [open, side]);
+
+  // Position offsets — combine side (top/bottom/right/left) with horizontal
+  // align (start/center/end) for vertical sides.
+  function positionClass(s: TooltipSide, a: "start" | "center" | "end"): string {
+    if (s === "right")
+      return "left-full top-1/2 -translate-y-1/2 ml-1.5";
+    if (s === "left") return "right-full top-1/2 -translate-y-1/2 mr-1.5";
+    const vertical = s === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5";
+    if (a === "start") return `${vertical} left-0`;
+    if (a === "end") return `${vertical} right-0`;
+    return `${vertical} left-1/2 -translate-x-1/2`;
+  }
 
   return (
     <span className={cn("relative inline-flex", className)}>
@@ -96,11 +146,11 @@ export function Tooltip({
           id={tooltipId}
           className={cn(
             "absolute z-50 pointer-events-none",
-            "max-w-[280px] w-max px-2.5 py-1.5 rounded-md",
+            "max-w-[min(280px,calc(100vw-16px))] w-max px-2.5 py-1.5 rounded-md",
             "bg-bg-elevated border border-border shadow-lg",
-            "text-[11px] leading-snug text-text",
+            "text-[11px] leading-snug text-text break-words",
             "animate-in fade-in zoom-in-95 duration-150",
-            positionClass[side]
+            positionClass(resolvedSide, align)
           )}
           style={{ "--tw-enter-scale": 0.95 } as CSSProperties}
         >
