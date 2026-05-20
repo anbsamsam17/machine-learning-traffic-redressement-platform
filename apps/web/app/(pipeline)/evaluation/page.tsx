@@ -65,6 +65,14 @@ export default function EvaluationPage() {
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [requiredCols, setRequiredCols] = useState<string[]>([]);
   const [colMapping, setColMapping] = useState<Record<string, string>>({});
+  // Dedicated year handling — separated from regular column mapping because
+  // year_mapped is DERIVED from the source Annee column via a 2019→1…2025→7
+  // (or similar) encoding stored in training_config.year_value_mapping.
+  const [needsYearMapping, setNeedsYearMapping] = useState(false);
+  const [yearSourceCol, setYearSourceCol] = useState<string>("");
+  const [yearMapping, setYearMapping] = useState<Array<{ year: string; value: number }>>(
+    [],
+  );
   const [loadingModels, setLoadingModels] = useState(false);
   const [running, setRunning] = useState(false);
   const [metrics, setMetrics] = useState<EvalMetrics | null>(null);
@@ -256,32 +264,51 @@ export default function EvaluationPage() {
     const outputColsList = Array.isArray(tc.output_cols) ? (tc.output_cols as string[]) : null;
     const outputCol = outputColSingular || outputColsList?.[0] || "TxPen";
 
-    // Special case: `year_mapped` is a feature DERIVED from the source
-    // column `Annee` via `training_config.year_value_mapping` (2019:1 …
-    // 2025:7). The user must NOT be asked to provide `year_mapped`
-    // directly — they should map `year_mapped` to the source `Annee`
-    // column, and the backend re-applies the mapping using the year_value_mapping
-    // attached to the training config. Replace `year_mapped` in the
-    // required list by a virtual marker that the UI will render as a
-    // dedicated row "Annee (mappee automatiquement)".
-    const needed = [...inputCols, outputCol];
+    // Split year_mapped from the regular mapping list — it's handled by
+    // a dedicated UI block (year source column + table 2019→1 etc.).
+    const hasYearMapped = inputCols.includes("year_mapped");
+    const regularInputs = inputCols.filter((c) => c !== "year_mapped");
+    const needed = [...regularInputs, outputCol];
     setRequiredCols(needed);
+    setNeedsYearMapping(hasYearMapped);
 
-    // Auto-map: try exact match, then case-insensitive. For year_mapped,
-    // try to find the source Annee column.
-    const mapping: Record<string, string> = {};
+    // Initialise the dedicated year state
     const fileLower: Record<string, string> = {};
     fileColumns.forEach((c) => { fileLower[c.toLowerCase()] = c; });
+    if (hasYearMapped) {
+      const tcMapping = (tc.year_value_mapping as Record<string, number>) || null;
+      const tcSrc = typeof tc.year_column_name === "string" ? tc.year_column_name : "";
+      // Auto-detect source year col (Annee/annee/Year/year)
+      const autoSrc =
+        (tcSrc && fileLower[tcSrc.toLowerCase()]) ||
+        fileLower["annee"] ||
+        fileLower["year"] ||
+        "";
+      setYearSourceCol(autoSrc);
+      if (tcMapping && Object.keys(tcMapping).length > 0) {
+        setYearMapping(
+          Object.entries(tcMapping)
+            .map(([year, value]) => ({ year, value }))
+            .sort((a, b) => a.year.localeCompare(b.year)),
+        );
+      } else {
+        // Sensible default 2019→1 … 2025→7
+        setYearMapping([
+          { year: "2019", value: 1 }, { year: "2020", value: 2 },
+          { year: "2021", value: 3 }, { year: "2022", value: 4 },
+          { year: "2023", value: 5 }, { year: "2024", value: 6 },
+          { year: "2025", value: 7 },
+        ]);
+      }
+    } else {
+      setYearSourceCol("");
+      setYearMapping([]);
+    }
 
+    // Auto-map the regular columns (no special year case here anymore)
+    const mapping: Record<string, string> = {};
     for (const col of needed) {
-      if (col === "year_mapped") {
-        // Look for source year column (annee / Annee / year / Year).
-        const yearSrc =
-          fileLower["annee"] || fileLower["year"] || fileColumns.find((c) =>
-            ["annee", "Annee", "Year", "year"].includes(c),
-          ) || "";
-        mapping[col] = yearSrc;
-      } else if (fileColumns.includes(col)) {
+      if (fileColumns.includes(col)) {
         mapping[col] = col;
       } else if (fileLower[col.toLowerCase()]) {
         mapping[col] = fileLower[col.toLowerCase()];
@@ -293,13 +320,28 @@ export default function EvaluationPage() {
   }, [selectedModel, models, fileColumns]);
 
   const unmappedCount = Object.values(colMapping).filter((v) => !v).length;
-  const allMapped = requiredCols.length > 0 && unmappedCount === 0;
+  const yearReady = !needsYearMapping || (
+    yearSourceCol !== "" && yearMapping.length > 0 &&
+    yearMapping.every((r) => r.year.trim() !== "" && Number.isFinite(r.value))
+  );
+  const allMapped = requiredCols.length > 0 && unmappedCount === 0 && yearReady;
 
   // --- Run evaluation ---
   const handleRun = useCallback(async () => {
     if (!validationFile) { toast.error("Selectionnez un fichier."); return; }
     if (!selectedModel) { toast.error("Selectionnez un modele."); return; }
-    if (!allMapped) { toast.error("Mappez toutes les colonnes requises."); return; }
+    if (!allMapped) {
+      const missingReg = unmappedCount > 0;
+      const missingYear = needsYearMapping && !yearReady;
+      if (missingReg && missingYear) {
+        toast.error("Mappez toutes les colonnes ET configurez le mapping annee.");
+      } else if (missingReg) {
+        toast.error("Mappez toutes les colonnes requises.");
+      } else {
+        toast.error("Configurez le mapping de l'annee (colonne source + table).");
+      }
+      return;
+    }
 
     setRunning(true);
     setMetrics(null);
@@ -339,23 +381,13 @@ export default function EvaluationPage() {
         console.warn("Re-upload validation failed, will use raw_df fallback");
       }
 
-      // Run evaluation. For year_mapped, we DO NOT send the mapping to
-      // the backend as a column rename — instead we send year_column_name
-      // (source) + year_value_mapping (from training_config) so the
-      // backend re-applies the encoding 2019→1 … 2025→7. Otherwise a
-      // direct column_mapping would set df["year_mapped"] = raw years
-      // and the model would receive 2019-2025 instead of 1-7 → R²
-      // catastrophic.
-      const model = models.find((m) => m.name === selectedModel);
-      const tc = (model?.training_config ?? {}) as Record<string, unknown>;
-      const yearMapping = (tc.year_value_mapping as Record<string, number>) || null;
-      const yearSrc = colMapping["year_mapped"] || (tc.year_column_name as string) || "Annee";
-      const cleanedMapping: Record<string, string> = { ...colMapping };
-      // Remove year_mapped from the raw column_mapping — it's handled via
-      // year_value_mapping below to ensure proper encoding.
-      if (yearMapping) {
-        delete cleanedMapping["year_mapped"];
-      }
+      // Run evaluation. The year encoding is handled separately:
+      // the backend receives year_column_name + year_value_mapping and
+      // computes df["year_mapped"] = df[year_column_name].map(...) using
+      // the table the user configured (defaults to 2019:1 … 2025:7).
+      const yearMappingDict = needsYearMapping
+        ? Object.fromEntries(yearMapping.map((r) => [r.year.trim(), r.value]))
+        : null;
       const evalRes = await fetch(apiUrl("/api/evaluation/run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -364,9 +396,9 @@ export default function EvaluationPage() {
           model_name: selectedModel,
           model_dir: resolvedModelDir.trim(),
           filter_flag_comptage: filterFlagComptage,
-          column_mapping: cleanedMapping,
-          year_column_name: yearSrc,
-          year_value_mapping: yearMapping,
+          column_mapping: colMapping,
+          year_column_name: needsYearMapping ? yearSourceCol : null,
+          year_value_mapping: yearMappingDict,
         }),
       });
       if (!evalRes.ok) {
@@ -680,6 +712,113 @@ export default function EvaluationPage() {
               {unmappedCount > 0 && (
                 <p className="text-xs text-amber-400 mt-3">
                   {unmappedCount} colonne(s) non mappee(s) — l&apos;evaluation ne pourra pas demarrer.
+                </p>
+              )}
+            </GlowCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 3bis. Mapping dedie pour l'annee — applique l'encodage 2019→1 etc. */}
+      <AnimatePresence>
+        {needsYearMapping && fileColumns.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+            <GlowCard glowColor="cyan">
+              <div className="flex items-center gap-2 mb-2">
+                <ArrowRight size={18} className="text-cyan-400" />
+                <h3 className="text-sm font-semibold text-white">
+                  Mapping de l&apos;annee
+                  <span className={`ml-2 text-xs ${yearReady ? "text-emerald-400" : "text-amber-400"}`}>
+                    ({yearReady ? "OK" : "a configurer"})
+                  </span>
+                </h3>
+              </div>
+              <p className="text-xs text-slate-400 mb-3">
+                Le modele a ete entraine avec la feature{" "}
+                <code className="text-cyan-300">year_mapped</code>. Choisissez la
+                colonne <strong>source</strong> qui contient l&apos;annee dans
+                votre fichier, puis confirmez la table de correspondance
+                <em> annee → valeur encodee</em> (auto-remplie depuis la config
+                du modele).
+              </p>
+
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-mono w-[280px] shrink-0 text-slate-200">
+                    Colonne source (annee)
+                  </span>
+                  <span className="text-slate-500 text-xs">&rarr;</span>
+                  <select
+                    value={yearSourceCol}
+                    onChange={(e) => setYearSourceCol(e.target.value)}
+                    className={`flex-1 rounded-lg border px-2 py-1.5 text-xs bg-slate-900/80 focus:outline-none focus:border-cyan-500/50 cursor-pointer ${
+                      yearSourceCol ? "border-white/[0.08] text-slate-200" : "border-red-500/40 text-red-300"
+                    }`}
+                  >
+                    <option value="">-- Non mappe --</option>
+                    {fileColumns.map((fc) => (
+                      <option key={fc} value={fc}>{fc}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="border-t border-white/[0.06] pt-3">
+                  <p className="text-[11px] text-slate-400 mb-2 uppercase tracking-wide">
+                    Table de correspondance
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[260px] overflow-y-auto pr-1">
+                    {yearMapping.map((row, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={row.year}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setYearMapping((arr) =>
+                              arr.map((r, i) => (i === idx ? { ...r, year: v } : r)),
+                            );
+                          }}
+                          placeholder="2019"
+                          className="w-20 rounded border border-white/[0.08] bg-slate-900/80 px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500/50"
+                        />
+                        <span className="text-slate-500 text-xs">&rarr;</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={row.value}
+                          onChange={(e) => {
+                            const v = parseFloat(e.target.value);
+                            setYearMapping((arr) =>
+                              arr.map((r, i) => (i === idx ? { ...r, value: v } : r)),
+                            );
+                          }}
+                          className="w-24 rounded border border-white/[0.08] bg-slate-900/80 px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setYearMapping((arr) => arr.filter((_, i) => i !== idx))}
+                          className="text-xs text-slate-500 hover:text-red-400 px-1"
+                          title="Supprimer la ligne"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setYearMapping((arr) => [...arr, { year: "", value: arr.length + 1 }])
+                    }
+                    className="mt-2 text-xs text-cyan-400 hover:text-cyan-300"
+                  >
+                    + Ajouter une annee
+                  </button>
+                </div>
+              </div>
+              {!yearReady && (
+                <p className="text-xs text-amber-400 mt-3">
+                  Configurez la colonne source ET au moins une ligne du tableau.
                 </p>
               )}
             </GlowCard>
