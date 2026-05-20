@@ -48,25 +48,13 @@
   --color-chart-6: #8b5cf6; /* violet - reserve */
 }
 
-/* Light theme override — class strategy ("light" applied to <html>) */
+/* Task B — Mode dark forcé : on ne réintroduit AUCUNE variable claire.
+   L'ancien override `.light { ... }` est désactivé volontairement (cf.
+   providers.tsx → forcedTheme="dark"). On garde uniquement `color-scheme`
+   pour les contrôles natifs (scrollbar, form widgets). */
+.dark,
 .light {
-  --color-bg: #ffffff;
-  --color-bg-elevated: #fafafa;
-  --color-bg-subtle: #f4f4f5;
-  --color-border: #e4e4e7;
-  --color-border-strong: #d4d4d8;
-  --color-text: #09090b;
-  --color-text-muted: #52525b;
-  --color-text-subtle: #71717a;
-  --color-accent-subtle: rgba(99, 102, 241, 0.10);
-}
-
-/* Map "dark" class as well to keep next-themes attribute="class" idempotent */
-.dark {
   color-scheme: dark;
-}
-.light {
-  color-scheme: light;
 }
 
 /* ============================================================

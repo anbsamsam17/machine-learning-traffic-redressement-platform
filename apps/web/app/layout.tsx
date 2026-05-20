@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 import { Providers } from "./providers";
 import { AppHeader } from "@/components/layout/app-header";
+import { AppFooter } from "@/components/layout/app-footer";
 import { SamWidget } from "@/components/avatar/SamWidget";
 import { SamPageBinder } from "@/components/avatar/SamPageBinder";
 
@@ -39,7 +40,16 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
-      <body className="min-h-screen bg-bg text-text font-sans antialiased">
+      <body className="flex min-h-screen flex-col bg-bg text-text font-sans antialiased">
+        {/* Belt-and-suspenders : si une ancienne session a stocké theme="light"
+            dans localStorage, on l'écrase avant l'hydratation pour empêcher
+            next-themes de basculer en clair (Task B). Le ThemeProvider est
+            par ailleurs forcé en dark côté React. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{localStorage.setItem('theme','dark');document.documentElement.classList.remove('light');document.documentElement.classList.add('dark');}catch(e){}`,
+          }}
+        />
         <Providers>
           {/* Skip link: visible on keyboard focus, jumps past the global header */}
           <a href="#main-content" className="skip-link">
@@ -48,6 +58,7 @@ export default function RootLayout({
           <AppHeader />
           <SamPageBinder />
           <main id="main-content" className="flex-1">{children}</main>
+          <AppFooter />
           {/* Toasts are status messages — make sure SR users hear them */}
           <Toaster
             position="bottom-right"
