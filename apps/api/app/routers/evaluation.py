@@ -86,6 +86,14 @@ class ModelsListResponse(BaseModel):
     models: list[ModelInfo]
 
 
+# P1.4 — McNemar comparison of two evaluated models
+class CompareRequest(BaseModel):
+    session_id: str
+    run_a: str
+    run_b: str
+    tolerance_pct: float = 15.0
+
+
 # ---------------------------------------------------------------------------
 # Metrics helpers
 # ---------------------------------------------------------------------------
@@ -1601,6 +1609,21 @@ async def run_evaluation(
     session_manager.store_data(body.session_id, "eval_report_html", report_html)
     session_manager.store_data(body.session_id, "eval_model_name", model_name)
 
+    # P1.4 — persist per-model evaluation artifacts so /api/evaluation/compare
+    # can pair predictions from two different runs against the SAME observation
+    # vector (McNemar test is paired). Stored under a model-namespaced key.
+    session_manager.store_data(
+        body.session_id,
+        f"eval_artifact:{model_name}",
+        {"y_true": y_true.tolist(), "y_pred": y_pred.tolist()},
+    )
+    # Maintain a roster of evaluated models in this session so consumers can
+    # enumerate them without scanning every key in the backend.
+    roster = session_manager.get_data(body.session_id, "eval_model_roster", []) or []
+    if model_name not in roster:
+        roster = [*roster, model_name]
+        session_manager.store_data(body.session_id, "eval_model_roster", roster)
+
     logger.info(
         "Evaluation done: session=%s model=%s RMSE=%.4f R2=%.4f GEH<5=%.1f%%",
         body.session_id, model_name, metrics.rmse, metrics.r_squared, metrics.geh_pct_below_5,
@@ -1681,3 +1704,113 @@ async def download_model(
             "Content-Disposition": f'attachment; filename="{model_name}.zip"',
         },
     )
+# ---------------------------------------------------------------------------
+# P1.4 — McNemar paired comparison of two evaluated models
+# ---------------------------------------------------------------------------
+
+@router.post("/compare")
+async def compare_models_endpoint(
+    body: CompareRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Run McNemar test on two previously-evaluated models.
+
+    Both run_a and run_b must have been evaluated via
+    POST /api/evaluation/run in the SAME session — the test is paired on
+    the per-sensor binary in-tolerance outcome, so the two prediction
+    vectors must align element-wise against a shared observation vector.
+
+    Tolerance is expressed in percent of the observed value:
+    in_tolerance := |pred - obs| / |obs| <= tolerance_pct / 100.
+    """
+    require_owned_session(body.session_id, current_user)
+
+    if not (0.0 < body.tolerance_pct <= 100.0):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"tolerance_pct doit etre dans (0, 100], recu {body.tolerance_pct}."
+            ),
+        )
+    if body.run_a == body.run_b:
+        raise HTTPException(
+            status_code=422,
+            detail="run_a et run_b doivent etre deux modeles distincts.",
+        )
+
+    artifact_a = session_manager.get_data(
+        body.session_id, f"eval_artifact:{body.run_a}"
+    )
+    artifact_b = session_manager.get_data(
+        body.session_id, f"eval_artifact:{body.run_b}"
+    )
+
+    missing: list[str] = []
+    if not artifact_a:
+        missing.append(body.run_a)
+    if not artifact_b:
+        missing.append(body.run_b)
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Aucun artefact evaluation trouve pour : {', '.join(missing)}. "
+                "Lancez d abord POST /api/evaluation/run pour chacun des modeles "
+                "a comparer."
+            ),
+        )
+
+    y_true_a = np.asarray(artifact_a.get("y_true", []), dtype=np.float64)
+    y_pred_a = np.asarray(artifact_a.get("y_pred", []), dtype=np.float64)
+    y_true_b = np.asarray(artifact_b.get("y_true", []), dtype=np.float64)
+    y_pred_b = np.asarray(artifact_b.get("y_pred", []), dtype=np.float64)
+
+    if y_true_a.shape != y_true_b.shape or y_pred_a.shape != y_pred_b.shape:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Les deux modeles n ont pas ete evalues sur le meme jeu : "
+                f"{body.run_a}={y_true_a.shape[0]} obs, "
+                f"{body.run_b}={y_true_b.shape[0]} obs. Reevaluez sur le meme "
+                "fichier de validation."
+            ),
+        )
+    if y_true_a.size == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Les artefacts d evaluation sont vides — rien a comparer.",
+        )
+    # Defensive: the obs vector for paired tests must be element-wise equal.
+    # Tiny float drift can creep in via JSON round-trip, hence allclose.
+    if not np.allclose(y_true_a, y_true_b, equal_nan=True):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Les vecteurs d observations des deux evaluations different. "
+                "Le test McNemar exige un appariement strict — reevaluez les "
+                "deux modeles sur exactement le meme fichier de validation."
+            ),
+        )
+
+    from ..services.ml.stats_compare import compare_models
+
+    try:
+        result = compare_models(
+            obs=y_true_a,
+            pred_a=y_pred_a,
+            pred_b=y_pred_b,
+            tolerance_pct=body.tolerance_pct,
+            name_a=body.run_a,
+            name_b=body.run_b,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    logger.info(
+        "McNemar compare: session=%s a=%s b=%s tol=%.2f%% "
+        "method=%s p=%.4g sig=%s verdict=%s",
+        body.session_id, body.run_a, body.run_b, body.tolerance_pct,
+        result["method"], result["p_value"],
+        result["significant_at_0.05"], result["verdict"],
+    )
+    return result
