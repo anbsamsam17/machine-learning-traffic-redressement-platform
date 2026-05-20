@@ -76,8 +76,14 @@ export function ModeCard({ mode, onSelect, index = 0 }: ModeCardProps) {
       whileHover={reduce ? undefined : { y: -2 }}
       whileTap={reduce ? undefined : { scale: 0.99 }}
       aria-label={`${mode.title} — ${mode.tagline}`}
+      data-mode-card={mode.key}
       className={cn(
-        "group relative w-full text-left",
+        // Flex column + h-full forces children to stack from the top of the cell
+        // (overrides default <button> UA vertical-centering) and lets `mt-auto`
+        // on the CTA pin it to the bottom. Result: all cards in the row share
+        // the same icon baseline, title baseline, and CTA baseline regardless
+        // of description length.
+        "group relative w-full text-left flex flex-col h-full",
         "rounded-2xl border border-white/[0.06] bg-zinc-950/60 backdrop-blur-md",
         "p-6 md:p-7",
         "transition-all duration-300",
@@ -87,10 +93,10 @@ export function ModeCard({ mode, onSelect, index = 0 }: ModeCardProps) {
       )}
     >
       {/* Top row: icon + short title badge */}
-      <div className="flex items-start justify-between gap-3 mb-5">
+      <div className="flex items-start justify-between gap-3 mb-5 shrink-0">
         <div
           className={cn(
-            "h-11 w-11 rounded-xl flex items-center justify-center",
+            "h-11 w-11 rounded-xl flex items-center justify-center shrink-0",
             accent.iconBg
           )}
         >
@@ -106,20 +112,22 @@ export function ModeCard({ mode, onSelect, index = 0 }: ModeCardProps) {
         </span>
       </div>
 
-      {/* Title + tagline */}
-      <h3 className="text-lg font-semibold text-zinc-50 tracking-tight">
+      {/* Title — clamp to 2 lines to keep tagline baseline identical across cards */}
+      <h3 className="text-lg font-semibold text-zinc-50 tracking-tight line-clamp-2 min-h-[3.5rem]">
         {mode.title}
       </h3>
-      <p className="mt-1 text-sm text-zinc-400">{mode.tagline}</p>
+      <p className="mt-1 text-sm text-zinc-400 line-clamp-2 min-h-[2.5rem]">
+        {mode.tagline}
+      </p>
 
-      {/* Description */}
-      <p className="mt-3 text-[13px] leading-relaxed text-zinc-500">
+      {/* Description — clamp to 4 lines so the chip row sits at the same y */}
+      <p className="mt-3 text-[13px] leading-relaxed text-zinc-500 line-clamp-4 min-h-[5.25rem]">
         {mode.description}
       </p>
 
       {/* Key metrics chips */}
       {mode.keyMetrics.length > 0 && (
-        <div className="mt-5 flex flex-wrap gap-1.5">
+        <div className="mt-5 flex flex-wrap gap-1.5 content-start">
           {mode.keyMetrics.map((metric) => (
             <span
               key={metric}
@@ -134,8 +142,9 @@ export function ModeCard({ mode, onSelect, index = 0 }: ModeCardProps) {
         </div>
       )}
 
-      {/* CTA row */}
-      <div className="mt-6 pt-4 border-t border-white/[0.05] flex items-center justify-between">
+      {/* CTA row — pinned to bottom via mt-auto so every card's separator
+          line lands on the same y-coordinate. */}
+      <div className="mt-auto pt-4 border-t border-white/[0.05] flex items-center justify-between">
         <span
           className={cn(
             "text-xs font-medium tracking-wide transition-colors",
