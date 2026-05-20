@@ -281,6 +281,14 @@ def run_training(
 
     seed: int = int(config.get("seed", SEED))
     seed_everything(seed)
+    # Enable TF op-level determinism once for the whole grid. Idempotent —
+    # safe to call again per run, but doing it here avoids any redundant
+    # overhead per training. Combined with per-run set_random_seed below,
+    # this guarantees each (run_idx) yields a reproducible outcome.
+    try:
+        tf.config.experimental.enable_op_determinism()
+    except Exception:
+        pass
 
     # Prepare data
     prepared = prepare_training_data(df, type_config, config=config)
@@ -420,8 +428,13 @@ def run_training(
             if cancel_event is not None and cancel_event.is_set():
                 return results
             model_idx += 1
-            # Reseed before each fit so model-init / shuffles are reproducible
-            seed_everything(seed, enable_op_determinism=False)
+            # Per-run deterministic seeding: each run gets a unique offset
+            # so the grid no longer collapses onto a handful of repeated
+            # (tol, p80) tuples. enable_op_determinism() was already
+            # activated once above; it is idempotent.
+            run_idx = model_idx - 1
+            seed_everything(seed + run_idx, enable_op_determinism=False)
+            tf.keras.utils.set_random_seed(seed + run_idx)
             artifact = _train_single(
                 x_train_norm=x_train_norm,
                 y_train_norm=y_train_norm,
