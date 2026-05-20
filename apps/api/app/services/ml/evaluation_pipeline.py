@@ -159,9 +159,9 @@ def apply_model(
         df["Erreur absolue"] / denom * 100.0
     ).replace([np.inf, -np.inf], np.nan)
 
-    # GEH (hourly = daily / 24)
-    a = df[pred_col] / 24.0
-    b = df[ref_col] / 24.0
+    # GEH on daily flows (TMJA already daily — no /24 conversion)
+    a = df[pred_col]
+    b = df[ref_col]
     with np.errstate(divide="ignore", invalid="ignore"):
         geh = np.sqrt(2.0 * (a - b) ** 2 / (a + b))
     df["GEH"] = pd.to_numeric(geh, errors="coerce").replace(
