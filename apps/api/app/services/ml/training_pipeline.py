@@ -109,12 +109,12 @@ def _train_single(
         use_batch_norm=use_batch_norm,
     )
 
-    # EarlyStopping — patience=20 (was 50). start_from_epoch is capped at
-    # min(20, min_nb_epochs // 4) so divergent runs bail out fast. Combined
-    # with max_epochs=500 default this brings a typical CPU run from ~3min
-    # to ~30-60s without quality regression in our Lyon benchmark.
-    patience = 20
-    start_from = min(20, max(1, combo.min_nb_epochs // 4))
+    # EarlyStopping — patience=30. start_from = combo.min_nb_epochs so we
+    # NEVER bail before the user-asked minimum (was previously capped at 20,
+    # which made min_nb_epochs cosmetic — the user reported runs configured
+    # for "200 epochs" actually stopping at ~40 with degenerate metrics).
+    patience = 30
+    start_from = max(20, combo.min_nb_epochs)
 
     early_stop = keras.callbacks.EarlyStopping(
         monitor="val_loss",
