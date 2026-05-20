@@ -108,7 +108,17 @@ def _compute_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     high_threshold: float,
+    flows: np.ndarray | None = None,
 ) -> MetricsResult:
+    """Compute evaluation metrics.
+
+    The HD/LD split (``hd_rmse`` / ``ld_rmse``) is applied on the observed
+    traffic flow (TMJOBCTV, typical range 100..50000+) — NOT on ``y_true``,
+    which may be a penetration rate (TxPen, range ~0..1) and would therefore
+    never exceed the default 1000 threshold. Callers pass the flow array
+    through ``flows``; if absent, both hd_rmse and ld_rmse fall back to
+    ``None`` (no crash, no misleading number).
+    """
     residuals = y_true - y_pred
     rmse = float(np.sqrt(np.mean(residuals ** 2)))
     mae = float(np.mean(np.abs(residuals)))
@@ -128,11 +138,28 @@ def _compute_metrics(
     geh_mean = float(np.mean(geh_vals))
     geh_below_5 = float(np.mean(geh_vals < 5) * 100)
 
-    # HD / LD subsets
-    hd_mask = y_true >= high_threshold
-    ld_mask = ~hd_mask
-    hd_rmse = float(np.sqrt(np.mean(residuals[hd_mask] ** 2))) if hd_mask.any() else None
-    ld_rmse = float(np.sqrt(np.mean(residuals[ld_mask] ** 2))) if ld_mask.any() else None
+    # HD / LD subsets — the threshold is meant to separate high-flow vs
+    # low-flow segments of the road network, so it MUST be applied on the
+    # observed flow (TMJOBCTV), not on ``y_true`` (which could be a 0..1
+    # penetration rate). Gracefully fall back when ``flows`` is absent.
+    hd_rmse: float | None = None
+    ld_rmse: float | None = None
+    if flows is not None:
+        flows_arr = np.asarray(flows, dtype=np.float64)
+        if flows_arr.shape == y_true.shape:
+            finite = np.isfinite(flows_arr)
+            hd_mask = finite & (flows_arr >= high_threshold)
+            ld_mask = finite & (flows_arr < high_threshold)
+            if hd_mask.any():
+                hd_rmse = float(np.sqrt(np.mean(residuals[hd_mask] ** 2)))
+            if ld_mask.any():
+                ld_rmse = float(np.sqrt(np.mean(residuals[ld_mask] ** 2)))
+        else:
+            logger.warning(
+                "hd/ld split skipped: flows shape %s != y_true shape %s",
+                flows_arr.shape,
+                y_true.shape,
+            )
 
     return MetricsResult(
         rmse=round(rmse, 4),
@@ -1464,8 +1491,22 @@ async def run_evaluation(
     y_pred_norm = (await asyncio.to_thread(model.predict, X_norm, verbose=0)).flatten()
     y_pred = y_pred_norm * y_std + y_mean
 
-    # Compute basic API metrics
-    metrics = _compute_metrics(y_true, y_pred, body.high_flow_threshold)
+    # Compute basic API metrics. The HD/LD split (hd_rmse/ld_rmse) must be
+    # applied on the observed traffic flow (TMJOBCTV), not on y_true — when
+    # the model predicts TxPen (a 0..1 rate), the default threshold of 1000
+    # would otherwise classify every row as low-density and produce
+    # hd_rmse=None. TMJABCTV is the legacy alias under which val_renames
+    # stores TMJOBCTV; prefer the modern name when both exist.
+    flows: np.ndarray | None = None
+    for flow_col in ("TMJOBCTV", "TMJABCTV"):
+        if flow_col in sub.columns:
+            flows = pd.to_numeric(sub[flow_col], errors="coerce").to_numpy(dtype=np.float64)
+            break
+    if flows is None:
+        logger.warning(
+            "HD/LD split disabled: ni TMJOBCTV ni TMJABCTV trouve dans les donnees de validation"
+        )
+    metrics = _compute_metrics(y_true, y_pred, body.high_flow_threshold, flows=flows)
 
     # --- Build enriched DataFrame for the HTML report ---
     # Add TVr, tolerance, error columns (same logic as evaluate_best_model.py)
