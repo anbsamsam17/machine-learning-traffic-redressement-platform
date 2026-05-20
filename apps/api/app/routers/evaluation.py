@@ -527,9 +527,14 @@ def _build_sensitivity_section_html(
         "Q3":  df_num.quantile(0.75),
     }
 
-    # Determine numerator column for TVr
+    # Determine numerator column for TVr = numerator / TxPen * 100.
+    # Modern FCD HERE schema uses TMJOFCDTV; legacy Bordeaux datasets use
+    # TMJAFCDTV / TMJATV. Before this fix, only legacy names were tried —
+    # so on FCD HERE models the numerator fell back to 1 and the chart
+    # showed TVr = 100/TxPen (range 30-110) instead of the real
+    # TMJOFCDTV/TxPen * 100 (range 0 — 50 000+).
     _numerator_col: str | None = None
-    for _cand in ("TMJAFCDTV", "TMJATV"):
+    for _cand in ("TMJOFCDTV", "TMJAFCDTV", "TMJATV"):
         if _cand in input_cols:
             _numerator_col = _cand
             break
