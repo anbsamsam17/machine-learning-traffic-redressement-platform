@@ -9,7 +9,6 @@ import {
   Activity,
   Menu,
   X,
-  Home,
   LogOut,
   User,
 } from "lucide-react";
@@ -131,7 +130,7 @@ export function AppHeader() {
           className="flex items-center gap-2 text-text hover:text-accent transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded px-1"
           aria-label="Retour a l'accueil"
         >
-          <Home size={16} className="text-accent" aria-hidden="true" />
+          <Car size={16} className="text-accent" aria-hidden="true" />
           <span className="font-semibold text-sm hidden sm:block">
             Accueil
           </span>

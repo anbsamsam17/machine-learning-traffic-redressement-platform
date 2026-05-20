@@ -98,13 +98,19 @@ function seedNodes(): Node[] {
   // Deterministic-ish seeding (Math.random is fine since we run
   // it client-only; the wrapper avoids SSR mismatch by skipping
   // SVG renders until mount, see `mounted` state below).
+  // Velocity tuned so motion is visible within ~500ms while still
+  // feeling like a slow drift on the 1400×800 viewBox.
   const out: Node[] = [];
   for (let i = 0; i < NODE_COUNT; i++) {
+    // Ensure each node has a non-zero baseline velocity so we never
+    // end up with a stalled-looking network on first paint.
+    const sx = Math.random() < 0.5 ? -1 : 1;
+    const sy = Math.random() < 0.5 ? -1 : 1;
     out.push({
       x: Math.random() * 1400,
       y: Math.random() * 800,
-      vx: (Math.random() - 0.5) * 6, // px / sec
-      vy: (Math.random() - 0.5) * 6,
+      vx: sx * (10 + Math.random() * 20), // 10–30 px/sec, signed
+      vy: sy * (10 + Math.random() * 20),
     });
   }
   return out;
@@ -188,18 +194,31 @@ export function AnimatedBg({ className }: AnimatedBgProps): React.JSX.Element {
       last = now;
 
       // Integrate positions; bounce on bounds.
+      // Velocities are in viewBox px/sec; dt is in seconds, so the
+      // raw product is the per-frame delta. No extra multiplier —
+      // the visible speed is set entirely by `seedNodes()`.
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i];
-        n.x += n.vx * dt * 8; // overall slow drift
-        n.y += n.vy * dt * 8;
-        if (n.x < 0 || n.x > 1400) n.vx = -n.vx;
-        if (n.y < 0 || n.y > 800) n.vy = -n.vy;
-        // Light damping so drift stays gentle
-        n.vx *= 0.999;
-        n.vy *= 0.999;
-        // Tiny jitter so motion never fully stalls
-        if (Math.abs(n.vx) < 0.5) n.vx += (Math.random() - 0.5) * 0.1;
-        if (Math.abs(n.vy) < 0.5) n.vy += (Math.random() - 0.5) * 0.1;
+        n.x += n.vx * dt;
+        n.y += n.vy * dt;
+        // Clamp + bounce on the viewBox edges so nodes stay on stage.
+        if (n.x < 0) {
+          n.x = 0;
+          n.vx = Math.abs(n.vx);
+        } else if (n.x > 1400) {
+          n.x = 1400;
+          n.vx = -Math.abs(n.vx);
+        }
+        if (n.y < 0) {
+          n.y = 0;
+          n.vy = Math.abs(n.vy);
+        } else if (n.y > 800) {
+          n.y = 800;
+          n.vy = -Math.abs(n.vy);
+        }
+        // Tiny jitter so motion never fully stalls visually.
+        if (Math.abs(n.vx) < 5) n.vx += (Math.random() - 0.5) * 4;
+        if (Math.abs(n.vy) < 5) n.vy += (Math.random() - 0.5) * 4;
 
         const el = nodeElsRef.current[i];
         if (el) {
