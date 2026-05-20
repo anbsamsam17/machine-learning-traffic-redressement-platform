@@ -116,14 +116,21 @@ def _train_single(
     patience = 30
     start_from = max(20, combo.min_nb_epochs)
 
+    # EarlyStopping monitors val_loss when a validation split exists,
+    # otherwise falls back to train loss (cannot discriminate overfitting,
+    # but avoids a hard callback failure when test_size == 0).
+    has_validation = x_valid_norm is not None and y_valid_norm is not None
+    early_stop_monitor = "val_loss" if has_validation else "loss"
+
     early_stop = keras.callbacks.EarlyStopping(
-        monitor="val_loss",
+        monitor=early_stop_monitor,
         patience=patience,
         restore_best_weights=True,
         start_from_epoch=start_from,
+        min_delta=1e-4,
     )
     reduce_lr = keras.callbacks.ReduceLROnPlateau(
-        monitor="val_loss",
+        monitor=early_stop_monitor,
         factor=0.5,
         patience=20,
         min_lr=1e-5,

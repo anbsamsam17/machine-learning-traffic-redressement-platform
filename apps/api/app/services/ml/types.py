@@ -48,7 +48,7 @@ class ModelTypeConfig:
     default_max_epochs: int              = 2050
     default_batch_size: int              = 256
     default_dropout: float               = 0.05
-    default_test_size: float             = 0.0
+    default_test_size: float             = 0.05
     default_high_flow_threshold: float   = 1000.0
 
 
