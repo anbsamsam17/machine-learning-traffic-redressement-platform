@@ -330,7 +330,7 @@ async def register(body: RegisterRequest) -> UserResponse:
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest) -> TokenResponse:
+async def login(body: LoginRequest, response: Response) -> TokenResponse:
     user = user_store.authenticate(body.email, body.password)
     if user is None:
         raise HTTPException(
@@ -338,6 +338,23 @@ async def login(body: LoginRequest) -> TokenResponse:
             detail="Email ou mot de passe incorrect",
         )
     token = create_access_token({"sub": user.user_id, "email": user.email})
+    # Also set the JWT as a cookie so subsequent requests don't depend on
+    # the client correctly attaching the Authorization header. The same
+    # cookie is read by:
+    #   - get_current_user() in this module (fallback when bearer absent)
+    #   - the Next.js Edge middleware (apps/web/middleware.ts)
+    # SameSite=Lax + Path=/ keeps it usable across the dev rewrites without
+    # opening CSRF holes. Secure flag follows the deployment env.
+    _settings = get_settings()
+    response.set_cookie(
+        key="mdl_access_token",
+        value=token,
+        max_age=_TOKEN_EXPIRE_HOURS * 3600,
+        path="/",
+        httponly=False,  # frontend lib/auth.ts still reads it client-side
+        secure=_settings.is_production,
+        samesite="lax",
+    )
     logger.info("User logged in: user_id=%s", user.user_id[:8])
     return TokenResponse(access_token=token)
 

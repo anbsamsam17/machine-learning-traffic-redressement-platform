@@ -14,6 +14,7 @@ import {
   Hash,
   Zap,
   Clock,
+  FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TagInput } from "@/components/ui/tag-input";
@@ -64,7 +65,22 @@ const EXTRA_INPUT_COLS_PL = [
 
 // ─── Shared constants ───────────────────────────────────────────────────────
 const ALL_ACTIVATIONS = ["elu", "relu", "tanh", "sigmoid", "selu"] as const;
-const ALL_LOSSES = ["mse", "huber", "mae"] as const;
+const ALL_LOSSES = [
+  "mse",
+  "huber",
+  "mae",
+  "tolerance_aware",
+  "pinball_p80",
+] as const;
+
+// ─── Phase 2A / 3 / 4 — Advanced ML knobs ───────────────────────────────────
+const OPTIMIZER_OPTIONS = ["adam", "adamw"] as const;
+const DROPOUT_SCHEDULE_OPTIONS = ["uniform", "decreasing"] as const;
+const NORM_LAYER_OPTIONS = ["none", "batch", "layer"] as const;
+
+type Optimizer = (typeof OPTIMIZER_OPTIONS)[number];
+type DropoutSchedule = (typeof DROPOUT_SCHEDULE_OPTIONS)[number];
+type NormLayer = (typeof NORM_LAYER_OPTIONS)[number];
 const PREDEFINED_ARCHS = [
   "[1, 1]",
   "[2, 1]",
@@ -120,6 +136,23 @@ export interface TrainingConfig {
   flag_priority_weight: number;
   analysis_scope: string;
   seed: number;
+
+  // ── Phase 2A / 3 / 4 — Régularisation et architecture avancée ──────────
+  optimizer: Optimizer;
+  weight_decay: number;
+  use_skip_connection: boolean;
+  dropout_schedule: DropoutSchedule;
+  clipnorm: number | null;
+  norm_layer: NormLayer;
+  use_quantile_head: boolean;
+  n_seeds: number;
+  use_year_embedding: boolean;
+  target_log_transform: boolean;
+  use_curriculum: boolean;
+  use_hard_example_mining: boolean;
+  tta_iter: number;
+  tta_noise_std: number;
+  bootstrap_iter: number;
 }
 
 interface ConfigFormProps {
@@ -338,6 +371,132 @@ function NumberInput({
   );
 }
 
+// ─── Radio group (segmented) ────────────────────────────────────────────────
+function RadioGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  tooltipKey,
+  help,
+}: {
+  label: string;
+  options: readonly T[];
+  value: T;
+  onChange: (v: T) => void;
+  tooltipKey?: keyof typeof fieldTooltips;
+  help?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+        <span>{label}</span>
+        {tooltipKey && fieldTooltips[tooltipKey] && (
+          <FieldInfo
+            purpose={fieldTooltips[tooltipKey].purpose}
+            recommendation={fieldTooltips[tooltipKey].recommendation}
+            label={label}
+          />
+        )}
+      </label>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((opt) => {
+          const active = value === opt;
+          return (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => onChange(opt)}
+              aria-pressed={active}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-medium border transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                active
+                  ? "bg-accent-subtle text-accent border-accent/40"
+                  : "bg-bg-elevated text-text-muted border-border hover:border-border-strong hover:text-text"
+              )}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+      {help && <p className="text-[10px] text-text-subtle">{help}</p>}
+    </div>
+  );
+}
+
+// ─── Optional number input (toggle null vs value) ───────────────────────────
+function OptionalNumberInput({
+  label,
+  value,
+  onChange,
+  min,
+  step = 1,
+  help,
+  tooltipKey,
+  placeholder,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  min?: number;
+  step?: number;
+  help?: string;
+  tooltipKey?: keyof typeof fieldTooltips;
+  placeholder?: string;
+}) {
+  const enabled = value !== null;
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+        <span>{label}</span>
+        {tooltipKey && fieldTooltips[tooltipKey] && (
+          <FieldInfo
+            purpose={fieldTooltips[tooltipKey].purpose}
+            recommendation={fieldTooltips[tooltipKey].recommendation}
+            label={label}
+          />
+        )}
+      </label>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => onChange(e.target.checked ? 1 : null)}
+            className="w-3.5 h-3.5 accent-accent"
+          />
+          <span className="text-[11px] text-text-muted">Activer</span>
+        </label>
+        <input
+          type="number"
+          value={value ?? ""}
+          min={min}
+          step={step}
+          disabled={!enabled}
+          placeholder={placeholder ?? "(désactivé)"}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw === "") {
+              onChange(null);
+            } else {
+              const v = parseFloat(raw);
+              onChange(isNaN(v) ? null : v);
+            }
+          }}
+          className={cn(
+            "flex-1 px-3 h-9 text-sm bg-bg-elevated border border-border rounded text-text font-mono tabular-nums",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+            !enabled && "opacity-50"
+          )}
+        />
+      </div>
+      {help && <p className="text-[10px] text-text-subtle">{help}</p>}
+    </div>
+  );
+}
+
 // ─── Slider with value display ──────────────────────────────────────────────
 function SliderInput({
   label,
@@ -348,6 +507,7 @@ function SliderInput({
   step,
   help,
   tooltipKey,
+  format,
 }: {
   label: string;
   value: number;
@@ -357,6 +517,7 @@ function SliderInput({
   step: number;
   help?: string;
   tooltipKey?: keyof typeof fieldTooltips;
+  format?: (v: number) => string;
 }) {
   return (
     <div className="space-y-2">
@@ -372,7 +533,7 @@ function SliderInput({
           )}
         </label>
         <span className="text-xs font-mono tabular-nums text-accent bg-accent-subtle px-2 py-0.5 rounded">
-          {value.toFixed(2)}
+          {format ? format(value) : value.toFixed(2)}
         </span>
       </div>
       <input
@@ -489,6 +650,28 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [seed, setSeed] = useState(1750);
   const [useWeighting, setUseWeighting] = useState(false);
   const [flagWeight, setFlagWeight] = useState(4.0);
+
+  // ── Phase 2A / 3 / 4 — Régularisation et architecture avancée ──────────
+  // Defaults match types.py ModelTypeConfig.default_* so a user who never
+  // opens this section gets byte-identical behaviour to before the refonte.
+  const [optimizer, setOptimizer] = useState<Optimizer>("adam");
+  const [weightDecay, setWeightDecay] = useState(0);
+  const [useSkipConnection, setUseSkipConnection] = useState(false);
+  const [dropoutSchedule, setDropoutSchedule] =
+    useState<DropoutSchedule>("uniform");
+  const [clipnorm, setClipnorm] = useState<number | null>(null);
+  const [normLayer, setNormLayer] = useState<NormLayer>("none");
+  const [useQuantileHead, setUseQuantileHead] = useState(false);
+  const [nSeeds, setNSeeds] = useState(1);
+  const [useYearEmbedding, setUseYearEmbedding] = useState(false);
+  const [targetLogTransform, setTargetLogTransform] = useState(false);
+  const [useCurriculum, setUseCurriculum] = useState(false);
+  const [useHardExampleMining, setUseHardExampleMining] = useState(false);
+  const [ttaIter, setTtaIter] = useState(1);
+  const [ttaNoiseStd, setTtaNoiseStd] = useState(0.01);
+  // bootstrap_iter: 0 (disabled) or 100..10000. Default 1000 matches the
+  // evaluation router default (apps/api/app/routers/evaluation.py).
+  const [bootstrapIter, setBootstrapIter] = useState(1000);
 
   // ── Dropdown for extras ──────────────────────────────────────────────────
   const [showExtraDropdown, setShowExtraDropdown] = useState(false);
@@ -649,6 +832,23 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       flag_priority_weight: flagWeight,
       analysis_scope: "all",
       seed,
+      // ── Phase 2A / 3 / 4 — propagated to TrainingConfig backend
+      // (model_config = {"extra": "allow"}) so unknown fields are accepted.
+      optimizer,
+      weight_decay: weightDecay,
+      use_skip_connection: useSkipConnection,
+      dropout_schedule: dropoutSchedule,
+      clipnorm,
+      norm_layer: normLayer,
+      use_quantile_head: useQuantileHead,
+      n_seeds: nSeeds,
+      use_year_embedding: useYearEmbedding,
+      target_log_transform: targetLogTransform,
+      use_curriculum: useCurriculum,
+      use_hard_example_mining: useHardExampleMining,
+      tta_iter: ttaIter,
+      tta_noise_std: ttaNoiseStd,
+      bootstrap_iter: bootstrapIter,
     };
 
     onSubmit(config);
@@ -677,6 +877,21 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     seed,
     isTv,
     onSubmit,
+    optimizer,
+    weightDecay,
+    useSkipConnection,
+    dropoutSchedule,
+    clipnorm,
+    normLayer,
+    useQuantileHead,
+    nSeeds,
+    useYearEmbedding,
+    targetLogTransform,
+    useCurriculum,
+    useHardExampleMining,
+    ttaIter,
+    ttaNoiseStd,
+    bootstrapIter,
   ]);
 
   // Sync mandatory cols when input cols change
@@ -1299,6 +1514,185 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 tooltipKey="flag_priority_weight"
               />
             )}
+          </div>
+        </Section>
+
+        {/* ───── 5. Phase 2A / 3 / 4 — Régularisation et architecture ML ───── */}
+        <Section
+          id="ml-advanced"
+          title="Phase 2/3 — ML avancé"
+          icon={<FlaskConical />}
+          defaultOpen={false}
+          badge="Phase 2A/3/4"
+        >
+          <p className="text-[11px] text-text-subtle">
+            Drapeaux additifs introduits par les Phases 2A / 3 / 4 du pipeline.
+            Tous les défauts ci-dessous préservent le comportement antérieur :
+            laissés tels quels, l&apos;entraînement est bit-identique à la
+            version Phase 0-1.
+          </p>
+
+          {/* Optimiseur et régularisation L2 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <RadioGroup
+              label="Optimiseur"
+              options={OPTIMIZER_OPTIONS}
+              value={optimizer}
+              onChange={setOptimizer}
+              tooltipKey="optimizer"
+            />
+            <SliderInput
+              label="Weight decay (L2 découplée)"
+              value={weightDecay}
+              onChange={setWeightDecay}
+              min={0}
+              max={0.01}
+              step={0.0001}
+              format={(v) => v.toExponential(1)}
+              help="Ignoré si optimiseur = adam. Plage 0..1e-2."
+              tooltipKey="weight_decay"
+            />
+          </div>
+
+          {/* Skip connection + dropout schedule */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
+            <Toggle
+              label="Skip connection (entrée → dernière couche)"
+              checked={useSkipConnection}
+              onChange={setUseSkipConnection}
+              tooltipKey="use_skip_connection"
+            />
+            <RadioGroup
+              label="Schéma de dropout"
+              options={DROPOUT_SCHEDULE_OPTIONS}
+              value={dropoutSchedule}
+              onChange={setDropoutSchedule}
+              tooltipKey="dropout_schedule"
+            />
+          </div>
+
+          {/* Clipnorm + Norm layer */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
+            <OptionalNumberInput
+              label="Gradient clipnorm"
+              value={clipnorm}
+              onChange={setClipnorm}
+              min={0}
+              step={0.1}
+              placeholder="désactivé"
+              help="Plafonne la norme du gradient (ex: 1.0)."
+              tooltipKey="clipnorm"
+            />
+            <RadioGroup
+              label="Couche de normalisation"
+              options={NORM_LAYER_OPTIONS}
+              value={normLayer}
+              onChange={setNormLayer}
+              tooltipKey="norm_layer"
+              help="`none` = legacy use_batch_norm pilote le comportement."
+            />
+          </div>
+
+          {/* Multi-seed et tête quantile */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
+            <SliderInput
+              label="Nombre de seeds par combinaison (n_seeds)"
+              value={nSeeds}
+              onChange={(v) => setNSeeds(Math.round(v))}
+              min={1}
+              max={10}
+              step={1}
+              format={(v) => `${Math.round(v)}`}
+              help="1 = comportement legacy. 3-5 mesure la variance."
+              tooltipKey="n_seeds"
+            />
+            <Toggle
+              label="Tête multi-quantile (q=0.2/0.5/0.8)"
+              checked={useQuantileHead}
+              onChange={setUseQuantileHead}
+              tooltipKey="use_quantile_head"
+            />
+          </div>
+
+          {/* Embedding année + log target */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
+            <Toggle
+              label="Embedding catégoriel pour l'année"
+              checked={useYearEmbedding}
+              onChange={setUseYearEmbedding}
+              tooltipKey="use_year_embedding"
+            />
+            <Toggle
+              label="log1p sur la cible (target_log_transform)"
+              checked={targetLogTransform}
+              onChange={setTargetLogTransform}
+              tooltipKey="target_log_transform"
+            />
+          </div>
+
+          {/* Curriculum et hard example mining */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-border">
+            <Toggle
+              label="Apprentissage curriculaire (faible → fort débit)"
+              checked={useCurriculum}
+              onChange={setUseCurriculum}
+              tooltipKey="use_curriculum"
+            />
+            <Toggle
+              label="Hard example mining (boost erreurs > 15 %)"
+              checked={useHardExampleMining}
+              onChange={setUseHardExampleMining}
+              tooltipKey="use_hard_example_mining"
+            />
+          </div>
+
+          {/* TTA et bootstrap (évaluation) */}
+          <div className="pt-3 border-t border-border space-y-4">
+            <p className="text-[11px] text-text-subtle">
+              Paramètres appliqués au moment de l&apos;évaluation (TTA et
+              intervalles bootstrap). Conservés ici pour limiter le va-et-vient
+              entre les étapes Configuration et Évaluation.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <SliderInput
+                label="TTA — itérations"
+                value={ttaIter}
+                onChange={(v) => setTtaIter(Math.round(v))}
+                min={1}
+                max={20}
+                step={1}
+                format={(v) => `${Math.round(v)}`}
+                help="1 = pas de TTA. > 1 = moyenne sur N passes bruitées."
+                tooltipKey="tta_iter"
+              />
+              <SliderInput
+                label="TTA — écart-type du bruit"
+                value={ttaNoiseStd}
+                onChange={setTtaNoiseStd}
+                min={0}
+                max={0.1}
+                step={0.005}
+                format={(v) => v.toFixed(3)}
+                help="Bruit gaussien sur les features normalisées."
+                tooltipKey="tta_noise_std"
+              />
+            </div>
+            <div>
+              <NumberInput
+                label="Bootstrap CI95 — nombre d'itérations"
+                value={bootstrapIter}
+                onChange={(v) => setBootstrapIter(Math.max(0, Math.round(v)))}
+                min={0}
+                step={100}
+                help="0 = désactivé. Sinon plage valide : 100..10000."
+                tooltipKey="bootstrap_iter"
+              />
+              {bootstrapIter !== 0 && (bootstrapIter < 100 || bootstrapIter > 10000) && (
+                <p className="text-[10px] text-warning mt-1">
+                  ⚠ Valeur invalide — utilisez 0 (désactivé) ou 100..10000.
+                </p>
+              )}
+            </div>
           </div>
         </Section>
       </div>

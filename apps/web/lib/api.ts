@@ -146,7 +146,12 @@ export const apiClient = {
   async get<T>(path: string, opts: BaseOptions = {}): Promise<T> {
     return withTimeout(
       (signal) =>
-        fetch(fullUrl(path), { method: "GET", headers: buildHeaders(), signal }).then(handle<T>),
+        fetch(fullUrl(path), {
+          method: "GET",
+          headers: buildHeaders(),
+          credentials: "include",
+          signal,
+        }).then(handle<T>),
       opts.signal,
       opts.timeoutMs ?? 30_000
     );
@@ -162,6 +167,7 @@ export const apiClient = {
         fetch(fullUrl(path), {
           method: "POST",
           headers: buildHeaders(),
+          credentials: "include",
           body: body === undefined ? undefined : JSON.stringify(body),
           signal,
         }).then(handle<T>),
@@ -180,6 +186,7 @@ export const apiClient = {
         fetch(fullUrl(path), {
           method: "POST",
           headers: buildHeaders(undefined, false), // let browser set boundary
+          credentials: "include",
           body: form,
           signal,
         }).then(handle<T>),

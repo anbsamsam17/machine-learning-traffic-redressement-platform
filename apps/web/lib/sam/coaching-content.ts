@@ -280,6 +280,98 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     recommendation:
       "`4.0` est le sweet spot audit. Évitez > 8.0 (surapprentissage sur les permanents).",
   },
+
+  // ── Phase 2A / 3 / 4 — Régularisation & architecture avancée ─────────────
+  optimizer: {
+    purpose:
+      "Choix de l'optimiseur — `adam` (baseline) ou `adamw` (Adam avec weight decay découplé).",
+    recommendation:
+      "`adamw` + `weight_decay=1e-4` recommandé sur les architectures ≥ 3 couches pour limiter l'overfit.",
+  },
+  weight_decay: {
+    purpose:
+      "Pénalité L2 découplée appliquée par AdamW. Ignorée si l'optimiseur est `adam`.",
+    recommendation:
+      "`1e-4` (0.0001) est un point de départ sûr. > 1e-2 dégrade généralement la convergence.",
+  },
+  use_skip_connection: {
+    purpose:
+      "Ajoute une connexion résiduelle entrée → dernière couche cachée (force l'API Functional Keras).",
+    recommendation:
+      "Activez sur les architectures ≥ 3 couches — améliore la stabilité du gradient.",
+  },
+  dropout_schedule: {
+    purpose:
+      "Stratégie de répartition du dropout sur les couches : `uniform` (constant) ou `decreasing` (décroissant).",
+    recommendation:
+      "`decreasing` est préféré sur les architectures profondes — moins de dropout sur les dernières couches.",
+  },
+  clipnorm: {
+    purpose:
+      "Plafonnement de la norme globale du gradient à chaque step. `null` = désactivé.",
+    recommendation:
+      "Activez avec `1.0` si vous observez des instabilités (loss NaN ou pics) durant l'entraînement.",
+  },
+  norm_layer: {
+    purpose:
+      "Type de couche de normalisation appliqué après chaque couche cachée.",
+    recommendation:
+      "`batch` quand `batch_size ≥ 128`, `layer` quand `batch_size < 64`. `none` désactive complètement.",
+  },
+  use_quantile_head: {
+    purpose:
+      "Ajoute une tête multi-quantile (q=0.2/0.5/0.8) en parallèle de la sortie de régression.",
+    recommendation:
+      "Recommandé pour estimer directement le p80 sans bootstrap. Coût compute marginal (~+5 %).",
+  },
+  n_seeds: {
+    purpose:
+      "Nombre de seeds aléatoires entraînées par combinaison du grid — réplique l'expérience pour mesurer la variance.",
+    recommendation:
+      "`3` à `5` réduit la variance des métriques de tol_in d'environ 30 %. Au-delà : coût marginal élevé.",
+  },
+  use_year_embedding: {
+    purpose:
+      "Route `year_mapped` à travers une couche `Embedding` apprise au lieu d'un scalaire dans la pile Dense.",
+    recommendation:
+      "Activez si vous avez ≥ 3 années dans le dataset — meilleure représentation qu'un mapping linéaire.",
+  },
+  target_log_transform: {
+    purpose:
+      "Applique `log1p(TxPen)` sur la cible avant normalisation. L'évaluation ré-applique `expm1`.",
+    recommendation:
+      "Activez si la distribution de TxPen est très asymétrique — réduit l'impact des outliers en valeur cible.",
+  },
+  use_curriculum: {
+    purpose:
+      "Apprentissage curriculaire : entraîne d'abord sur les 50 % de lignes à faible TMJOBCTV puis sur l'ensemble.",
+    recommendation:
+      "Utile sur les datasets très hétérogènes. Désactivé par défaut — testez si la convergence est instable.",
+  },
+  use_hard_example_mining: {
+    purpose:
+      "Augmente le poids des échantillons à forte erreur (>15 %) toutes les 10 époques après l'epoch 30.",
+    recommendation:
+      "Activez sur les datasets bruités — gain typique de quelques points de tol_in. Boost compound limité à 3x.",
+  },
+  tta_iter: {
+    purpose:
+      "Nombre d'itérations Test-Time Augmentation (bruit gaussien sur les inputs en prédiction).",
+    recommendation:
+      "`1` = pas de TTA. `5` à `10` lisse les prédictions sans coût d'entraînement supplémentaire.",
+  },
+  tta_noise_std: {
+    purpose:
+      "Écart-type du bruit gaussien ajouté aux features normalisées à chaque itération TTA.",
+    recommendation:
+      "`0.01` à `0.05` selon la sensibilité du modèle. Plus élevé = plus de lissage mais perte de finesse.",
+  },
+  bootstrap_iter: {
+    purpose:
+      "Nombre d'itérations bootstrap pour calculer les intervalles de confiance à 95 % sur les métriques.",
+    recommendation:
+      "`1000` est le défaut éprouvé. `0` désactive complètement. Plage valide : 0 ou 100–10 000.",
+  },
 };
 
 /**

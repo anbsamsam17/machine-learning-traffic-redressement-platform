@@ -71,7 +71,15 @@ export async function fetchWithAuth(
   const headers = new Headers(options.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(url, { ...options, headers });
+  // credentials: "include" sends the mdl_access_token cookie (set by the
+  // backend on POST /api/auth/login) alongside the Authorization header.
+  // Without this, cross-origin deployments (prod) lose the cookie path and
+  // /api/auth/me intermittently 401s when localStorage isn't yet populated.
+  const res = await fetch(url, {
+    credentials: "include",
+    ...options,
+    headers,
+  });
 
   if (res.status === 401 && !url.includes("/api/auth/")) {
     removeToken();
