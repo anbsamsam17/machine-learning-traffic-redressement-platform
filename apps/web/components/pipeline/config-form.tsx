@@ -25,24 +25,30 @@ import { toast } from "sonner";
 import type { AppMode } from "@/lib/store";
 
 // ─── Constants TV (Etape1_MDL_TV refonte FCD HERE) ─────────────────────────
+// Defaults aligned with MDL_Lyon_TV_BEST (seed 1751, best-of-10) — 11 features
+// at submit time (10 raw cols + year_mapped, appended via useYearFeature=true).
+// Order in input_cols at submit ends up as: [10 raw cols, year_mapped], the
+// year_mapped slot inheriting the `year_normalization` boolean (false here, so
+// year is passed raw). The 10 raw cols all use z-scored normalization EXCEPT
+// `functional_class` which is a categorical-like integer (raw).
 const DEFAULT_INPUT_COLS_TV = [
   "TMJOFCDTV",
   "TMJOFCDPL",
-  "avg_distance_m",
-  "avg_speed_kmh",
-  "truck_avg_min_distance_m",
-  "truck_avg_speed_kmh",
   "functional_class",
-];
-const EXTRA_INPUT_COLS_TV = [
-  "TMJOBCTV_HPM",
-  "TMJOBCTV_HPS",
   "avg_distance_before_m",
   "avg_distance_after_m",
   "avg_min_distance_m",
   "truck_avg_distance_m",
   "truck_avg_distance_before_m",
   "truck_avg_distance_after_m",
+  "truck_avg_min_distance_m",
+];
+const EXTRA_INPUT_COLS_TV = [
+  "TMJOBCTV_HPM",
+  "TMJOBCTV_HPS",
+  "avg_distance_m",
+  "avg_speed_kmh",
+  "truck_avg_speed_kmh",
 ];
 
 // ─── Constants PL ───────────────────────────────────────────────────────────
@@ -733,8 +739,15 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const fallbackExtras = isTv ? EXTRA_INPUT_COLS_TV : EXTRA_INPUT_COLS_PL;
 
   const [inputCols, setInputCols] = useState<string[]>([...defaultCols]);
+  // MDL_Lyon_TV_BEST default: every raw feature is z-scored EXCEPT
+  // `functional_class` which is treated as a categorical integer (raw).
+  // `year_mapped` is appended at submit time with its own norm flag
+  // (`yearNormalization`, default false → raw year).
   const [onOffNorm, setOnOffNorm] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(defaultCols.map((c) => [c, true]))
+    () =>
+      Object.fromEntries(
+        defaultCols.map((c) => [c, c !== "functional_class"])
+      )
   );
   const OUTPUT_OPTIONS = isTv
     ? ["TxPen", "TMJOBCTV"]
@@ -784,7 +797,11 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   }, []);
 
   // ── Feature annee ─────────────────────────────────────────────────────────
-  const [useYearFeature, setUseYearFeature] = useState(false);
+  // MDL_Lyon_TV_BEST uses year_mapped as the 11th input feature with raw
+  // (non-normalized) values 1/2/3 for 2023/2024/2025. Default ON so the form
+  // mirrors the production configuration; the column is appended to input_cols
+  // at submit time with on_off_norm[year_mapped] = yearNormalization (false).
+  const [useYearFeature, setUseYearFeature] = useState(true);
   const [yearColumnName, setYearColumnName] = useState("Annee");
   const [yearNormalization, setYearNormalization] = useState(false);
   const [yearMapping, setYearMapping] = useState<
@@ -796,32 +813,39 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   ]);
 
   // ── Colonnes obligatoires ────────────────────────────────────────────────
-  const defaultMandatory = isTv
-    ? ["TMJOFCDTV", "TMJOFCDPL"]
-    : ["TMJOFCDPL"];
+  // MDL_Lyon_TV_BEST default: no mandatory columns, min_input_count = 0.
+  // Combined with feature_subset_grid = false below, the form submits a single
+  // combination using exactly the selected input_cols (no Cartesian explosion).
+  const defaultMandatory: string[] = isTv ? [] : [];
   const [mandatoryCols, setMandatoryCols] = useState<string[]>(
     defaultMandatory.filter((c) => defaultCols.includes(c))
   );
-  const [minInputCount, setMinInputCount] = useState(isTv ? 3 : 2);
+  const [minInputCount, setMinInputCount] = useState(0);
 
   // ── Hyperparametres (training) ───────────────────────────────────────────
+  // Defaults reflect MDL_Lyon_TV_BEST (best of 10 seeds, seed 1751) — the
+  // production-validated configuration. User can still override any value.
   const [activations, setActivations] = useState<string[]>(["elu"]);
   const [learningRates, setLearningRates] = useState<string[]>(["0.01"]);
   const [losses, setLosses] = useState<string[]>(["mse"]);
-  const [minEpochs, setMinEpochs] = useState<string[]>(["100", "200"]);
-  const [maxEpochs, setMaxEpochs] = useState(500);
+  const [minEpochs, setMinEpochs] = useState<string[]>(["1250"]);
+  const [maxEpochs, setMaxEpochs] = useState(1250);
   const [testSize, setTestSize] = useState(0.0);
 
   // ── Architecture ─────────────────────────────────────────────────────────
-  const [selectedArchs, setSelectedArchs] = useState<string[]>(["[1, 1]"]);
+  // Neurons factors [3.0, 2.0, 1.0] = the "[3, 2, 1]" preset (3 hidden layers
+  // of 3N / 2N / 1N neurons where N is the feature count).
+  const [selectedArchs, setSelectedArchs] = useState<string[]>(["[3, 2, 1]"]);
   const [useBatchNorm, setUseBatchNorm] = useState(false);
-  const [dropouts, setDropouts] = useState<string[]>(["0.05"]);
+  const [dropouts, setDropouts] = useState<string[]>(["0.025"]);
   const [batchSizes, setBatchSizes] = useState<string[]>(["256"]);
 
   // ── Avance (seed, ponderation) ───────────────────────────────────────────
-  const [seed, setSeed] = useState(1750);
-  const [useWeighting, setUseWeighting] = useState(false);
-  const [flagWeight, setFlagWeight] = useState(4.0);
+  // Seed 1751 = the winning seed identified by the best-of-10 sweep on Lyon TV.
+  // Permanent weighting ON with weight 2.0 was part of the validated config.
+  const [seed, setSeed] = useState(1751);
+  const [useWeighting, setUseWeighting] = useState(true);
+  const [flagWeight, setFlagWeight] = useState(2.0);
   const [useRecentYearWeighting, setUseRecentYearWeighting] = useState(false);
   const [recentYearWeight, setRecentYearWeight] = useState(2.0);
 
@@ -870,25 +894,11 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   // Returns the breakdown so the resume panel can explain WHERE the total
   // comes from (feature_subsets × hyperparams) — avoids the "I configured 2
   // combos but got 8" surprise reported on Lyon.
+  // Note: feature_subset_grid is hardcoded to false at submit (MDL_Lyon_TV_BEST
+  // default = single combo, no Cartesian explosion). Keep featureSets = 1 here
+  // so the resume panel matches what the backend will receive.
   const combinationsBreakdown = useMemo(() => {
-    const optionalCols = inputCols.filter((c) => !mandatoryCols.includes(c));
-    const minOptional = Math.max(0, minInputCount - mandatoryCols.length);
-
-    function comb(n: number, k: number): number {
-      if (k > n || k < 0) return 0;
-      if (k === 0 || k === n) return 1;
-      let result = 1;
-      for (let i = 0; i < Math.min(k, n - k); i++) {
-        result = (result * (n - i)) / (i + 1);
-      }
-      return Math.round(result);
-    }
-
-    let featureSets = 0;
-    for (let k = minOptional; k <= optionalCols.length; k++) {
-      featureSets += comb(optionalCols.length, k);
-    }
-    featureSets = Math.max(featureSets, 1);
+    const featureSets = 1;
 
     const nActivations = activations.length || 1;
     const nLr = learningRates.filter((v) => !isNaN(parseFloat(v))).length || 1;
@@ -907,9 +917,6 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       hyperparams,
     };
   }, [
-    inputCols,
-    mandatoryCols,
-    minInputCount,
     activations,
     learningRates,
     minEpochs,
@@ -990,7 +997,11 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       year_normalization: useYearFeature ? yearNormalization : false,
       mandatory_input_cols: mandatoryCols,
       min_input_count: minInputCount,
-      feature_subset_grid: true,
+      // MDL_Lyon_TV_BEST default: single combination, no Cartesian explosion
+      // over feature subsets. User can still build a grid by adjusting
+      // mandatory_input_cols / min_input_count, but the default trains exactly
+      // the selected input_cols once.
+      feature_subset_grid: false,
       activations: parsedActivations,
       learning_rates: finalLrs,
       losses: parsedLosses,
@@ -1077,9 +1088,11 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     setMandatoryCols((prev) => prev.filter((c) => inputCols.includes(c)));
   }, [inputCols]);
 
-  // Auto-adjust minInputCount so it never goes below mandatoryCols.length
+  // Auto-adjust minInputCount so it never goes below mandatoryCols.length.
+  // (0 is a valid value when no mandatory cols are set — matches the
+  // MDL_Lyon_TV_BEST default of "no feature subset grid, no minimum".)
   useEffect(() => {
-    const floor = mandatoryCols.length || 1;
+    const floor = mandatoryCols.length;
     setMinInputCount((prev) => Math.max(prev, floor));
   }, [mandatoryCols]);
 
@@ -1495,40 +1508,24 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             label="Nombre minimum d'entrees (min_input_count)"
             value={minInputCount}
             onChange={setMinInputCount}
-            min={mandatoryCols.length || 1}
+            min={mandatoryCols.length}
             max={inputCols.length || 10}
-            help={`Minimum = ${mandatoryCols.length || 1} (colonnes obligatoires). Defaut ${isTv ? "TV" : "PL"} : ${isTv ? 3 : 2}.`}
+            help={`Minimum = ${mandatoryCols.length} (colonnes obligatoires). Defaut MDL_Lyon_TV_BEST : 0 (pas de grille de sous-ensembles).`}
             tooltipKey="min_input_count"
           />
 
-          {/* Auto grid summary */}
+          {/* Auto grid summary — feature_subset_grid is off by default
+              (MDL_Lyon_TV_BEST). The form trains exactly the selected
+              input_cols once; no Cartesian explosion over feature subsets. */}
           <div className="flex items-center gap-2 text-[11px] text-text-subtle pt-2 border-t border-border">
             <Hash size={11} aria-hidden="true" />
             <span>
-              Grid de feature subsets active —{" "}
+              Grille de feature subsets <span className="font-mono">désactivée</span>{" "}
+              — l&apos;entraînement utilise exactement les{" "}
               <span className="text-text-muted font-mono tabular-nums">
-                {(() => {
-                  const optionalCols = inputCols.filter(
-                    (c) => !mandatoryCols.includes(c)
-                  );
-                  const minOptional = Math.max(0, minInputCount - mandatoryCols.length);
-                  function comb(n: number, k: number): number {
-                    if (k > n || k < 0) return 0;
-                    if (k === 0 || k === n) return 1;
-                    let r = 1;
-                    for (let i = 0; i < Math.min(k, n - k); i++) {
-                      r = (r * (n - i)) / (i + 1);
-                    }
-                    return Math.round(r);
-                  }
-                  let s = 0;
-                  for (let k = minOptional; k <= optionalCols.length; k++) {
-                    s += comb(optionalCols.length, k);
-                  }
-                  return Math.max(s, 1).toLocaleString("fr-FR");
-                })()}
+                {inputCols.length}
               </span>{" "}
-              sous-ensembles generes.
+              colonne(s) sélectionnée(s) en une seule combinaison.
             </span>
           </div>
         </Section>
