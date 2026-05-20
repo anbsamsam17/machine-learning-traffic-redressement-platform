@@ -53,13 +53,16 @@ export function LoginForm() {
   }
 
   return (
+    // login-glass = darker scrim + stronger blur so the form sits clearly
+    // on top of the animated background. We keep the rounded-lg + indigo
+    // focus ring tokens defined in globals.css.
     <div
       data-enter="form"
-      className="relative w-full rounded-lg border border-white/[0.08] bg-zinc-950/40 p-6 backdrop-blur-sm"
+      className="login-glass relative w-full rounded-lg p-6"
     >
       <div className="mb-5">
-        <h2 className="text-lg font-semibold text-zinc-50">Connexion</h2>
-        <p className="mt-1 text-xs text-zinc-500">
+        <h2 className="text-lg font-semibold text-white">Connexion</h2>
+        <p className="mt-1 text-xs text-zinc-300">
           Accédez à votre espace de travail
         </p>
       </div>
@@ -77,7 +80,7 @@ export function LoginForm() {
         <div>
           <label
             htmlFor="email"
-            className="mb-1.5 block text-xs font-medium text-zinc-400"
+            className="mb-1.5 block text-xs font-medium text-zinc-200"
           >
             Adresse email
           </label>
@@ -96,7 +99,7 @@ export function LoginForm() {
         <div>
           <label
             htmlFor="password"
-            className="mb-1.5 block text-xs font-medium text-zinc-400"
+            className="mb-1.5 block text-xs font-medium text-zinc-200"
           >
             Mot de passe
           </label>
@@ -127,11 +130,11 @@ export function LoginForm() {
         </button>
       </form>
 
-      <p className="mt-5 text-center text-xs text-zinc-500">
+      <p className="mt-5 text-center text-xs text-zinc-300">
         Pas encore de compte ?{" "}
         <Link
           href="/register"
-          className="text-zinc-300 underline-offset-4 transition-colors hover:text-indigo-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 rounded-sm"
+          className="font-medium text-indigo-300 underline-offset-4 transition-colors hover:text-indigo-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 rounded-sm"
         >
           Créer un compte
         </Link>

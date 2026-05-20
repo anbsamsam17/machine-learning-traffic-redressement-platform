@@ -245,6 +245,53 @@ progress::-moz-progress-bar {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+ * /login — legibility utilities over the animated cityscape background.
+ * The /login background is intentionally rich and busy; foreground text
+ * needs a soft scrim + drop shadow to meet WCAG AA contrast (4.5:1 body,
+ * 3:1 large display).  These classes are used by HeroSection and the
+ * `[data-enter="features"]`/`[data-enter="stats"]` wrappers.
+ * ──────────────────────────────────────────────────────────────────── */
+.login-title-shadow {
+  /* Tight black drop shadow + a soft outer fade keeps the white hero
+     readable over both bright neon highlights and dark city windows. */
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 2px 12px rgba(0, 0, 0, 0.65),
+    0 0 28px rgba(15, 23, 42, 0.55);
+}
+.login-text-shadow {
+  /* Subtler shadow for body copy — keeps slate text readable without
+     turning into an embossed effect. */
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.8),
+    0 1px 6px rgba(0, 0, 0, 0.5);
+}
+.login-glass {
+  /* Glass scrim: dark semi-opaque base + blur so the busy background
+     remains visible but stops competing with text underneath. */
+  background-color: rgba(9, 11, 26, 0.62);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 40px -24px rgba(0, 0, 0, 0.65);
+}
+.login-glass-soft {
+  /* Slightly lighter scrim for inline groups that already sit inside a
+     larger glass card (e.g. each pill inside FeaturesPills). */
+  background-color: rgba(15, 19, 38, 0.55);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background-color 200ms ease, border-color 200ms ease, transform 200ms ease;
+}
+.login-glass-soft:hover {
+  background-color: rgba(15, 19, 38, 0.72);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
  * Accessibility — skip-link
  * Visible only on keyboard focus to let users jump past the header nav.
  * ──────────────────────────────────────────────────────────────────── */

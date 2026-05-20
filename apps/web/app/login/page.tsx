@@ -80,7 +80,7 @@ export default function LoginPage() {
           {/* Footer */}
           <footer
             data-enter="footer"
-            className="mt-12 border-t border-white/[0.04] pt-4 text-xs text-zinc-600"
+            className="login-text-shadow mt-12 border-t border-white/[0.1] pt-4 text-xs text-zinc-300"
           >
             © Outils a usage interne uniquement
           </footer>

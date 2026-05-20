@@ -13,40 +13,41 @@ const FEATURES: Feature[] = [
     icon: Brain,
     title: "Machine Learning",
     desc: "Réseaux de neurones TV & PL",
-    accent: "text-indigo-400",
+    accent: "text-indigo-300",
   },
   {
     icon: Radio,
     title: "Analyse capteurs",
     desc: "Boucles électromagnétiques & vidéo",
-    accent: "text-cyan-400",
+    accent: "text-cyan-300",
   },
   {
     icon: Route,
     title: "Données FCD",
     desc: "Floating Car Data temps réel",
-    accent: "text-amber-400",
+    accent: "text-amber-300",
   },
   {
     icon: Activity,
     title: "Modélisation",
     desc: "Redressement & évaluation",
-    accent: "text-emerald-400",
+    accent: "text-emerald-300",
   },
 ];
 
 function FeaturePill({ icon: Icon, title, desc, accent }: Feature) {
   return (
-    <div
-      className="group rounded-lg border border-white/[0.08] bg-white/[0.02] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.14] hover:bg-white/[0.04]"
-    >
+    // login-glass-soft: dark semi-opaque scrim + backdrop blur so the pill
+    // reads cleanly over the busy animated city background. Hover lifts it
+    // a touch and brightens the scrim for affordance.
+    <div className="login-glass-soft group h-full rounded-lg p-4 hover:-translate-y-0.5">
       <Icon
         className={`mb-3 h-5 w-5 ${accent}`}
         aria-hidden="true"
         strokeWidth={1.75}
       />
-      <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
-      <p className="mt-1 text-xs leading-relaxed text-zinc-500">{desc}</p>
+      <h3 className="text-sm font-semibold text-white">{title}</h3>
+      <p className="mt-1 text-xs leading-relaxed text-zinc-300">{desc}</p>
     </div>
   );
 }
@@ -59,7 +60,7 @@ export function FeaturesPills() {
       role="list"
     >
       {FEATURES.map((f) => (
-        <div role="listitem" key={f.title}>
+        <div role="listitem" key={f.title} className="h-full">
           <FeaturePill {...f} />
         </div>
       ))}

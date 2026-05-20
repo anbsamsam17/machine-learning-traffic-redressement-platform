@@ -168,8 +168,11 @@ export function LoginBg() {
         className="object-cover object-center select-none"
       />
 
-      {/* Readability overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/40 via-zinc-950/30 to-zinc-950/60" />
+      {/* Readability overlay — strengthened so the cityscape never out-shouts
+         foreground text. The angled gradient leans darker on the right where
+         the LoginForm card sits, preserving WCAG AA contrast for body copy. */}
+      <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/65 via-zinc-950/55 to-zinc-950/75" />
+      <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/35 via-transparent to-zinc-950/45" />
 
       {/* Side data streams (decorative binary rain) */}
       <DataStream side="left" />
