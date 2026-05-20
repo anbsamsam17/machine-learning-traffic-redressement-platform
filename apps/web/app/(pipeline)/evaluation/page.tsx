@@ -248,17 +248,40 @@ export default function EvaluationPage() {
       return;
     }
     const inputCols = (model.training_config.input_cols as string[]) ?? [];
-    const outputCol = (model.training_config.output_col as string) ?? "TxPenTVRef";
+    // Read both legacy `output_col` (singular) and current `output_cols`
+    // (plural list — written by the training pipeline). Default TxPen
+    // (the new FCD HERE schema) not TxPenTVRef (legacy Bordeaux).
+    const tc = model.training_config as Record<string, unknown>;
+    const outputColSingular = typeof tc.output_col === "string" ? tc.output_col : null;
+    const outputColsList = Array.isArray(tc.output_cols) ? (tc.output_cols as string[]) : null;
+    const outputCol = outputColSingular || outputColsList?.[0] || "TxPen";
+
+    // Special case: `year_mapped` is a feature DERIVED from the source
+    // column `Annee` via `training_config.year_value_mapping` (2019:1 …
+    // 2025:7). The user must NOT be asked to provide `year_mapped`
+    // directly — they should map `year_mapped` to the source `Annee`
+    // column, and the backend re-applies the mapping using the year_value_mapping
+    // attached to the training config. Replace `year_mapped` in the
+    // required list by a virtual marker that the UI will render as a
+    // dedicated row "Annee (mappee automatiquement)".
     const needed = [...inputCols, outputCol];
     setRequiredCols(needed);
 
-    // Auto-map: try exact match, then case-insensitive
+    // Auto-map: try exact match, then case-insensitive. For year_mapped,
+    // try to find the source Annee column.
     const mapping: Record<string, string> = {};
     const fileLower: Record<string, string> = {};
     fileColumns.forEach((c) => { fileLower[c.toLowerCase()] = c; });
 
     for (const col of needed) {
-      if (fileColumns.includes(col)) {
+      if (col === "year_mapped") {
+        // Look for source year column (annee / Annee / year / Year).
+        const yearSrc =
+          fileLower["annee"] || fileLower["year"] || fileColumns.find((c) =>
+            ["annee", "Annee", "Year", "year"].includes(c),
+          ) || "";
+        mapping[col] = yearSrc;
+      } else if (fileColumns.includes(col)) {
         mapping[col] = col;
       } else if (fileLower[col.toLowerCase()]) {
         mapping[col] = fileLower[col.toLowerCase()];
@@ -316,7 +339,23 @@ export default function EvaluationPage() {
         console.warn("Re-upload validation failed, will use raw_df fallback");
       }
 
-      // Run evaluation
+      // Run evaluation. For year_mapped, we DO NOT send the mapping to
+      // the backend as a column rename — instead we send year_column_name
+      // (source) + year_value_mapping (from training_config) so the
+      // backend re-applies the encoding 2019→1 … 2025→7. Otherwise a
+      // direct column_mapping would set df["year_mapped"] = raw years
+      // and the model would receive 2019-2025 instead of 1-7 → R²
+      // catastrophic.
+      const model = models.find((m) => m.name === selectedModel);
+      const tc = (model?.training_config ?? {}) as Record<string, unknown>;
+      const yearMapping = (tc.year_value_mapping as Record<string, number>) || null;
+      const yearSrc = colMapping["year_mapped"] || (tc.year_column_name as string) || "Annee";
+      const cleanedMapping: Record<string, string> = { ...colMapping };
+      // Remove year_mapped from the raw column_mapping — it's handled via
+      // year_value_mapping below to ensure proper encoding.
+      if (yearMapping) {
+        delete cleanedMapping["year_mapped"];
+      }
       const evalRes = await fetch(apiUrl("/api/evaluation/run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -325,7 +364,9 @@ export default function EvaluationPage() {
           model_name: selectedModel,
           model_dir: resolvedModelDir.trim(),
           filter_flag_comptage: filterFlagComptage,
-          column_mapping: colMapping,
+          column_mapping: cleanedMapping,
+          year_column_name: yearSrc,
+          year_value_mapping: yearMapping,
         }),
       });
       if (!evalRes.ok) {
