@@ -19,7 +19,7 @@ import { apiClient } from "@/lib/api";
 import type { AuthMeResponse } from "@/lib/types/api";
 
 const MODES = [
-  { key: "tv" as AppMode, label: "ML Redressement FCD TV", icon: Car, path: "/donnees" },
+  { key: "tv" as AppMode, label: "Modele TV", icon: Car, path: "/donnees" },
   { key: "pl" as AppMode, label: "Modele PL", icon: Truck, path: "/donnees" },
   { key: "carte" as AppMode, label: "Carte", icon: Map, path: "/carte" },
   { key: "compteurs" as AppMode, label: "Compteurs", icon: Activity, path: "/compteurs" },
