@@ -81,7 +81,7 @@ export default function EvaluationPage() {
   const [reportHtml, setReportHtml] = useState<string | null>(null);
   const [reportBlob, setReportBlob] = useState<Blob | null>(null);
   const [resolvedModelDir, setResolvedModelDir] = useState(outputDir ?? "");
-  const [filterFlagComptage, setFilterFlagComptage] = useState(false);
+  const [filterFlagPermanent, setFilterFlagPermanent] = useState(false);
   const [metricsFlash, setMetricsFlash] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const metricsContainerRef = useRef<HTMLDivElement>(null);
@@ -397,7 +397,7 @@ export default function EvaluationPage() {
           session_id: sid,
           model_name: selectedModel,
           model_dir: resolvedModelDir.trim(),
-          filter_flag_comptage: filterFlagComptage,
+          filter_flag_permanent: filterFlagPermanent,
           column_mapping: colMapping,
           year_column_name: needsYearMapping ? yearSourceCol : null,
           year_value_mapping: yearMappingDict,
@@ -437,7 +437,7 @@ export default function EvaluationPage() {
     } finally {
       setRunning(false);
     }
-  }, [validationFile, selectedModel, resolvedModelDir, sessionId, filterFlagComptage, colMapping, allMapped, mode, setSessionId]);
+  }, [validationFile, selectedModel, resolvedModelDir, sessionId, filterFlagPermanent, colMapping, allMapped, mode, setSessionId]);
 
   const downloadReport = useCallback(() => {
     if (!reportBlob) return;
@@ -520,12 +520,12 @@ export default function EvaluationPage() {
         />
         <label className="flex items-center gap-3 mt-4 cursor-pointer group">
           <div className="relative">
-            <input type="checkbox" checked={filterFlagComptage} onChange={(e) => setFilterFlagComptage(e.target.checked)} className="sr-only peer" />
+            <input type="checkbox" checked={filterFlagPermanent} onChange={(e) => setFilterFlagPermanent(e.target.checked)} className="sr-only peer" />
             <div className="w-10 h-5 rounded-full bg-slate-700 peer-checked:bg-indigo-500 transition-colors" />
             <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
           </div>
           <span className="text-sm text-slate-300 group-hover:text-slate-100 transition-colors">
-            Limiter aux capteurs permanents (flag_comptage = 1)
+            Limiter aux capteurs permanents (type compteur = Permanent / Siredo)
           </span>
         </label>
       </GlowCard>
