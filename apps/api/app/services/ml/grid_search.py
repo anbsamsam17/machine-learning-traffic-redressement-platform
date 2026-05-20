@@ -13,6 +13,23 @@ import itertools
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
+# Loss names accepted by ``model.compile(loss=...)``. The first three are
+# Keras built-ins; the last three are project-local custom losses defined
+# in ``losses.py`` and registered with ``keras.utils.get_custom_objects()``
+# at import time. Any combo whose ``loss`` is not in this set is rejected
+# by :func:`generate_all_combinations` to fail fast in the UI instead of
+# silently falling back to MSE in the model builder.
+VALID_LOSSES: frozenset[str] = frozenset(
+    {
+        "mse",
+        "mae",
+        "huber",
+        "tolerance_aware",
+        "pinball_p80",
+        "pinball",
+    }
+)
+
 
 def build_feature_sets(
     all_input_cols: list[str],
@@ -107,6 +124,13 @@ def generate_all_combinations(
     dropouts = dropouts or [0.05]
     neurons_factors_list = neurons_factors_list or [[1.0, 1.0]]
     batch_sizes = batch_sizes or [256]
+
+    invalid_losses = [l for l in losses if l not in VALID_LOSSES]
+    if invalid_losses:
+        raise ValueError(
+            f"Unknown loss(es) requested: {invalid_losses}. "
+            f"Allowed values: {sorted(VALID_LOSSES)}."
+        )
 
     combos: list[GridCombination] = []
 

@@ -21,6 +21,7 @@ import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 
+from . import losses as _losses  # noqa: F401 — registers custom loss aliases on import
 from .data_prep import prepare_training_data, split_train_valid
 from .grid_search import (
     GridCombination,
