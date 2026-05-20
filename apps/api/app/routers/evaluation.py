@@ -2369,6 +2369,30 @@ async def run_evaluation(
         else:
             logger.warning("flag_comptage demande mais colonne absente — pas de filtre applique")
 
+    # Bug 7 — replay feature engineering on the evaluation df. When the model
+    # was trained with feature_engineering.{add_pl_tv_ratio, log_transform_cols,
+    # one_hot_functional_class}, the derived columns (ratio_PLTV, log_*, fc_*)
+    # must be present in df BEFORE the missing-cols check below. The artifact's
+    # training_config carries the exact derivations applied at train time.
+    _fe = dict((training_config or {}).get("feature_engineering") or {})
+    if _fe:
+        try:
+            from ..services.ml.data_prep import (
+                _add_pl_tv_ratio,
+                _apply_log_transform_cols,
+                _one_hot_functional_class,
+            )
+            if bool(_fe.get("add_pl_tv_ratio", False)):
+                df = _add_pl_tv_ratio(df)
+            log_cols = list(_fe.get("log_transform_cols") or [])
+            if log_cols:
+                df = _apply_log_transform_cols(df, log_cols)
+            if bool(_fe.get("one_hot_functional_class", False)):
+                df = _one_hot_functional_class(df)
+            logger.info("feature_engineering replayed at eval: %s", _fe)
+        except Exception as exc:
+            logger.warning("Failed to replay feature_engineering at eval: %s", exc)
+
     missing = [c for c in input_cols + [output_col] if c not in df.columns]
     if missing:
         # Log available columns for debugging

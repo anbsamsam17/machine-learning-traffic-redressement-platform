@@ -211,10 +211,38 @@ def _train_single(
     flow_for_curriculum: np.ndarray | None = None,
     y_train_obs: np.ndarray | None = None,
     target_log_transform: bool = False,
+    # --- Phase 5 bug-fix plumbing -----------------------------------------
+    # These three were ignored by the previous pipeline: the request body
+    # carried them all the way to /api/training but the training pipeline
+    # never read them, so they no-op'd silently. Echoed on the artifact so
+    # downstream tooling (evaluation, kfold, metrics.json) can replay them.
+    use_log_flow_weighting: bool = False,
+    log_flow_weighting_col: str = "TMJOBCTV",
+    scaler: str = "standard",
+    # --- Bug 5 — year embedding plumbing ---------------------------------
+    use_year_embedding: bool = False,
+    year_embedding_dim: int = 3,
+    # --- Bug 7 — feature engineering echo (resolved by run_training) ------
+    feature_engineering_echo: dict[str, Any] | None = None,
 ) -> TrainedModelArtifact:
     """Train one model and return an in-memory artifact."""
 
     run_name_effective = run_name_override or combo.run_name
+
+    # Bug 5 — derive year-embedding indices from the combo's feature_cols.
+    # build_model requires (year_feature_idx, year_n_categories) when
+    # year_embedding=True. We only enable it when the model actually
+    # consumes `year_mapped` AND a non-empty year_value_mapping was passed.
+    _year_emb_active = bool(use_year_embedding) and ("year_mapped" in combo.feature_cols)
+    _year_feature_idx = (
+        combo.feature_cols.index("year_mapped") if _year_emb_active else None
+    )
+    # n_categories falls back to 7 (the default in build_model) when the
+    # caller didn't pass a mapping — keeps the layer width consistent with
+    # the original P2B.7 reference implementation.
+    _year_n_cats = (
+        len(year_value_mapping) if (year_value_mapping and _year_emb_active) else 7
+    )
 
     model = build_model(
         input_size=x_train_norm.shape[1],
@@ -225,6 +253,22 @@ def _train_single(
         loss=combo.loss,
         neurons_factors=combo.neurons_factors,
         use_batch_norm=use_batch_norm,
+        # P3 axes — propagate combo-level architecture choices so the
+        # grid actually varies the model (was previously silently
+        # ignored, making `optimizer=adamw`, `use_skip_connection`, etc.
+        # cosmetic-only on the resulting artifact).
+        optimizer=getattr(combo, "optimizer", "adam"),
+        weight_decay=float(getattr(combo, "weight_decay", 0.0) or 0.0),
+        use_skip_connection=bool(getattr(combo, "use_skip_connection", False)),
+        dropout_schedule=getattr(combo, "dropout_schedule", "uniform"),
+        clipnorm=getattr(combo, "clipnorm", None),
+        norm_layer=getattr(combo, "norm_layer", None),
+        use_quantile_head=bool(getattr(combo, "use_quantile_head", False)),
+        # Bug 5 — year embedding.
+        year_embedding=_year_emb_active,
+        year_feature_idx=_year_feature_idx,
+        year_n_categories=int(_year_n_cats),
+        year_embedding_dim=int(year_embedding_dim),
     )
 
     # EarlyStopping — patience=30. start_from = combo.min_nb_epochs so we
@@ -385,6 +429,10 @@ def _train_single(
             eval_x, eval_y = x_all_norm, y_all_norm
 
     eval_values = model.evaluate(eval_x, eval_y, verbose=0)
+    # model.evaluate returns a scalar when metrics=[] (quantile head path) and
+    # a list otherwise. Normalise to a list so zip() always succeeds.
+    if not isinstance(eval_values, (list, tuple)):
+        eval_values = [eval_values]
     metrics = {
         name: float(np.round(value, 6))
         for name, value in zip(model.metrics_names, eval_values)
@@ -408,6 +456,18 @@ def _train_single(
         "loss": combo.loss,
         "neurons_factors": combo.neurons_factors,
         "use_batch_norm": use_batch_norm,
+        # P3 architecture axes — echoed so downstream tooling and metrics.json
+        # report which variant was actually trained.
+        "optimizer": getattr(combo, "optimizer", "adam"),
+        "weight_decay": float(getattr(combo, "weight_decay", 0.0) or 0.0),
+        "use_skip_connection": bool(getattr(combo, "use_skip_connection", False)),
+        "dropout_schedule": getattr(combo, "dropout_schedule", "uniform"),
+        "clipnorm": getattr(combo, "clipnorm", None),
+        "norm_layer": getattr(combo, "norm_layer", None),
+        # Bug 4 — use_quantile_head must be echoed so downstream code can tell
+        # apart a regression artifact (1 output unit) from a quantile head
+        # (3 outputs, q=0.2/0.5/0.8). The grid combo already carries the flag.
+        "use_quantile_head": bool(getattr(combo, "use_quantile_head", False)),
         "start_from_epoch": start_from,
         "patience": patience,
         "reduce_lr_factor": float(reduce_lr_factor),
@@ -445,6 +505,20 @@ def _train_single(
         "curriculum_phase_a_epochs": (
             int(math.ceil(max_epochs * 0.3)) if curriculum_active else 0
         ),
+        # Phase 5 — flags previously dropped on the floor.
+        "target_log_transform": bool(target_log_transform),
+        "use_log_flow_weighting": bool(use_log_flow_weighting),
+        "log_flow_weighting_col": str(log_flow_weighting_col),
+        "scaler": str(scaler),
+        "use_year_embedding": bool(_year_emb_active),
+        "year_feature_idx": (
+            int(_year_feature_idx) if _year_feature_idx is not None else None
+        ),
+        "year_n_categories": int(_year_n_cats),
+        "year_embedding_dim": int(year_embedding_dim),
+        # P2B feature engineering — echoed so evaluation can replay the
+        # derivations on the validation df (Bug 7 fix on the consumer side).
+        "feature_engineering": dict(feature_engineering_echo or {}),
     }
 
     return TrainedModelArtifact(
@@ -531,7 +605,7 @@ def run_training(
         "use_flag_comptage_weighting" in config
         and "use_flag_permanent_weighting" not in config
     ):
-        logger.warning(
+        _logger.warning(
             "training config: 'use_flag_comptage_weighting' is deprecated; "
             "renamed to 'use_flag_permanent_weighting'."
         )
@@ -562,6 +636,47 @@ def run_training(
         )
     )
 
+    # Bug 1 / Bug 2 — propagate target_log_transform and log_flow weighting to
+    # split_train_valid. These were previously read by HardMining (Bug 1) but
+    # never forwarded to the split function, so the training target stayed in
+    # linear space and the log_flow weighting silently fell back to uniform.
+    target_log_transform_cfg = bool(config.get("target_log_transform", False))
+    use_log_flow_weighting = bool(config.get("use_log_flow_weighting", False))
+    log_flow_weighting_col = str(config.get("log_flow_weighting_col", "TMJOBCTV"))
+
+    # Bug 6 — scaler choice. Default "standard" preserves byte-identical
+    # behaviour for callers that don't pass the flag. "robust" routes the
+    # input-feature normalisation through median / (IQR/1.349) so heavy-
+    # tailed traffic counts (TMJOBCTV…) are less affected by extreme values.
+    # The target is always standard-normalised (legacy behaviour).
+    scaler_cfg = str(config.get("scaler", "standard"))
+    if scaler_cfg not in ("standard", "robust"):
+        _logger.warning(
+            "Unknown scaler '%s'; falling back to 'standard'.", scaler_cfg
+        )
+        scaler_cfg = "standard"
+
+    # Bug 5 — year_embedding plumbing. The request body field is
+    # `use_year_embedding`; legacy callers used `year_embedding`. Accept both.
+    use_year_embedding_cfg = bool(
+        config.get(
+            "use_year_embedding",
+            config.get("year_embedding", False),
+        )
+    )
+    year_embedding_dim_cfg = int(
+        config.get("year_embedding_dim", 3)
+    )
+
+    # Bug 7 — feature engineering echo. Resolved here so we can stamp the
+    # artifact's training_config (and have evaluation_pipeline replay them
+    # on the validation df).
+    _fe_block = dict(config.get("feature_engineering") or {})
+    # Top-level keys win when both forms are present (matches data_prep._fe_settings).
+    for _key in ("add_pl_tv_ratio", "log_transform_cols", "one_hot_functional_class"):
+        if _key in config and _key not in _fe_block:
+            _fe_block[_key] = config[_key]
+
     split = split_train_valid(
         prepared,
         input_cols=input_cols,
@@ -573,6 +688,9 @@ def run_training(
         flag_priority_weight=flag_weight,
         use_flag_recent_year_weighting=use_recent_year,
         recent_year_priority_weight=recent_year_weight,
+        target_log_transform=target_log_transform_cfg,
+        use_log_flow_weighting=use_log_flow_weighting,
+        log_flow_weighting_col=log_flow_weighting_col,
     )
 
     y = split["y"]
@@ -664,6 +782,33 @@ def run_training(
         )
     )
 
+    # P3 axes — pulled from config (preferred) or single defaults so any
+    # caller that just passes a single value (e.g. optimizer="adamw") still
+    # ends up with that value applied. Lists override singletons.
+    def _as_list(key_list: str, key_single: str | None, default):
+        if key_list in config and config[key_list] is not None:
+            return list(config[key_list])
+        if key_single is not None and key_single in config and config[key_single] is not None:
+            return [config[key_single]]
+        return list(default)
+
+    optimizers = _as_list("optimizers", "optimizer", ["adam"])
+    weight_decays = _as_list("weight_decays", "weight_decay", [0.0])
+    skip_connection_options = _as_list(
+        "skip_connection_options", "use_skip_connection", [False]
+    )
+    dropout_schedules = _as_list(
+        "dropout_schedules", "dropout_schedule", ["uniform"]
+    )
+    clipnorms_list = _as_list("clipnorms", "clipnorm", [None])
+    norm_layers_list = _as_list("norm_layers", "norm_layer", [None])
+    # Bug 4 — wire `use_quantile_head` into the grid so each combo carries
+    # the flag (build_model needs combo.use_quantile_head). Accept both the
+    # singular form (`use_quantile_head=True`) and the list form.
+    quantile_head_options = _as_list(
+        "quantile_head_options", "use_quantile_head", [False]
+    )
+
     combinations = generate_all_combinations(
         feature_sets=feature_sets,
         all_input_cols=input_cols,
@@ -674,6 +819,13 @@ def run_training(
         dropouts=dropouts,
         neurons_factors_list=neurons_factors_list,
         batch_sizes=batch_sizes,
+        optimizers=optimizers,
+        weight_decays=weight_decays,
+        skip_connection_options=skip_connection_options,
+        dropout_schedules=dropout_schedules,
+        clipnorms=clipnorms_list,
+        norm_layers=norm_layers_list,
+        quantile_head_options=quantile_head_options,
     )
 
     # Multiply combo count by n_seeds so the progress UI receives an
@@ -743,7 +895,12 @@ def run_training(
         x_tr = x_subset[idx_train]
         x_va = x_subset[idx_valid] if idx_valid is not None else None
 
-        x_train_norm, mu_x, sigma_x = normalize(x_tr, on_off_subset)
+        # Bug 6 — apply the configured scaler ("standard"|"robust") to the
+        # input features. valid/all reuse the train-fitted mu/sigma so the
+        # scaler argument is moot on those calls (kept for symmetry).
+        x_train_norm, mu_x, sigma_x = normalize(
+            x_tr, on_off_subset, scaler=scaler_cfg
+        )
         x_valid_norm = None
         if x_va is not None:
             x_valid_norm, _, _ = normalize(x_va, on_off_subset, mu_x, sigma_x)
@@ -821,6 +978,13 @@ def run_training(
                     flow_for_curriculum=flow_train_for_curriculum,
                     y_train_obs=y_train_obs_natural,
                     target_log_transform=target_log_transform,
+                    # Phase 5 bug-fix plumbing — see Bug 1/2/5/6/7.
+                    use_log_flow_weighting=use_log_flow_weighting,
+                    log_flow_weighting_col=log_flow_weighting_col,
+                    scaler=scaler_cfg,
+                    use_year_embedding=use_year_embedding_cfg,
+                    year_embedding_dim=year_embedding_dim_cfg,
+                    feature_engineering_echo=_fe_block,
                 )
                 # Stamp multi-seed metadata in the echo for downstream code.
                 try:

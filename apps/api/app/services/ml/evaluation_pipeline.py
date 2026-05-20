@@ -141,6 +141,32 @@ def apply_model(
     mu_y = artifact.mu_y.copy()
     s_y = artifact.sigma_y.copy()
 
+    # Bug 7 — replay feature engineering on the evaluation df. The artifact's
+    # training_config carries the exact set of derivations applied at train
+    # time (ratio_PLTV, log_<col>, fc_*) so the same columns are present in
+    # the X matrix. Without this, models trained with feature_engineering
+    # would crash with KeyError on ratio_PLTV / log_TMJOBCTV / fc_1...
+    _tc = getattr(artifact, "training_config", None) or {}
+    _fe = dict(_tc.get("feature_engineering") or {})
+    # Allow the caller's `config` to override the artifact's echo — useful
+    # when the artifact was trained before the echo existed.
+    _fe.update(dict(config.get("feature_engineering") or {}))
+
+    if _fe:
+        # Import locally to avoid pulling sklearn/data_prep at module import.
+        from .data_prep import (
+            _add_pl_tv_ratio,
+            _apply_log_transform_cols,
+            _one_hot_functional_class,
+        )
+        if bool(_fe.get("add_pl_tv_ratio", False)):
+            df = _add_pl_tv_ratio(df)
+        log_cols = list(_fe.get("log_transform_cols") or [])
+        if log_cols:
+            df = _apply_log_transform_cols(df, log_cols)
+        if bool(_fe.get("one_hot_functional_class", False)):
+            df = _one_hot_functional_class(df)
+
     # Year mapping. Falls back to common column names ("Annee", "annee",
     # "Year", "year") when the caller forgot to set year_column_name in the
     # evaluation config — fixes the "modele avec annee ne marche pas" bug
