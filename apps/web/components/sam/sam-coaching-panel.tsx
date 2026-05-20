@@ -152,6 +152,7 @@ export function SamCoachingPanel() {
           <header className="space-y-1 pr-8">
             <h2 className="text-base sm:text-lg font-semibold text-text leading-tight">
               Configuration par défaut : <span className="font-mono text-accent">MDL_Lyon_TV_BEST</span>
+              <span className="text-text-muted font-normal"> — 6 features (Compact 6)</span>
             </h2>
             <p className="text-xs text-text-muted">
               Baseline production validée — tol 66.41 %, p80 26.34, R² 0.808 sur 3632 capteurs GrandLyon (seed 1751). Chaque champ ci-dessous a une info-bulle dédiée

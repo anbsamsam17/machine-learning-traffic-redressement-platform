@@ -25,30 +25,38 @@ import { toast } from "sonner";
 import type { AppMode } from "@/lib/store";
 
 // ─── Constants TV (Etape1_MDL_TV refonte FCD HERE) ─────────────────────────
-// Defaults aligned with MDL_Lyon_TV_BEST (seed 1751, best-of-10) — 11 features
-// at submit time (10 raw cols + year_mapped, appended via useYearFeature=true).
-// Order in input_cols at submit ends up as: [10 raw cols, year_mapped], the
-// year_mapped slot inheriting the `year_normalization` boolean (false here, so
-// year is passed raw). The 10 raw cols all use z-scored normalization EXCEPT
-// `functional_class` which is a categorical-like integer (raw).
+// Defaults aligned with MDL_Lyon_TV_BEST (seed 1751, best-of-10) — Compact 6
+// features at submit time (5 raw cols + year_mapped, appended via
+// useYearFeature=true). Order in input_cols at submit ends up as:
+// [5 raw cols, year_mapped], the year_mapped slot inheriting the
+// `year_normalization` boolean (false here, so year is passed raw). The 5 raw
+// cols all use z-scored normalization EXCEPT `functional_class` which is a
+// categorical-like integer (raw). Modèle léger, performance équivalente à
+// Full 11 pour la plupart des cas — déploiement simple.
 const DEFAULT_INPUT_COLS_TV = [
   "TMJOFCDTV",
   "TMJOFCDPL",
+  "avg_min_distance_m",
+  "truck_avg_min_distance_m",
   "functional_class",
+];
+// Phase 05 features testées — disponibles si l'utilisateur veut élargir au-delà
+// de Compact 6 (distances avant/après VL/PL, ratio_PLTV, log1p, fc_1..fc_5).
+const EXTRA_INPUT_COLS_TV = [
+  "avg_distance_m",
   "avg_distance_before_m",
   "avg_distance_after_m",
-  "avg_min_distance_m",
   "truck_avg_distance_m",
   "truck_avg_distance_before_m",
   "truck_avg_distance_after_m",
-  "truck_avg_min_distance_m",
-];
-const EXTRA_INPUT_COLS_TV = [
-  "TMJOBCTV_HPM",
-  "TMJOBCTV_HPS",
-  "avg_distance_m",
-  "avg_speed_kmh",
-  "truck_avg_speed_kmh",
+  "ratio_PLTV",
+  "log1p_TMJOFCDTV",
+  "log1p_TMJOFCDPL",
+  "fc_1",
+  "fc_2",
+  "fc_3",
+  "fc_4",
+  "fc_5",
 ];
 
 // ─── Constants PL ───────────────────────────────────────────────────────────
@@ -797,19 +805,24 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   }, []);
 
   // ── Feature annee ─────────────────────────────────────────────────────────
-  // MDL_Lyon_TV_BEST uses year_mapped as the 11th input feature with raw
-  // (non-normalized) values 1/2/3 for 2023/2024/2025. Default ON so the form
-  // mirrors the production configuration; the column is appended to input_cols
-  // at submit time with on_off_norm[year_mapped] = yearNormalization (false).
+  // MDL_Lyon_TV_BEST uses year_mapped as the 6th input feature (Compact 6) with
+  // raw (non-normalized) values mapped via {2019:1, 2020:2, …, 2025:7}. Default
+  // ON so the form mirrors the production configuration; the column is appended
+  // to input_cols at submit time with on_off_norm[year_mapped] = yearNormalization
+  // (false).
   const [useYearFeature, setUseYearFeature] = useState(true);
   const [yearColumnName, setYearColumnName] = useState("Annee");
   const [yearNormalization, setYearNormalization] = useState(false);
   const [yearMapping, setYearMapping] = useState<
     { year: string; value: number }[]
   >([
-    { year: "2023", value: 1 },
-    { year: "2024", value: 2 },
-    { year: "2025", value: 3 },
+    { year: "2019", value: 1 },
+    { year: "2020", value: 2 },
+    { year: "2021", value: 3 },
+    { year: "2022", value: 4 },
+    { year: "2023", value: 5 },
+    { year: "2024", value: 6 },
+    { year: "2025", value: 7 },
   ]);
 
   // ── Colonnes obligatoires ────────────────────────────────────────────────
@@ -828,8 +841,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [activations, setActivations] = useState<string[]>(["elu"]);
   const [learningRates, setLearningRates] = useState<string[]>(["0.01"]);
   const [losses, setLosses] = useState<string[]>(["mse"]);
-  const [minEpochs, setMinEpochs] = useState<string[]>(["1250"]);
-  const [maxEpochs, setMaxEpochs] = useState(1250);
+  const [minEpochs, setMinEpochs] = useState<string[]>(["1000"]);
+  const [maxEpochs, setMaxEpochs] = useState(1000);
   const [testSize, setTestSize] = useState(0.0);
 
   // ── Architecture ─────────────────────────────────────────────────────────
@@ -837,7 +850,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   // of 3N / 2N / 1N neurons where N is the feature count).
   const [selectedArchs, setSelectedArchs] = useState<string[]>(["[3, 2, 1]"]);
   const [useBatchNorm, setUseBatchNorm] = useState(false);
-  const [dropouts, setDropouts] = useState<string[]>(["0.025"]);
+  const [dropouts, setDropouts] = useState<string[]>(["0.02"]);
   const [batchSizes, setBatchSizes] = useState<string[]>(["256"]);
 
   // ── Avance (seed, ponderation) ───────────────────────────────────────────

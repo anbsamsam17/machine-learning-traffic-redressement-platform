@@ -50,22 +50,27 @@ export const samConfigRecommendations: SamConfigRecommendations = {
         "`Type Compteur` ∈ {Permanent, permanent, Siredo} pondérés ×2.0 — sweet spot validé vs ×1 (baseline) ou ×3 (sur-concentration).",
     },
     {
-      label: "Full 11 features",
+      label: "Compact 6 features",
       body:
-        "FCD TV + FCD PL + 4 distances VL (before/after/min/m) + 4 distances PL + `functional_class` + `year_mapped`. `Compact 6` perd −5 pp tol.",
+        "`year_mapped` + `TMJOFCDTV` + `TMJOFCDPL` + `avg_min_distance_m` + `truck_avg_min_distance_m` + `functional_class` — modèle léger, déploiement simple, performance validée.",
     },
     {
-      label: "Dropout 0.025, [3, 2, 1], 1250 epochs forcés",
+      label: "Dropout 0.02, [3, 2, 1], 1000 epochs",
       body:
-        "`min_nb_epochs = max_epochs = 1250` — convergence stable, pas de surapprentissage observé sur 3632 capteurs.",
+        "Dropout 0.02 + [3, 2, 1] neurons + 1000 epochs — converge stable, pas de surapprentissage observé sur Compact 6.",
     },
     {
       label: "test_size = 0 (in-sample)",
       body:
-        "Sur 3632 capteurs, un hold-out 5 % (184 lignes) bruite l'EarlyStopping et coupe le training à ~epoch 1100 au lieu de 1250.",
+        "Sur 3632 capteurs, un hold-out 5 % (184 lignes) bruite l'EarlyStopping et coupe le training prématurément avant la convergence à 1000 epochs.",
     },
   ],
   pitfalls: [
+    {
+      label: "Ajouter trop de features (Full 11, distances avant/après)",
+      body:
+        "Gain marginal vs Compact 6 mais complexifie le déploiement et augmente le risque d'overfitting — rester sur 6 features sauf besoin spécifique.",
+    },
     {
       label: "Pondération `année récente` activée",
       body:
@@ -80,11 +85,6 @@ export const samConfigRecommendations: SamConfigRecommendations = {
       label: "Skip / SELU / Curriculum",
       body:
         "`Skip connection` (−15 pp tol), `SELU` (−10 pp R² vs ELU), `Curriculum` (−7 pp tol) — tous testés, tous régressent ici.",
-    },
-    {
-      label: "`tolerance_aware` ou `pinball_p80`",
-      body:
-        "Meilleur sur ablation pure mais variance forte ; `mse` reste plus robuste sur les 76+ modèles benchmarkés.",
     },
   ],
   strategy: {
@@ -161,13 +161,13 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Taux de dropout appliqué à chaque couche cachée — testé en grid search si plusieurs valeurs.",
     recommendation:
-      "Défaut **0.025** — sweet spot vs 0.02 (overfit) et 0.03 (underfit).",
+      "Défaut **0.02** — sweet spot vs 0.03 (underfit).",
   },
   dropout: {
     purpose:
       "Taux de dropout appliqué à chaque couche cachée.",
     recommendation:
-      "Défaut **0.025** — sweet spot vs 0.02 (overfit) et 0.03 (underfit).",
+      "Défaut **0.02** — sweet spot vs 0.03 (underfit).",
   },
 
   // ── Training ────────────────────────────────────────────────────────────
@@ -199,13 +199,13 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Nombre d'epochs minimum avant que l'EarlyStopping puisse arrêter l'entraînement.",
     recommendation:
-      "Défaut **1250** — force le training complet ; sur 3632 capteurs Lyon le modèle continue à améliorer jusqu'à 1250.",
+      "Défaut **1000** — converge sur Compact 6 ; ne pas dépasser car overfit.",
   },
   max_epochs: {
     purpose:
       "Plafond d'epochs — l'entraînement s'arrête au plus tard à cette valeur.",
     recommendation:
-      "Défaut **1250** = min_nb_epochs → désactive EarlyStopping en pratique.",
+      "Défaut **1000** = min_nb_epochs ; EarlyStopping reste actif en garde.",
   },
   test_size: {
     purpose:
@@ -219,7 +219,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Liste des colonnes d'entrée utilisées comme features par le modèle.",
     recommendation:
-      "Défaut **Full 11 features** : FCD TV + FCD PL + 4 distances VL + 4 distances PL + `functional_class` + `year_mapped`. `Compact 6` perd −5 pp tol.",
+      "Défaut **6 features (Compact 6)** — `year_mapped`, `TMJOFCDTV`, `TMJOFCDPL`, `avg_min_distance_m`, `truck_avg_min_distance_m`, `functional_class`. Modèle léger, performance équivalente à Full 11 pour la plupart des cas.",
   },
   output_cols: {
     purpose:
@@ -257,7 +257,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Ajoute une feature `year_mapped` issue de la colonne année.",
     recommendation:
-      "Défaut **ON** — `year_mapped` fait partie des 11 features de MDL_Lyon_TV_BEST.",
+      "Défaut **ON** — `year_mapped` fait partie des 6 features (Compact 6) de MDL_Lyon_TV_BEST.",
   },
   year_column_name: {
     purpose:
@@ -269,7 +269,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Table de correspondance année → valeur numérique injectée comme feature.",
     recommendation:
-      "Défaut **mapping 1-7** — `Year embedding learné` testé : pas d'effet vs encodage scalaire.",
+      "Défaut **mapping 1-7** (2019→1, 2020→2, …, 2025→7) — `Year embedding learné` testé : pas d'effet vs encodage scalaire.",
   },
   year_normalization: {
     purpose:
@@ -423,4 +423,4 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
  * Version stamp for the dismissed-localStorage key. Bump when the panel
  * copy is refreshed — users will see the new recommendations re-appear.
  */
-export const SAM_COACHING_VERSION = "MDL_Lyon_TV_BEST";
+export const SAM_COACHING_VERSION = "MDL_Lyon_TV_BEST-compact6";
