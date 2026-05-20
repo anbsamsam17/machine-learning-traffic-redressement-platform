@@ -4,10 +4,11 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/api-url";
 import { toast } from "sonner";
-import { samNotify, samMood } from "@/lib/sam-fallback";
+import { samNotify } from "@/lib/sam-fallback";
 import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
 import { ConfigForm, type TrainingConfig } from "@/components/pipeline/config-form";
+import { SamCoachingPanel } from "@/components/sam/sam-coaching-panel";
 import { useAppStore } from "@/lib/store";
 
 export default function ConfigPage() {
@@ -120,6 +121,8 @@ export default function ConfigPage() {
           </p>
         )}
       </div>
+
+      <SamCoachingPanel />
 
       <GlowCard className="!p-0 overflow-visible">
         <div className="p-6">

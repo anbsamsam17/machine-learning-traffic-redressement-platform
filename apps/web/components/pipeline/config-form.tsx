@@ -18,6 +18,8 @@ import {
 import { cn } from "@/lib/utils";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
+import { FieldInfo } from "@/components/ui/tooltip";
+import { fieldTooltips } from "@/lib/sam/coaching-content";
 import { toast } from "sonner";
 import type { AppMode } from "@/lib/store";
 
@@ -245,32 +247,44 @@ function Toggle({
   label,
   checked,
   onChange,
+  tooltipKey,
 }: {
   label: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  tooltipKey?: keyof typeof fieldTooltips;
 }) {
+  const tip = tooltipKey ? fieldTooltips[tooltipKey] : undefined;
   return (
-    <label className="flex items-center gap-2.5 cursor-pointer group select-none">
-      <span className="relative inline-flex">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          className="sr-only peer"
+    <span className="inline-flex items-center gap-1.5">
+      <label className="flex items-center gap-2.5 cursor-pointer group select-none">
+        <span className="relative inline-flex">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => onChange(e.target.checked)}
+            className="sr-only peer"
+          />
+          <span className="w-8 h-[18px] rounded-full bg-bg-subtle peer-checked:bg-accent transition-colors" />
+          <span
+            className={cn(
+              "absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform duration-200",
+              checked && "translate-x-[14px]"
+            )}
+          />
+        </span>
+        <span className="text-xs text-text-muted group-hover:text-text transition-colors">
+          {label}
+        </span>
+      </label>
+      {tip && (
+        <FieldInfo
+          purpose={tip.purpose}
+          recommendation={tip.recommendation}
+          label={label}
         />
-        <span className="w-8 h-[18px] rounded-full bg-bg-subtle peer-checked:bg-accent transition-colors" />
-        <span
-          className={cn(
-            "absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform duration-200",
-            checked && "translate-x-[14px]"
-          )}
-        />
-      </span>
-      <span className="text-xs text-text-muted group-hover:text-text transition-colors">
-        {label}
-      </span>
-    </label>
+      )}
+    </span>
   );
 }
 
@@ -283,6 +297,7 @@ function NumberInput({
   max,
   step = 1,
   help,
+  tooltipKey,
 }: {
   label: string;
   value: number;
@@ -291,10 +306,20 @@ function NumberInput({
   max?: number;
   step?: number;
   help?: string;
+  tooltipKey?: keyof typeof fieldTooltips;
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium text-text-muted">{label}</label>
+      <label className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+        <span>{label}</span>
+        {tooltipKey && fieldTooltips[tooltipKey] && (
+          <FieldInfo
+            purpose={fieldTooltips[tooltipKey].purpose}
+            recommendation={fieldTooltips[tooltipKey].recommendation}
+            label={label}
+          />
+        )}
+      </label>
       <input
         type="number"
         value={value}
@@ -322,6 +347,7 @@ function SliderInput({
   max,
   step,
   help,
+  tooltipKey,
 }: {
   label: string;
   value: number;
@@ -330,11 +356,21 @@ function SliderInput({
   max: number;
   step: number;
   help?: string;
+  tooltipKey?: keyof typeof fieldTooltips;
 }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-medium text-text-muted">{label}</label>
+        <label className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+          <span>{label}</span>
+          {tooltipKey && fieldTooltips[tooltipKey] && (
+            <FieldInfo
+              purpose={fieldTooltips[tooltipKey].purpose}
+              recommendation={fieldTooltips[tooltipKey].recommendation}
+              label={label}
+            />
+          )}
+        </label>
         <span className="text-xs font-mono tabular-nums text-accent bg-accent-subtle px-2 py-0.5 rounded">
           {value.toFixed(2)}
         </span>
@@ -667,8 +703,15 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           badge={`${selectedArchs.length}`}
         >
           <div>
-            <label className="text-xs font-medium text-text-muted mb-2 block">
-              Architectures (neurons_factors) — facteurs multiplicateurs de N
+            <label className="text-xs font-medium text-text-muted mb-2 flex items-center gap-1.5">
+              <span>
+                Architectures (neurons_factors) — facteurs multiplicateurs de N
+              </span>
+              <FieldInfo
+                purpose={fieldTooltips.neurons_factors.purpose}
+                recommendation={fieldTooltips.neurons_factors.recommendation}
+                label="Architectures"
+              />
             </label>
             <p className="text-[11px] text-text-subtle mb-2">
               Chaque facteur multiplie N (= nombre de features) pour definir le nombre
@@ -695,8 +738,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-text-muted mb-2 block">
-                Fonctions d&apos;activation
+              <label className="text-xs font-medium text-text-muted mb-2 flex items-center gap-1.5">
+                <span>Fonctions d&apos;activation</span>
+                <FieldInfo
+                  purpose={fieldTooltips.activations.purpose}
+                  recommendation={fieldTooltips.activations.recommendation}
+                  label="Activations"
+                />
               </label>
               <div className="flex flex-wrap gap-1.5">
                 {ALL_ACTIVATIONS.map((act) => {
@@ -721,12 +769,18 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               label="Batch Normalization (apres chaque couche cachee)"
               checked={useBatchNorm}
               onChange={setUseBatchNorm}
+              tooltipKey="use_batch_norm"
             />
           </div>
 
           <div>
-            <label className="text-xs font-medium text-text-muted mb-1 block">
-              Dropout(s)
+            <label className="text-xs font-medium text-text-muted mb-1 flex items-center gap-1.5">
+              <span>Dropout(s)</span>
+              <FieldInfo
+                purpose={fieldTooltips.dropouts.purpose}
+                recommendation={fieldTooltips.dropouts.recommendation}
+                label="Dropouts"
+              />
             </label>
             <TagInput
               values={dropouts}
@@ -744,8 +798,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           defaultOpen
         >
           <div>
-            <label className="text-xs font-medium text-text-muted mb-2 block">
-              Fonctions de perte (loss)
+            <label className="text-xs font-medium text-text-muted mb-2 flex items-center gap-1.5">
+              <span>Fonctions de perte (loss)</span>
+              <FieldInfo
+                purpose={fieldTooltips.losses.purpose}
+                recommendation={fieldTooltips.losses.recommendation}
+                label="Losses"
+              />
             </label>
             <div className="flex flex-wrap gap-1.5">
               {ALL_LOSSES.map((loss) => {
@@ -768,8 +827,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-text-muted mb-1 block">
-                Learning rates
+              <label className="text-xs font-medium text-text-muted mb-1 flex items-center gap-1.5">
+                <span>Learning rates</span>
+                <FieldInfo
+                  purpose={fieldTooltips.learning_rates.purpose}
+                  recommendation={fieldTooltips.learning_rates.recommendation}
+                  label="Learning rates"
+                />
               </label>
               <TagInput
                 values={learningRates}
@@ -778,8 +842,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-text-muted mb-1 block">
-                Batch size(s)
+              <label className="text-xs font-medium text-text-muted mb-1 flex items-center gap-1.5">
+                <span>Batch size(s)</span>
+                <FieldInfo
+                  purpose={fieldTooltips.batch_sizes.purpose}
+                  recommendation={fieldTooltips.batch_sizes.recommendation}
+                  label="Batch sizes"
+                />
               </label>
               <TagInput
                 values={batchSizes}
@@ -790,8 +859,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           </div>
 
           <div>
-            <label className="text-xs font-medium text-text-muted mb-1 block">
-              Min. epoques / start_from_epoch
+            <label className="text-xs font-medium text-text-muted mb-1 flex items-center gap-1.5">
+              <span>Min. epoques / start_from_epoch</span>
+              <FieldInfo
+                purpose={fieldTooltips.min_nb_epochs_list.purpose}
+                recommendation={fieldTooltips.min_nb_epochs_list.recommendation}
+                label="Min epochs"
+              />
             </label>
             <TagInput
               values={minEpochs}
@@ -809,6 +883,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             onChange={setMaxEpochs}
             min={100}
             step={50}
+            tooltipKey="max_epochs"
           />
         </Section>
 
@@ -823,8 +898,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           {/* INPUT_COLS chips */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-text-muted">
-                INPUT_COLS — colonnes d&apos;entree
+              <label className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+                <span>INPUT_COLS — colonnes d&apos;entree</span>
+                <FieldInfo
+                  purpose={fieldTooltips.input_cols.purpose}
+                  recommendation={fieldTooltips.input_cols.recommendation}
+                  label="Input cols"
+                />
               </label>
               <span className="text-[10px] text-text-subtle font-mono tabular-nums">
                 {inputCols.length} selectionnees
@@ -880,8 +960,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
           {/* OUTPUT_COLS */}
           <div>
-            <label className="text-xs font-medium text-text-muted mb-2 block">
-              OUTPUT_COLS — colonne cible
+            <label className="text-xs font-medium text-text-muted mb-2 flex items-center gap-1.5">
+              <span>OUTPUT_COLS — colonne cible</span>
+              <FieldInfo
+                purpose={fieldTooltips.output_cols.purpose}
+                recommendation={fieldTooltips.output_cols.recommendation}
+                label="Output cols"
+              />
             </label>
             <div className="flex flex-wrap gap-1.5">
               {OUTPUT_OPTIONS.map((col) => {
@@ -911,8 +996,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
           {/* Normalisation ON/OFF */}
           <div>
-            <label className="text-xs font-medium text-text-muted mb-2 block">
-              Normalisation ON/OFF par feature
+            <label className="text-xs font-medium text-text-muted mb-2 flex items-center gap-1.5">
+              <span>Normalisation ON/OFF par feature</span>
+              <FieldInfo
+                purpose={fieldTooltips.on_off_norm.purpose}
+                recommendation={fieldTooltips.on_off_norm.recommendation}
+                label="Normalisation"
+              />
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {inputCols.map((col) => (
@@ -940,8 +1030,17 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           <div className="pt-3 border-t border-border">
             <div className="flex items-center gap-2 mb-2">
               <Pin size={12} className="text-text-muted" aria-hidden="true" />
-              <label className="text-xs font-medium text-text-muted">
-                Colonnes obligatoires (toujours presentes dans chaque combinaison)
+              <label className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+                <span>
+                  Colonnes obligatoires (toujours presentes dans chaque combinaison)
+                </span>
+                <FieldInfo
+                  purpose={fieldTooltips.mandatory_input_cols.purpose}
+                  recommendation={
+                    fieldTooltips.mandatory_input_cols.recommendation
+                  }
+                  label="Colonnes obligatoires"
+                />
               </label>
             </div>
             <div className="flex flex-wrap gap-1.5 mb-2">
@@ -1006,6 +1105,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             min={mandatoryCols.length || 1}
             max={inputCols.length || 10}
             help={`Minimum = ${mandatoryCols.length || 1} (colonnes obligatoires). Defaut ${isTv ? "TV" : "PL"} : ${isTv ? 3 : 2}.`}
+            tooltipKey="min_input_count"
           />
 
           {/* Auto grid summary */}
@@ -1055,6 +1155,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               min={0}
               step={1}
               help="Graine aleatoire pour numpy / TensorFlow."
+              tooltipKey="seed"
             />
             <SliderInput
               label="Test size (fraction)"
@@ -1064,6 +1165,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               max={0.4}
               step={0.05}
               help="0.0 = pas de split test. 0.2 = 20% reserves pour test."
+              tooltipKey="test_size"
             />
           </div>
 
@@ -1075,14 +1177,22 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 label="Activer l'entree Annee"
                 checked={useYearFeature}
                 onChange={setUseYearFeature}
+                tooltipKey="use_year_feature"
               />
             </div>
             {useYearFeature && (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-text-muted">
-                      Colonne contenant l&apos;annee
+                    <label className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+                      <span>Colonne contenant l&apos;annee</span>
+                      <FieldInfo
+                        purpose={fieldTooltips.year_column_name.purpose}
+                        recommendation={
+                          fieldTooltips.year_column_name.recommendation
+                        }
+                        label="Colonne annee"
+                      />
                     </label>
                     <input
                       type="text"
@@ -1097,13 +1207,21 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                       label="Normalisation de l'annee"
                       checked={yearNormalization}
                       onChange={setYearNormalization}
+                      tooltipKey="year_normalization"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-text-muted mb-2 block">
-                    Mapping annee → valeur
+                  <label className="text-xs font-medium text-text-muted mb-2 flex items-center gap-1.5">
+                    <span>Mapping annee → valeur</span>
+                    <FieldInfo
+                      purpose={fieldTooltips.year_value_mapping.purpose}
+                      recommendation={
+                        fieldTooltips.year_value_mapping.recommendation
+                      }
+                      label="Mapping annee"
+                    />
                   </label>
                   <div className="space-y-2">
                     {yearMapping.map((entry, idx) => (
@@ -1169,6 +1287,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               label="Ponderation flag_comptage (capteurs permanents)"
               checked={useWeighting}
               onChange={setUseWeighting}
+              tooltipKey="use_flag_comptage_weighting"
             />
             {useWeighting && (
               <NumberInput
@@ -1177,6 +1296,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
                 onChange={setFlagWeight}
                 min={0}
                 step={0.5}
+                tooltipKey="flag_priority_weight"
               />
             )}
           </div>
