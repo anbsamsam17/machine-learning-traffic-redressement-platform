@@ -61,11 +61,23 @@ class ModelTypeConfig:
     # so existing tests / smoke scripts keep passing.
 
     # P2A.4: continuous weighting via log1p(TMJOBCTV) instead of the binary
-    # flag_comptage / flag_y2025. False -> original binary weighting.
+    # flag_permanent / flag_recent_year. False -> original binary weighting.
     use_log_flow_weighting: bool = False
     # Column read for log flow weighting (capteur reference). Defaults to the
     # TV BC column; PL pipeline can override via config dict.
     log_flow_weighting_col: str = "TMJOBCTV"
+
+    # --- Binary sample-weight defaults (rename of flag_comptage → flag_permanent)
+    # Defaults preserve the pre-rename behaviour: no weighting unless the
+    # caller explicitly opts in via the training config dict.
+    default_use_flag_permanent_weighting: bool = False
+    default_flag_priority_weight: float = 4.0
+
+    # New: configurable recent-year boost. The "recent year" is auto-detected
+    # at training time as the MAX value of ``year_mapped`` in the prepared
+    # DataFrame (no hardcoded 2025). Default OFF.
+    default_use_flag_recent_year_weighting: bool = False
+    default_recent_year_priority_weight: float = 2.0
 
     # P2A.5: target transform log1p(TxPen). When True, y_train and y_valid
     # are log1p-transformed BEFORE normalization. Evaluation re-applies expm1.

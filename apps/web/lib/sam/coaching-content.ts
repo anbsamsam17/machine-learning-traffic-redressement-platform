@@ -5,7 +5,7 @@
  * All copy is in French to match the rest of the redressement pipeline UI.
  * Recommendations are drawn from the audit (Phase 1 → 5):
  *   - p80 / tol_in sensitivity to loss & outliers
- *   - flag_comptage + flag_y2025 weighting gains on the in-tol sensor count
+ *   - flag_permanent + flag_recent_year weighting gains on the in-tol sensor count
  *   - empirical sweet-spot grid on dropout / neurons_factors
  *   - bootstrap CI95 for stability of tol_in
  *
@@ -48,7 +48,7 @@ export const samConfigRecommendations: SamConfigRecommendations = {
     {
       label: "Pondération",
       body:
-        "Activez `flag_comptage` + `flag_y2025` ensemble : gain observé de +60 à +90 capteurs in-tol sur les runs audit.",
+        "Activez « capteurs permanents » + « année la plus récente » ensemble (gain observé de +60 à +90 capteurs in-tol sur les runs audit).",
     },
     {
       label: "Architecture",
@@ -268,17 +268,29 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     recommendation:
       "`1750` par défaut sur le projet. Changez pour explorer la variance (idéalement avec multi-seed).",
   },
-  use_flag_comptage_weighting: {
+  flag_permanent_weighting: {
     purpose:
-      "Pondère les échantillons selon le flag `flag_comptage` (capteurs permanents) dans la loss.",
+      "Capteurs de type 'Permanent' / 'Siredo' (les plus fiables) reçoivent un poids accru lors de l'entraînement.",
     recommendation:
-      "Activez — gain observé de +60 à +90 capteurs in-tol sur les runs audit Phase 2.",
+      "Recommandé : ON sur jeux avec capteurs permanents. Gain observé +60 à +90 capteurs in-tol sur les runs audit.",
   },
   flag_priority_weight: {
     purpose:
-      "Poids appliqué aux échantillons `flag_comptage=1` (capteurs permanents).",
+      "Poids appliqué aux échantillons identifiés comme capteurs permanents (Permanent / Siredo).",
     recommendation:
       "`4.0` est le sweet spot audit. Évitez > 8.0 (surapprentissage sur les permanents).",
+  },
+  flag_recent_year_weighting: {
+    purpose:
+      "Pondère plus l'année la plus récente du jeu (la mesure la plus à jour) pour refléter les conditions actuelles.",
+    recommendation:
+      "Recommandé : ON pour que le modèle reflète davantage les conditions actuelles. Combinable avec la pondération capteurs permanents.",
+  },
+  recent_year_priority_weight: {
+    purpose:
+      "Poids multiplicatif appliqué aux lignes correspondant à l'année la plus récente du dataset (détectée automatiquement).",
+    recommendation:
+      "`2.0` (défaut) suffit dans la plupart des cas. Plage utile 1.5–3.0. Au-delà, le modèle ignore les années passées.",
   },
 
   // ── Phase 2A / 3 / 4 — Régularisation & architecture avancée ─────────────

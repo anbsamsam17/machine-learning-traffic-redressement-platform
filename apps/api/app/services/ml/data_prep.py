@@ -67,15 +67,73 @@ def _derive_target(
     return df
 
 
-def _derive_flag_comptage(df: pd.DataFrame) -> pd.DataFrame:
-    """Add ``flag_comptage`` if absent (same logic as original scripts)."""
-    if "flag_comptage" not in df.columns:
-        if "Type" in df.columns:
-            types = df["Type"].astype(str).str.strip().str.lower()
-            df["flag_comptage"] = types.isin(["per", "tou"]).astype(int)
+# Candidate column names (case-insensitive) holding the counter category
+# (Permanent / Siredo / Ponctuel / FCD …). The first match wins.
+_PERMANENT_TYPE_CANDIDATES: tuple[str, ...] = (
+    "type compteur",
+    "type_compteur",
+    "typecompteur",
+    "type_de_compteur",
+    "type",  # legacy short alias
+)
+
+# Values that count as "permanent" (the most trustworthy sensors). Match is
+# case-insensitive and whitespace-stripped.
+_PERMANENT_TYPE_VALUES: frozenset[str] = frozenset(
+    {"permanent", "siredo", "per", "tou"}
+)
+
+
+def _find_type_compteur_column(df: pd.DataFrame) -> str | None:
+    """Return the first DataFrame column matching a known 'type compteur' alias.
+
+    Comparison is case-insensitive and ignores surrounding whitespace so we
+    pick up ``"Type Compteur"``, ``"TYPE_COMPTEUR"``, ``" type compteur "`` …
+    """
+    normalized = {
+        col: col.strip().lower().replace("-", " ").replace("_", " ")
+        for col in df.columns
+    }
+    for candidate in _PERMANENT_TYPE_CANDIDATES:
+        target = candidate.strip().lower().replace("-", " ").replace("_", " ")
+        for col, norm in normalized.items():
+            if norm == target:
+                return col
+    return None
+
+
+def _derive_flag_permanent(df: pd.DataFrame) -> pd.DataFrame:
+    """Add ``flag_permanent`` (= 1 for Permanent / Siredo capteurs).
+
+    Backward compat: the legacy column name ``flag_comptage`` is kept in
+    sync so downstream code (evaluation_pipeline, kfold) keeps working
+    unchanged.
+    """
+    if "flag_permanent" not in df.columns:
+        type_col = _find_type_compteur_column(df)
+        if type_col is not None:
+            values = df[type_col].astype(str).str.strip().str.lower()
+            df["flag_permanent"] = values.isin(_PERMANENT_TYPE_VALUES).astype(int)
+        elif "flag_comptage" in df.columns:
+            # Legacy datasets where the upstream mapping already produced
+            # the binary column — adopt it as-is.
+            df["flag_permanent"] = pd.to_numeric(
+                df["flag_comptage"], errors="coerce"
+            ).fillna(0).astype(int)
         else:
-            df["flag_comptage"] = 0
+            df["flag_permanent"] = 0
+
+    # Keep the legacy column name in sync for backward compatibility with
+    # downstream consumers (evaluation_pipeline, kfold, evaluation router).
+    if "flag_comptage" not in df.columns:
+        df["flag_comptage"] = df["flag_permanent"]
+
     return df
+
+
+# Legacy alias — preserved so any external caller importing the old name
+# keeps working. New code must use ``_derive_flag_permanent``.
+_derive_flag_comptage = _derive_flag_permanent
 
 
 def _apply_year_mapping(
@@ -243,8 +301,9 @@ def prepare_training_data(
     # Step 2: derive target
     gdf = _derive_target(gdf, type_config)
 
-    # Step 3: flag_comptage
-    gdf = _derive_flag_comptage(gdf)
+    # Step 3: flag_permanent (capteurs Permanent / Siredo). Legacy
+    # `flag_comptage` is kept synced for back-compat with evaluation_pipeline.
+    gdf = _derive_flag_permanent(gdf)
 
     # Step 4: year mapping
     gdf = _apply_year_mapping(gdf, config)
@@ -298,13 +357,19 @@ def split_train_valid(
     output_cols: list[str],
     test_size: float,
     seed: int,
-    use_flag_comptage_weighting: bool = False,
-    flag_comptage_col: str = "flag_comptage",
+    use_flag_permanent_weighting: bool = False,
+    flag_permanent_col: str = "flag_permanent",
     flag_priority_weight: float = 4.0,
     *,
     use_log_flow_weighting: bool = False,
     log_flow_weighting_col: str = "TMJOBCTV",
     target_log_transform: bool = False,
+    use_flag_recent_year_weighting: bool = False,
+    recent_year_priority_weight: float = 2.0,
+    recent_year_col: str = "year_mapped",
+    # Backward-compatible aliases (deprecated — accepted with a warning):
+    use_flag_comptage_weighting: bool | None = None,
+    flag_comptage_col: str | None = None,
 ) -> dict[str, Any]:
     """Split into train / valid arrays and compute sample weights.
 
@@ -317,12 +382,37 @@ def split_train_valid(
     Notes
     -----
     * When ``use_log_flow_weighting`` is True it OVERRIDES the binary
-      ``flag_comptage`` weighting and computes ``w = log1p(<flow_col>)``,
+      ``flag_permanent`` weighting and computes ``w = log1p(<flow_col>)``,
       re-scaled so ``sum(w) == N_train``.
+    * When ``use_flag_permanent_weighting`` is True, rows where the
+      ``flag_permanent`` column equals 1 receive
+      ``flag_priority_weight`` (others stay at 1.0).
+    * When ``use_flag_recent_year_weighting`` is True, the boost is
+      multiplied (compounded) for rows belonging to the MAX value of
+      ``recent_year_col`` — auto-detected from the data, not hardcoded.
     * When ``target_log_transform`` is True, ``y_train`` and ``y_valid``
       are replaced with ``log1p(y)`` BEFORE normalization (the caller is
       expected to z-score the transformed target as usual).
+    * Legacy keyword arguments ``use_flag_comptage_weighting`` /
+      ``flag_comptage_col`` are accepted and forwarded (with a warning).
     """
+    # ---- Legacy alias handling -------------------------------------------
+    if use_flag_comptage_weighting is not None:
+        logger.warning(
+            "split_train_valid: 'use_flag_comptage_weighting' is deprecated; "
+            "use 'use_flag_permanent_weighting' instead."
+        )
+        # Only honour the legacy alias when the caller did NOT also pass the
+        # new name (the new name wins to keep callers' intent explicit).
+        if not use_flag_permanent_weighting:
+            use_flag_permanent_weighting = bool(use_flag_comptage_weighting)
+    if flag_comptage_col is not None:
+        logger.warning(
+            "split_train_valid: 'flag_comptage_col' is deprecated; "
+            "use 'flag_permanent_col' instead."
+        )
+        if flag_permanent_col == "flag_permanent":
+            flag_permanent_col = str(flag_comptage_col)
     x_full = df[input_cols].values.astype(float)
     y = df[output_cols].values.astype(float)
 
@@ -356,11 +446,56 @@ def split_train_valid(
     all_sw: np.ndarray | None = None
     if use_log_flow_weighting:
         all_sw = _compute_log_flow_weights(df, log_flow_weighting_col)
-    if all_sw is None and use_flag_comptage_weighting and flag_comptage_col in df.columns:
-        flag_series = pd.to_numeric(df[flag_comptage_col], errors="coerce").fillna(0)
-        all_sw = np.where(
-            flag_series.values == 1, flag_priority_weight, 1.0
-        ).astype(float)
+
+    # Binary flag-based weighting. flag_permanent and flag_recent_year
+    # compound multiplicatively when both are active (so a row that is
+    # permanent AND in the most-recent year gets the product of both
+    # boosts). The normalisation step further down rescales the resulting
+    # vector so sum(weights) == N_train, preserving effective LR.
+    if all_sw is None and (
+        use_flag_permanent_weighting or use_flag_recent_year_weighting
+    ):
+        base = np.ones(len(df), dtype=float)
+
+        if use_flag_permanent_weighting and flag_permanent_col in df.columns:
+            flag_series = pd.to_numeric(
+                df[flag_permanent_col], errors="coerce"
+            ).fillna(0)
+            base = np.where(
+                flag_series.values == 1,
+                base * float(flag_priority_weight),
+                base,
+            )
+        elif use_flag_permanent_weighting:
+            logger.warning(
+                "use_flag_permanent_weighting=True but column '%s' is missing"
+                " — falling back to uniform weights for the permanent flag.",
+                flag_permanent_col,
+            )
+
+        if use_flag_recent_year_weighting and recent_year_col in df.columns:
+            year_series = pd.to_numeric(
+                df[recent_year_col], errors="coerce"
+            )
+            if year_series.notna().any():
+                # Auto-detect the most recent year as the MAX value in the
+                # mapped column (typed pipeline encodes years as small
+                # ascending integers 1..N — last is the newest).
+                max_year = float(year_series.max())
+                recent_mask = (year_series.values == max_year)
+                base = np.where(
+                    recent_mask,
+                    base * float(recent_year_priority_weight),
+                    base,
+                )
+        elif use_flag_recent_year_weighting:
+            logger.warning(
+                "use_flag_recent_year_weighting=True but column '%s' is"
+                " missing — recent-year boost ignored.",
+                recent_year_col,
+            )
+
+        all_sw = base.astype(float)
 
     if all_sw is not None:
         train_sample_weight = all_sw[idx_train]

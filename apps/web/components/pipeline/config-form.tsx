@@ -131,9 +131,11 @@ export interface TrainingConfig {
   use_batch_norm: boolean;
   dropouts: number[];
   batch_sizes: number[];
-  use_flag_comptage_weighting: boolean;
-  flag_comptage_col: string;
+  use_flag_permanent_weighting: boolean;
+  flag_permanent_col: string;
   flag_priority_weight: number;
+  use_flag_recent_year_weighting: boolean;
+  recent_year_priority_weight: number;
   analysis_scope: string;
   seed: number;
 
@@ -820,6 +822,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [seed, setSeed] = useState(1750);
   const [useWeighting, setUseWeighting] = useState(false);
   const [flagWeight, setFlagWeight] = useState(4.0);
+  const [useRecentYearWeighting, setUseRecentYearWeighting] = useState(false);
+  const [recentYearWeight, setRecentYearWeight] = useState(2.0);
 
   // ── Phase 2A / 3 / 4 — Régularisation et architecture avancée ──────────
   // Defaults match types.py ModelTypeConfig.default_* so a user who never
@@ -997,9 +1001,11 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       use_batch_norm: useBatchNorm,
       dropouts: finalDrps,
       batch_sizes: finalBss,
-      use_flag_comptage_weighting: useWeighting,
-      flag_comptage_col: "flag_comptage",
+      use_flag_permanent_weighting: useWeighting,
+      flag_permanent_col: "flag_permanent",
       flag_priority_weight: flagWeight,
+      use_flag_recent_year_weighting: useRecentYearWeighting,
+      recent_year_priority_weight: recentYearWeight,
       analysis_scope: "all",
       seed,
       // ── Phase 2A / 3 / 4 — propagated to TrainingConfig backend
@@ -1044,6 +1050,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     batchSizes,
     useWeighting,
     flagWeight,
+    useRecentYearWeighting,
+    recentYearWeight,
     seed,
     isTv,
     onSubmit,
@@ -1669,19 +1677,38 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           {/* Ponderation */}
           <div className="pt-3 border-t border-border space-y-3">
             <Toggle
-              label="Ponderation flag_comptage (capteurs permanents)"
+              label="Pondération capteurs permanents"
               checked={useWeighting}
               onChange={setUseWeighting}
-              tooltipKey="use_flag_comptage_weighting"
+              tooltipKey="flag_permanent_weighting"
             />
             {useWeighting && (
               <NumberInput
-                label="Poids des capteurs permanents (flag=1)"
+                label="Poids des capteurs permanents (Permanent / Siredo)"
                 value={flagWeight}
                 onChange={setFlagWeight}
                 min={0}
                 step={0.5}
                 tooltipKey="flag_priority_weight"
+              />
+            )}
+            <Toggle
+              label="Pondération année la plus récente"
+              checked={useRecentYearWeighting}
+              onChange={setUseRecentYearWeighting}
+              tooltipKey="flag_recent_year_weighting"
+            />
+            {useRecentYearWeighting && (
+              <SliderInput
+                label="Poids année la plus récente"
+                value={recentYearWeight}
+                onChange={setRecentYearWeight}
+                min={1.0}
+                max={5.0}
+                step={0.1}
+                format={(v) => v.toFixed(1)}
+                help="Multiplie le poids des lignes correspondant à l'année la plus récente du dataset."
+                tooltipKey="recent_year_priority_weight"
               />
             )}
           </div>

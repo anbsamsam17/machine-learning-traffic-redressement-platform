@@ -188,9 +188,11 @@ def _train_single(
     seed: int,
     train_sample_weight: np.ndarray | None,
     valid_sample_weight: np.ndarray | None,
-    use_flag_comptage_weighting: bool,
-    flag_comptage_col: str,
+    use_flag_permanent_weighting: bool,
+    flag_permanent_col: str,
     flag_priority_weight: float,
+    use_flag_recent_year_weighting: bool,
+    recent_year_priority_weight: float,
     use_batch_norm: bool,
     progress_callback: Callable[[ProgressPayload], None] | None,
     total_models: int,
@@ -416,9 +418,15 @@ def _train_single(
         "train_rows": int(len(x_train_norm)),
         "valid_rows": int(0 if x_valid_norm is None else len(x_valid_norm)),
         "eval_rows": int(len(eval_x)),
-        "use_flag_comptage_weighting": bool(use_flag_comptage_weighting),
-        "flag_comptage_col": flag_comptage_col,
+        "use_flag_permanent_weighting": bool(use_flag_permanent_weighting),
+        "flag_permanent_col": flag_permanent_col,
         "flag_priority_weight": float(flag_priority_weight),
+        "use_flag_recent_year_weighting": bool(use_flag_recent_year_weighting),
+        "recent_year_priority_weight": float(recent_year_priority_weight),
+        # Legacy aliases kept in the artifact for downstream tooling (eval
+        # router, kfold) that still reads the old keys.
+        "use_flag_comptage_weighting": bool(use_flag_permanent_weighting),
+        "flag_comptage_col": flag_permanent_col,
         # Year-feature config — required at eval time to replay the same
         # encoding when the model uses year_mapped. Without it, eval feeds
         # raw years (2019, 2020) instead of the trained-on small integers
@@ -506,9 +514,53 @@ def run_training(
 
     # Split
     test_size = float(config.get("test_size", type_config.default_test_size))
-    use_weighting = bool(config.get("use_flag_comptage_weighting", False))
-    flag_col = config.get("flag_comptage_col", "flag_comptage")
-    flag_weight = float(config.get("flag_priority_weight", 4.0))
+
+    # Resolve flag_permanent weighting — accept the legacy key as an alias
+    # so existing session-config dicts keep working. New key wins if both
+    # are present.
+    use_weighting = bool(
+        config.get(
+            "use_flag_permanent_weighting",
+            config.get(
+                "use_flag_comptage_weighting",
+                type_config.default_use_flag_permanent_weighting,
+            ),
+        )
+    )
+    if (
+        "use_flag_comptage_weighting" in config
+        and "use_flag_permanent_weighting" not in config
+    ):
+        logger.warning(
+            "training config: 'use_flag_comptage_weighting' is deprecated; "
+            "renamed to 'use_flag_permanent_weighting'."
+        )
+
+    flag_col = str(
+        config.get(
+            "flag_permanent_col",
+            config.get("flag_comptage_col", "flag_permanent"),
+        )
+    )
+    flag_weight = float(
+        config.get(
+            "flag_priority_weight", type_config.default_flag_priority_weight
+        )
+    )
+
+    # Recent-year boost (new, opt-in). Auto-detected MAX(year_mapped).
+    use_recent_year = bool(
+        config.get(
+            "use_flag_recent_year_weighting",
+            type_config.default_use_flag_recent_year_weighting,
+        )
+    )
+    recent_year_weight = float(
+        config.get(
+            "recent_year_priority_weight",
+            type_config.default_recent_year_priority_weight,
+        )
+    )
 
     split = split_train_valid(
         prepared,
@@ -516,9 +568,11 @@ def run_training(
         output_cols=output_cols,
         test_size=test_size,
         seed=seed,
-        use_flag_comptage_weighting=use_weighting,
-        flag_comptage_col=flag_col,
+        use_flag_permanent_weighting=use_weighting,
+        flag_permanent_col=flag_col,
         flag_priority_weight=flag_weight,
+        use_flag_recent_year_weighting=use_recent_year,
+        recent_year_priority_weight=recent_year_weight,
     )
 
     y = split["y"]
@@ -745,9 +799,11 @@ def run_training(
                     seed=run_seed,
                     train_sample_weight=split["train_sample_weight"],
                     valid_sample_weight=split["valid_sample_weight"],
-                    use_flag_comptage_weighting=use_weighting,
-                    flag_comptage_col=flag_col,
+                    use_flag_permanent_weighting=use_weighting,
+                    flag_permanent_col=flag_col,
                     flag_priority_weight=flag_weight,
+                    use_flag_recent_year_weighting=use_recent_year,
+                    recent_year_priority_weight=recent_year_weight,
                     use_batch_norm=use_batch_norm,
                     progress_callback=progress_callback,
                     total_models=total_models,
