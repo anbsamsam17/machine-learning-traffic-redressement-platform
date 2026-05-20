@@ -96,6 +96,9 @@ def _train_single(
     year_column_name: str | None = None,
     year_value_mapping: dict[str, float] | None = None,
     cancel_event: "threading.Event | None" = None,
+    reduce_lr_patience: int = 10,
+    reduce_lr_factor: float = 0.5,
+    reduce_lr_min: float = 1e-5,
 ) -> TrainedModelArtifact:
     """Train one model and return an in-memory artifact."""
 
@@ -130,11 +133,13 @@ def _train_single(
         start_from_epoch=start_from,
         min_delta=1e-4,
     )
+    # P3.6: patience=10 (was 20) so LR drops earlier when plateau hits — gives
+    # the model more time to recover with a smaller LR before EarlyStopping fires.
     reduce_lr = keras.callbacks.ReduceLROnPlateau(
         monitor=early_stop_monitor,
-        factor=0.5,
-        patience=20,
-        min_lr=1e-5,
+        factor=reduce_lr_factor,
+        patience=reduce_lr_patience,
+        min_lr=reduce_lr_min,
         verbose=0,
     )
 
@@ -210,9 +215,9 @@ def _train_single(
         "use_batch_norm": use_batch_norm,
         "start_from_epoch": start_from,
         "patience": patience,
-        "reduce_lr_factor": 0.5,
-        "reduce_lr_patience": 20,
-        "reduce_lr_min": 1e-5,
+        "reduce_lr_factor": float(reduce_lr_factor),
+        "reduce_lr_patience": int(reduce_lr_patience),
+        "reduce_lr_min": float(reduce_lr_min),
         "analysis_scope": analysis_scope,
         "seed": seed,
         "train_rows": int(len(x_train_norm)),
@@ -466,6 +471,9 @@ def run_training(
                 year_column_name=str(config.get("year_column_name") or ""),
                 year_value_mapping=dict(config.get("year_value_mapping") or {}),
                 cancel_event=cancel_event,
+                reduce_lr_patience=int(config.get("reduce_lr_patience", 10)),
+                reduce_lr_factor=float(config.get("reduce_lr_factor", 0.5)),
+                reduce_lr_min=float(config.get("reduce_lr_min", 1e-5)),
             )
             results[combo.run_name] = artifact
             # C7: free TF state between every model (not just between feature
