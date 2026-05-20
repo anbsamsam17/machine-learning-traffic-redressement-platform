@@ -155,7 +155,7 @@ export function SamCoachingPanel() {
               <span className="text-text-muted font-normal"> — 6 features (Compact 6)</span>
             </h2>
             <p className="text-xs text-text-muted">
-              Baseline production validée — tol 66.41 %, p80 26.34, R² 0.808 sur 3632 capteurs GrandLyon (seed 1751). Chaque champ ci-dessous a une info-bulle dédiée
+              Baseline production validée — tol 59.83 %, p80 29.46, R² 0.686 sur 3632 capteurs GrandLyon (seed 1754, 6 features). Chaque champ ci-dessous a une info-bulle dédiée
               (icône&nbsp;
               <span className="inline-block size-3 rounded-full border border-accent/50 align-middle" />
               ) qui explique le défaut choisi.

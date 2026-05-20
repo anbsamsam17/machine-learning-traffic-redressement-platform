@@ -25,7 +25,7 @@ import { toast } from "sonner";
 import type { AppMode } from "@/lib/store";
 
 // ─── Constants TV (Etape1_MDL_TV refonte FCD HERE) ─────────────────────────
-// Defaults aligned with MDL_Lyon_TV_BEST (seed 1751, best-of-10) — Compact 6
+// Defaults aligned with MDL_Lyon_TV_BEST (Compact 6, seed 1754, best-of-10)
 // features at submit time (5 raw cols + year_mapped, appended via
 // useYearFeature=true). Order in input_cols at submit ends up as:
 // [5 raw cols, year_mapped], the year_mapped slot inheriting the
@@ -836,7 +836,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [minInputCount, setMinInputCount] = useState(0);
 
   // ── Hyperparametres (training) ───────────────────────────────────────────
-  // Defaults reflect MDL_Lyon_TV_BEST (best of 10 seeds, seed 1751) — the
+  // Defaults reflect MDL_Lyon_TV_BEST (Compact 6, best of 10 seeds, seed 1754) — the
   // production-validated configuration. User can still override any value.
   const [activations, setActivations] = useState<string[]>(["elu"]);
   const [learningRates, setLearningRates] = useState<string[]>(["0.01"]);
@@ -856,7 +856,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   // ── Avance (seed, ponderation) ───────────────────────────────────────────
   // Seed 1751 = the winning seed identified by the best-of-10 sweep on Lyon TV.
   // Permanent weighting ON with weight 2.0 was part of the validated config.
-  const [seed, setSeed] = useState(1751);
+  const [seed, setSeed] = useState(1754);
   const [useWeighting, setUseWeighting] = useState(true);
   const [flagWeight, setFlagWeight] = useState(2.0);
   const [useRecentYearWeighting, setUseRecentYearWeighting] = useState(false);

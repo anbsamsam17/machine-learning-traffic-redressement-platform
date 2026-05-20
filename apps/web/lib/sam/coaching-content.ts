@@ -4,7 +4,7 @@
  *
  * All copy is in French to match the rest of the redressement pipeline UI.
  * Recommendations are derived from the MDL_Lyon_TV_BEST production baseline
- * (seed 1751) — 66.41 % tol / p80 26.34 / R²=0.808 on the 3632 GrandLyon
+ * (Compact 6, seed 1754) — 59.83 % tol / p80 29.46 / R²=0.686 on the 3632 GrandLyon
  * sensors (BCFCDREF_AllYears_TV) — and from the 76+ models benchmarked
  * during Phase 05 / 06.
  *
@@ -283,7 +283,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Graine aléatoire numpy / TensorFlow pour la reproductibilité.",
     recommendation:
-      "Défaut **1751** — meilleur de 10 graines testées (tol +2.1σ au-dessus mean) — référence MDL_Lyon_TV_BEST.",
+      "Défaut **1754** — meilleur de 10 graines testées Compact 6 (tol +1.6σ au-dessus mean) — référence MDL_Lyon_TV_BEST.",
   },
   // Form key — used by config-form.tsx for the "capteurs permanents" toggle.
   flag_permanent_weighting: {
