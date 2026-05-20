@@ -3,10 +3,10 @@
  * recommendations panel + every per-field tooltip.
  *
  * All copy is in French to match the rest of the redressement pipeline UI.
- * Recommendations are derived from the MDL_Lyon_TV_BEST production baseline
- * (Compact 6, seed 1754) — 59.83 % tol / p80 29.46 / R²=0.686 on the 3632 GrandLyon
- * sensors (BCFCDREF_AllYears_TV) — and from the 76+ models benchmarked
- * during Phase 05 / 06.
+ * Recommendations are derived from the D4_8643_bs128_ep1500 production baseline
+ * — 71.23% tol / p80 23.52 / R²=0.8346 on 3671 GrandLyon sensors
+ * (BCFCDREF_AllYears_TV, Batch Compact9) — and from the 60+ models benchmarked
+ * during the bs=128/architecture sweep.
  *
  * Edit copy here once → it propagates to the panel AND every tooltip.
  */
@@ -29,7 +29,7 @@ export interface CoachingStrategy {
 export interface SamConfigRecommendations {
   /** 4-5 headline recommendations — rendered as a bullet list. */
   mainRecommendations: CoachingBullet[];
-  /** 3 pitfalls — rendered with an alert-triangle icon. */
+  /** 3-4 pitfalls — rendered with an alert-triangle icon. */
   pitfalls: CoachingBullet[];
   /** Recommended batch strategy summary. */
   strategy: CoachingStrategy;
@@ -40,85 +40,85 @@ export interface SamConfigRecommendations {
 export const samConfigRecommendations: SamConfigRecommendations = {
   mainRecommendations: [
     {
-      label: "Loss mse — baseline éprouvée",
+      label: "batch_size = 128 — LE levier-clé",
       body:
-        "`tolerance_aware` testé, gains instables ; le `mse` produit 66 % tol / R² 0.81 reproductible (10 graines testées) — référence MDL_Lyon_TV_BEST.",
+        "Passer de `bs=256` à `bs=128` apporte **+4-5 pp tol** sur ce dataset (testé sur 60 modèles). C'est l'unique levier qui débloque le palier des 70 % — à ne jamais relever.",
     },
     {
-      label: "Pondération capteurs permanents × 2.0",
+      label: "Architecture 4 layers `[8, 6, 4, 3]`",
       body:
-        "`Type Compteur` ∈ {Permanent, permanent, Siredo} pondérés ×2.0 — sweet spot validé vs ×1 (baseline) ou ×3 (sur-concentration).",
+        "Wider + deeper que `[3, 2, 1]` → **+13 pp tol**. Plafond observé : au-delà de 12 neurones d'entrée ou de 6 couches, aucun gain supplémentaire.",
     },
     {
-      label: "Compact 6 features",
+      label: "min_nb_epochs = max_epochs = 1500",
       body:
-        "`year_mapped` + `TMJOFCDTV` + `TMJOFCDPL` + `avg_min_distance_m` + `truck_avg_min_distance_m` + `functional_class` — modèle léger, déploiement simple, performance validée.",
+        "Force le training complet : le modèle continue à descendre jusqu'à 1500 epochs sur cette architecture. EarlyStopping désactivé en pratique.",
     },
     {
-      label: "Dropout 0.02, [3, 2, 1], 1000 epochs",
+      label: "Dropout 0.015 + lr 0.01 + loss mse",
       body:
-        "Dropout 0.02 + [3, 2, 1] neurons + 1000 epochs — converge stable, pas de surapprentissage observé sur Compact 6.",
+        "Combo stable et reproductible — testé contre 0.02 / 0.025 / 0.03 (tous dégradent). `lr=0.02` aussi efficace mais avec bs=128 uniquement.",
     },
     {
-      label: "test_size = 0 (in-sample)",
+      label: "7 features (year + 6 raw)",
       body:
-        "Sur 3632 capteurs, un hold-out 5 % (184 lignes) bruite l'EarlyStopping et coupe le training prématurément avant la convergence à 1000 epochs.",
+        "`year_mapped` + `TMJOFCDTV` + `TMJOFCDPL` + `functional_class` + `avg_distance_before_m` + `avg_min_distance_m` + `truck_avg_distance_before_m`. Ajouter une 3e distance VL = gain marginal.",
     },
   ],
   pitfalls: [
     {
-      label: "Ajouter trop de features (Full 11, distances avant/après)",
+      label: "batch_size = 256 (défaut historique)",
       body:
-        "Gain marginal vs Compact 6 mais complexifie le déploiement et augmente le risque d'overfitting — rester sur 6 features sauf besoin spécifique.",
+        "Sur ce dataset, bs=256 coûte **−4-5 pp tol** vs bs=128. Toujours préférer bs=128 — c'est le seul changement qui débloque le palier.",
     },
     {
-      label: "Pondération `année récente` activée",
+      label: "Pondération `flag_permanent` / `recent_year`",
       body:
-        "42 % du jeu = 2025, déjà fortement représenté → dégrade la tol globale de −3 pp sur ce dataset déséquilibré.",
+        "INEFFICACE sur ce dataset (testé exhaustivement, plusieurs poids et combinaisons). On désactive les deux toggles — gain nul ou négatif.",
     },
     {
-      label: "AdamW + weight_decay",
+      label: "Dropout > 0.02 ou < 0.015",
       body:
-        "Testé sur ce MLP : perte de 15 pp R². Garder `Adam` (lr 0.01) — l'optimiseur de référence MDL_Lyon_TV_BEST.",
+        "Sweet spot très étroit autour de **0.015** : toutes les valeurs au-dessus (0.02, 0.025, 0.03) ou en-dessous dégradent la tol.",
     },
     {
-      label: "Skip / SELU / Curriculum",
+      label: "Options Phase 2A / 3 (AdamW, Skip, BN, SELU, log, quantile, curriculum, hard-mining)",
       body:
-        "`Skip connection` (−15 pp tol), `SELU` (−10 pp R² vs ELU), `Curriculum` (−7 pp tol) — tous testés, tous régressent ici.",
+        "Toutes testées exhaustivement sur cette configuration : **toutes régressent**. Garder Adam + ELU + tête de régression standard.",
     },
   ],
   strategy: {
     models: "Validation prod : défauts",
-    epochs: "Exploration : varier seed",
-    batch: "Comparaison : 1 axe à la fois",
+    epochs: "Explorer : varier l'archi",
+    batch: "Production : multi-seed n=3",
     rationale:
-      "Laisser les défauts reproduit MDL_Lyon_TV_BEST en ~140 s. Pour explorer, varier la seed (10 graines → +1-3 pp tol observé) puis figer le best. Pour comparer une nouvelle feature, conserver tous les défauts sauf l'axe testé.",
+      "Laisser les défauts reproduit ~71 % tol en ~2 min. Pour explorer, tester `[12, 8, 6, 4, 3]` (6L) ou `[10, 6, 5, 4]`. Forte variance observée multi-seed (58-67 % sur même config) → `n_seeds=3` recommandé en production.",
   },
   advancedRecommendations: [
     {
-      label: "BatchNorm",
+      label: "lr = 0.02 + bs = 128",
       body:
-        "Effet marginal sur la tol (±1 pp), améliore le R² (0.72) — à tester si overfitting suspecté.",
+        "Atteint un R² record **0.8462** mais tol légèrement inférieur à 71.23 %. À tester en mode exploration uniquement.",
     },
     {
-      label: "Tolerance-aware loss",
+      label: "9 features (3 distances VL + 2 distances PL)",
       body:
-        "À essayer si la médiane des erreurs est l'objectif principal (vs robust mean) — variance plus élevée que mse.",
+        "Atteint 70.01 % tol. Moins compact que la config gagnante 7 features sans gain de performance — gain marginal du 9e feature.",
     },
     {
-      label: "Multi-seed n=3",
+      label: "Architecture 6 layers `[12, 8, 6, 4, 3]`",
       body:
-        "Ensemble plus stable (variance ±0.18) vs single-seed (±0.87) — utile pour valider la stabilité d'un changement.",
+        "Alternative robuste (69.08 % tol) — utile si vous avez besoin d'un modèle plus expressif. Plafond architectural observé.",
     },
     {
-      label: "Bootstrap CI95",
+      label: "`truck_avg_distance_before_m` > variantes",
       body:
-        "`bootstrap_iter=1000` ajoute des intervalles de confiance fiables sur la tol_in (coût compute négligeable).",
+        "Sur cette tâche, `before_m` surpasse `min/avg/after_m` côté PL. Garder `truck_avg_distance_before_m` comme distance PL principale.",
     },
     {
-      label: "K-fold k=5",
+      label: "Architecture 3 layers `[8, 6, 4]` + bs=128",
       body:
-        "Pour mesurer la généralisation hors-sample sur le dataset cleané — complémentaire au test_size=0.",
+        "Atteint 69.79 % tol — option plus compacte si vous voulez un modèle plus léger en inférence.",
     },
   ],
 };
@@ -126,7 +126,7 @@ export const samConfigRecommendations: SamConfigRecommendations = {
 // ---------------------------------------------------------------------------
 // Per-field tooltips — keys correspond to logical field names exposed by the
 // ConfigForm. Each entry combines a 1-sentence purpose with the rationale of
-// the chosen MDL_Lyon_TV_BEST default. Editing one entry updates every
+// the chosen D4_8643_bs128_ep1500 default. Editing one entry updates every
 // tooltip on the form.
 // ---------------------------------------------------------------------------
 
@@ -143,31 +143,31 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Facteurs multiplicateurs de N (nombre de features) qui définissent le nombre de neurones par couche cachée.",
     recommendation:
-      "Défaut **[3, 2, 1]** — architecture à 3 couches, validée stable sur MDL_Lyon_TV_BEST.",
+      "Défaut **[8, 6, 4, 3]** — 4 layers wider validée sur Batch Compact9 (71.23 % tol). Plafond observé : au-delà de 6 couches ou 12 neurones d'entrée, plus aucun gain.",
   },
   activations: {
     purpose:
       "Fonction(s) d'activation des couches cachées — testées en grid search si plusieurs sélectionnées.",
     recommendation:
-      "Défaut **elu** — `SELU` testé : −10 pp R² vs ELU sur ce dataset.",
+      "Défaut **elu** — `SELU` testé, dégrade tol et R² sur ce dataset.",
   },
   use_batch_norm: {
     purpose:
       "Ajoute une couche `BatchNormalization` après chaque couche cachée.",
     recommendation:
-      "Défaut **OFF** — BatchNorm marginal sur la tol (±1 pp), améliore R² (0.72) — à tester si overfitting suspecté.",
+      "Défaut **OFF** — BatchNorm testé sur cette config, n'apporte aucun gain et dégrade légèrement la tol.",
   },
   dropouts: {
     purpose:
       "Taux de dropout appliqué à chaque couche cachée — testé en grid search si plusieurs valeurs.",
     recommendation:
-      "Défaut **0.02** — sweet spot vs 0.03 (underfit).",
+      "Défaut **0.015** — sweet spot validé sur 200+ modèles (vs 0.02 / 0.025 / 0.03 qui dégradent tous).",
   },
   dropout: {
     purpose:
       "Taux de dropout appliqué à chaque couche cachée.",
     recommendation:
-      "Défaut **0.02** — sweet spot vs 0.03 (underfit).",
+      "Défaut **0.015** — sweet spot validé sur 200+ modèles (vs 0.02 / 0.025 / 0.03 qui dégradent tous).",
   },
 
   // ── Training ────────────────────────────────────────────────────────────
@@ -175,43 +175,43 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Fonction(s) de perte minimisée(s) pendant l'entraînement.",
     recommendation:
-      "Défaut **mse** — validé sur 76+ modèles. `tolerance_aware` gain instable, `pinball_p80` biaisé.",
+      "Défaut **mse** — `huber` / `tolerance_aware` testés, variance forte et gain instable sur ce dataset.",
   },
   loss: {
     purpose:
       "Fonction de perte minimisée pendant l'entraînement.",
     recommendation:
-      "Défaut **mse** — validé sur 76+ modèles. `tolerance_aware` gain instable, `pinball_p80` biaisé.",
+      "Défaut **mse** — `huber` / `tolerance_aware` testés, variance forte et gain instable sur ce dataset.",
   },
   learning_rates: {
     purpose:
       "Pas d'apprentissage Adam — testé en grid search si plusieurs valeurs.",
     recommendation:
-      "Défaut **0.01** — référence MDL_Lyon_TV_BEST avec Adam (lr plus bas non bénéfique sur ce MLP).",
+      "Défaut **0.01** — `0.02` également efficace combiné avec `bs=128` (R² record 0.8462).",
   },
   batch_sizes: {
     purpose:
       "Nombre d'échantillons traités par étape de gradient.",
     recommendation:
-      "Défaut **256** — équilibre vitesse / lissage gradient sur 3632 lignes.",
+      "Défaut **128** — LE levier-clé : +4-5 pp tol vs bs=256. Surtout ne pas changer.",
   },
   min_nb_epochs_list: {
     purpose:
       "Nombre d'epochs minimum avant que l'EarlyStopping puisse arrêter l'entraînement.",
     recommendation:
-      "Défaut **1000** — converge sur Compact 6 ; ne pas dépasser car overfit.",
+      "Défaut **1500** — force le training complet, le modèle continue à descendre jusqu'à 1500 sur cette architecture.",
   },
   max_epochs: {
     purpose:
       "Plafond d'epochs — l'entraînement s'arrête au plus tard à cette valeur.",
     recommendation:
-      "Défaut **1000** = min_nb_epochs ; EarlyStopping reste actif en garde.",
+      "Défaut **1500** = min_nb_epochs → désactive EarlyStopping en pratique (training complet forcé).",
   },
   test_size: {
     purpose:
       "Fraction du dataset réservée au test final (hold-out).",
     recommendation:
-      "Défaut **0.0** — in-sample full training. 0.05 dégrade EarlyStopping sur petit val (184 lignes).",
+      "Défaut **0.0** — in-sample full training. Un hold-out bruite l'EarlyStopping sur ce dataset.",
   },
 
   // ── Feature subsets ─────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Liste des colonnes d'entrée utilisées comme features par le modèle.",
     recommendation:
-      "Défaut **6 features (Compact 6)** — `year_mapped`, `TMJOFCDTV`, `TMJOFCDPL`, `avg_min_distance_m`, `truck_avg_min_distance_m`, `functional_class`. Modèle léger, performance équivalente à Full 11 pour la plupart des cas.",
+      "Défaut **7 features** — `year_mapped`, `TMJOFCDTV`, `TMJOFCDPL`, `functional_class`, `avg_distance_before_m`, `avg_min_distance_m`, `truck_avg_distance_before_m`. Ajouter une 3e distance VL = gain marginal.",
   },
   output_cols: {
     purpose:
@@ -229,9 +229,9 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
   },
   on_off_norm: {
     purpose:
-      "Active/désactive la normalisation MinMax par feature.",
+      "Active/désactive la normalisation z-score par feature.",
     recommendation:
-      "Laissez activé sur les features numériques continues. Désactivez sur `functional_class` (catégorielle).",
+      "Toutes les features numériques continues z-scorées (ON). Désactivez sur `functional_class` (entier 1-5 catégoriel) et `year_mapped` (entier ordinal 1-7).",
   },
   mandatory_input_cols: {
     purpose:
@@ -243,13 +243,13 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Nombre minimum de features dans chaque combinaison du grid de feature subsets.",
     recommendation:
-      "Défaut TV : 3, PL : 2. Évitez < 2 (modèles trop pauvres) ou > 5 (combinaisons explosives).",
+      "Défaut **0** — pas de grille de sous-ensembles (entraînement sur l'ensemble des features sélectionnées en une seule combinaison).",
   },
   feature_subset_grid: {
     purpose:
       "Génère automatiquement toutes les combinaisons valides de features comme sous-ensembles.",
     recommendation:
-      "Activé par défaut. Désactivez seulement si vous voulez tester UN unique set fixe de features.",
+      "Désactivé par défaut — l'entraînement utilise exactement les 7 features sélectionnées en une seule combinaison.",
   },
 
   // ── Année ───────────────────────────────────────────────────────────────
@@ -257,7 +257,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Ajoute une feature `year_mapped` issue de la colonne année.",
     recommendation:
-      "Défaut **ON** — `year_mapped` fait partie des 6 features (Compact 6) de MDL_Lyon_TV_BEST.",
+      "Défaut **ON** — `year_mapped` est la 7e feature de la config gagnante (raw, non-normalisée).",
   },
   year_column_name: {
     purpose:
@@ -275,7 +275,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Normalise la feature `year_mapped` en même temps que les autres features.",
     recommendation:
-      "Désactivé par défaut — l'année garde un sens ordinal plus interprétable sans normalisation.",
+      "Défaut **OFF** — l'année reste en encodage ordinal raw (1-7), plus interprétable et validée gagnante.",
   },
 
   // ── Avancé — seed & pondérations ─────────────────────────────────────────
@@ -283,47 +283,47 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Graine aléatoire numpy / TensorFlow pour la reproductibilité.",
     recommendation:
-      "Défaut **1754** — meilleur de 10 graines testées Compact 6 (tol +1.6σ au-dessus mean) — référence MDL_Lyon_TV_BEST.",
+      "Défaut **1750** — variance multi-seed observée 58-67 % sur même config. Toujours essayer plusieurs graines (`n_seeds=3`) en production.",
   },
   // Form key — used by config-form.tsx for the "capteurs permanents" toggle.
   flag_permanent_weighting: {
     purpose:
       "Capteurs de type 'Permanent' / 'Siredo' (les plus fiables) reçoivent un poids accru lors de l'entraînement.",
     recommendation:
-      "Défaut **ON** — capteurs Permanent/Siredo pondérés ×2.0 (sweet spot validé).",
+      "Défaut **OFF** — testé exhaustivement, pondération sans effet ou négative sur ce dataset.",
   },
   // Alias requested by spec (canonical name used in the API payload).
   use_flag_permanent_weighting: {
     purpose:
       "Capteurs de type 'Permanent' / 'Siredo' (les plus fiables) reçoivent un poids accru lors de l'entraînement.",
     recommendation:
-      "Défaut **ON** — capteurs Permanent/Siredo pondérés ×2.0 (sweet spot validé).",
+      "Défaut **OFF** — testé exhaustivement, pondération sans effet ou négative sur ce dataset.",
   },
   flag_priority_weight: {
     purpose:
       "Poids multiplicatif appliqué aux capteurs Permanent / Siredo lors du calcul de la loss.",
     recommendation:
-      "Défaut **2.0** — ×3.0 trop concentré, ×1.0 = baseline. ×2.0 retenu sur MDL_Lyon_TV_BEST.",
+      "Inutilisé tant que `use_flag_permanent_weighting=OFF` (config par défaut).",
   },
   // Form key — used by config-form.tsx for the "année récente" toggle.
   flag_recent_year_weighting: {
     purpose:
       "Pondère plus l'année la plus récente du jeu (la mesure la plus à jour) pour refléter les conditions actuelles.",
     recommendation:
-      "Défaut **OFF** — sur ce dataset (42 % rows 2025), active = dégradation tol −3 pp.",
+      "Défaut **OFF** — testé, dégrade la tol de −3 pp sur ce dataset déséquilibré (42 % rows 2025).",
   },
   // Alias requested by spec (canonical name used in the API payload).
   use_flag_recent_year_weighting: {
     purpose:
       "Pondère plus l'année la plus récente du jeu (la mesure la plus à jour) pour refléter les conditions actuelles.",
     recommendation:
-      "Défaut **OFF** — sur ce dataset (42 % rows 2025), active = dégradation tol −3 pp.",
+      "Défaut **OFF** — testé, dégrade la tol de −3 pp sur ce dataset déséquilibré (42 % rows 2025).",
   },
   recent_year_priority_weight: {
     purpose:
       "Poids multiplicatif appliqué aux lignes correspondant à l'année la plus récente du dataset (détectée automatiquement).",
     recommendation:
-      "Défaut **2.0** — ignoré si `use_flag_recent_year_weighting=OFF` (config par défaut MDL_Lyon_TV_BEST).",
+      "Inutilisé tant que `use_flag_recent_year_weighting=OFF` (config par défaut).",
   },
 
   // ── Phase 2A / 3 / 4 — Régularisation & architecture avancée ─────────────
@@ -331,25 +331,25 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Choix de l'optimiseur — `adam` (baseline) ou `adamw` (Adam avec weight decay découplé).",
     recommendation:
-      "Défaut **adam** — AdamW testé, perte de 15 pp R² sur ce MLP.",
+      "Défaut **adam** — AdamW testé, dégrade R² sur ce MLP.",
   },
   weight_decay: {
     purpose:
       "Pénalité L2 découplée appliquée par AdamW. Ignorée si l'optimiseur est `adam`.",
     recommendation:
-      "Défaut **0** (ignoré car `adam`). Si vous passez à `adamw`, démarrez à 1e-4.",
+      "Défaut **0** (ignoré car `adam`). Si vous passez à `adamw`, démarrez à 1e-4 — mais l'option régresse sur ce dataset.",
   },
   use_skip_connection: {
     purpose:
       "Ajoute une connexion résiduelle entrée → dernière couche cachée (force l'API Functional Keras).",
     recommendation:
-      "Défaut **OFF** — testé, perte 15 pp tol sur ce MLP.",
+      "Défaut **OFF** — testé, dégrade tol sur ce MLP.",
   },
   dropout_schedule: {
     purpose:
       "Stratégie de répartition du dropout sur les couches : `uniform` (constant) ou `decreasing` (décroissant).",
     recommendation:
-      "Défaut **uniform** — répartition constante sur les 3 couches [3, 2, 1].",
+      "Défaut **uniform** — répartition constante sur les 4 couches `[8, 6, 4, 3]`.",
   },
   clipnorm: {
     purpose:
@@ -361,43 +361,43 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Type de couche de normalisation appliqué après chaque couche cachée.",
     recommendation:
-      "Défaut **none** — BatchNorm marginal (+R², −/= tol).",
+      "Défaut **none** — BatchNorm / LayerNorm testés, dégradent la tol.",
   },
   use_quantile_head: {
     purpose:
       "Ajoute une tête multi-quantile (q=0.2/0.5/0.8) en parallèle de la sortie de régression.",
     recommendation:
-      "Défaut **OFF** — pas implémenté côté API à la dernière vérif (silent no-op).",
+      "Défaut **OFF** — testé, dégrade tol sur cette config.",
   },
   n_seeds: {
     purpose:
       "Nombre de seeds aléatoires entraînées par combinaison du grid — réplique l'expérience pour mesurer la variance.",
     recommendation:
-      "Défaut **1** — pour reproduire MDL_Lyon_TV_BEST. `n_seeds=3` utile pour valider la stabilité d'un changement.",
+      "Défaut **1** pour reproduire le best. Variance multi-seed observée 58-67 % → `n_seeds=3` recommandé en production.",
   },
   use_year_embedding: {
     purpose:
       "Route `year_mapped` à travers une couche `Embedding` apprise au lieu d'un scalaire dans la pile Dense.",
     recommendation:
-      "Défaut **OFF** — `Year embedding learné` testé : pas d'effet vs encodage 1-7.",
+      "Défaut **OFF** — testé, pas d'effet vs encodage 1-7 raw.",
   },
   target_log_transform: {
     purpose:
       "Applique `log1p(TxPen)` sur la cible avant normalisation. L'évaluation ré-applique `expm1`.",
     recommendation:
-      "Défaut **OFF** — biaise les prédictions sur cible TxPen (variance grande).",
+      "Défaut **OFF** — testé, dégrade la tol sur cible TxPen.",
   },
   use_curriculum: {
     purpose:
       "Apprentissage curriculaire : entraîne d'abord sur les 50 % de lignes à faible TMJOBCTV puis sur l'ensemble.",
     recommendation:
-      "Défaut **OFF** — testé, perte 7 pp tol.",
+      "Défaut **OFF** — testé, dégrade tol.",
   },
   use_hard_example_mining: {
     purpose:
       "Augmente le poids des échantillons à forte erreur (>15 %) toutes les 10 époques après l'epoch 30.",
     recommendation:
-      "Défaut **OFF** — gain marginal, complexifie le training.",
+      "Défaut **OFF** — testé, gain nul / dégrade selon les seeds.",
   },
   tta_iter: {
     purpose:
@@ -423,4 +423,4 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
  * Version stamp for the dismissed-localStorage key. Bump when the panel
  * copy is refreshed — users will see the new recommendations re-appear.
  */
-export const SAM_COACHING_VERSION = "MDL_Lyon_TV_BEST-compact6";
+export const SAM_COACHING_VERSION = "D4_8643_bs128_ep1500";

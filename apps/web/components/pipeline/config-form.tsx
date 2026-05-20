@@ -25,30 +25,30 @@ import { toast } from "sonner";
 import type { AppMode } from "@/lib/store";
 
 // ─── Constants TV (Etape1_MDL_TV refonte FCD HERE) ─────────────────────────
-// Defaults aligned with MDL_Lyon_TV_BEST (Compact 6, seed 1754, best-of-10)
-// features at submit time (5 raw cols + year_mapped, appended via
-// useYearFeature=true). Order in input_cols at submit ends up as:
-// [5 raw cols, year_mapped], the year_mapped slot inheriting the
-// `year_normalization` boolean (false here, so year is passed raw). The 5 raw
-// cols all use z-scored normalization EXCEPT `functional_class` which is a
-// categorical-like integer (raw). Modèle léger, performance équivalente à
-// Full 11 pour la plupart des cas — déploiement simple.
+// Defaults aligned with D4_8643_bs128_ep1500 (Batch Compact9 winner) —
+// 71.23% tol / p80 23.52 / R²=0.8346 on 3671 GrandLyon sensors. 6 raw cols
+// here + year_mapped (appended via useYearFeature=true) → 7 features at
+// submit time. Order in input_cols at submit ends up as:
+// [6 raw cols, year_mapped], the year_mapped slot inheriting the
+// `year_normalization` boolean (false → raw year). All 6 raw cols use z-score
+// normalization EXCEPT `functional_class` (categorical-like int 1-5, raw).
 const DEFAULT_INPUT_COLS_TV = [
   "TMJOFCDTV",
   "TMJOFCDPL",
-  "avg_min_distance_m",
-  "truck_avg_min_distance_m",
   "functional_class",
+  "avg_distance_before_m",
+  "avg_min_distance_m",
+  "truck_avg_distance_before_m",
 ];
-// Phase 05 features testées — disponibles si l'utilisateur veut élargir au-delà
-// de Compact 6 (distances avant/après VL/PL, ratio_PLTV, log1p, fc_1..fc_5).
+// Extra features disponibles — distances complémentaires VL/PL non-défaut,
+// ratio, log1p, fc_1..fc_5. Le user peut élargir si besoin (gain marginal
+// observé au-delà des 7 features de la config gagnante).
 const EXTRA_INPUT_COLS_TV = [
   "avg_distance_m",
-  "avg_distance_before_m",
   "avg_distance_after_m",
   "truck_avg_distance_m",
-  "truck_avg_distance_before_m",
   "truck_avg_distance_after_m",
+  "truck_avg_min_distance_m",
   "ratio_PLTV",
   "log1p_TMJOFCDTV",
   "log1p_TMJOFCDPL",
@@ -96,25 +96,25 @@ type Optimizer = (typeof OPTIMIZER_OPTIONS)[number];
 type DropoutSchedule = (typeof DROPOUT_SCHEDULE_OPTIONS)[number];
 type NormLayer = (typeof NORM_LAYER_OPTIONS)[number];
 const PREDEFINED_ARCHS = [
-  "[1, 1]",
-  "[2, 1]",
-  "[2, 1, 0.5]",
-  "[1, 1, 0.5]",
-  "[1, 0.5]",
-  "[0.5, 0.5]",
+  "[8, 6, 4, 3]",
+  "[8, 6, 4]",
+  "[10, 6, 5, 4]",
+  "[12, 8, 6, 4, 3]",
   "[3, 2, 1]",
   "[3, 2, 1, 0.5]",
+  "[2, 1]",
+  "[1, 1]",
 ] as const;
 
 const ARCH_MAP: Record<string, number[]> = {
-  "[1, 1]": [1.0, 1.0],
-  "[2, 1]": [2.0, 1.0],
-  "[2, 1, 0.5]": [2.0, 1.0, 0.5],
-  "[1, 1, 0.5]": [1.0, 1.0, 0.5],
-  "[1, 0.5]": [1.0, 0.5],
-  "[0.5, 0.5]": [0.5, 0.5],
+  "[8, 6, 4, 3]": [8.0, 6.0, 4.0, 3.0],
+  "[8, 6, 4]": [8.0, 6.0, 4.0],
+  "[10, 6, 5, 4]": [10.0, 6.0, 5.0, 4.0],
+  "[12, 8, 6, 4, 3]": [12.0, 8.0, 6.0, 4.0, 3.0],
   "[3, 2, 1]": [3.0, 2.0, 1.0],
   "[3, 2, 1, 0.5]": [3.0, 2.0, 1.0, 0.5],
+  "[2, 1]": [2.0, 1.0],
+  "[1, 1]": [1.0, 1.0],
 };
 
 // Rough average seconds per combination — used for the duration estimate in the
@@ -747,10 +747,10 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const fallbackExtras = isTv ? EXTRA_INPUT_COLS_TV : EXTRA_INPUT_COLS_PL;
 
   const [inputCols, setInputCols] = useState<string[]>([...defaultCols]);
-  // MDL_Lyon_TV_BEST default: every raw feature is z-scored EXCEPT
-  // `functional_class` which is treated as a categorical integer (raw).
+  // D4_8643_bs128_ep1500 default: every raw feature is z-scored EXCEPT
+  // `functional_class` which is treated as a categorical integer (raw int 1-5).
   // `year_mapped` is appended at submit time with its own norm flag
-  // (`yearNormalization`, default false → raw year).
+  // (`yearNormalization`, default false → raw year 1-7).
   const [onOffNorm, setOnOffNorm] = useState<Record<string, boolean>>(
     () =>
       Object.fromEntries(
@@ -805,11 +805,11 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   }, []);
 
   // ── Feature annee ─────────────────────────────────────────────────────────
-  // MDL_Lyon_TV_BEST uses year_mapped as the 6th input feature (Compact 6) with
-  // raw (non-normalized) values mapped via {2019:1, 2020:2, …, 2025:7}. Default
+  // D4_8643_bs128_ep1500 uses year_mapped as the 7th input feature with raw
+  // (non-normalized) values mapped via {2019:1, 2020:2, …, 2025:7}. Default
   // ON so the form mirrors the production configuration; the column is appended
   // to input_cols at submit time with on_off_norm[year_mapped] = yearNormalization
-  // (false).
+  // (false → raw year).
   const [useYearFeature, setUseYearFeature] = useState(true);
   const [yearColumnName, setYearColumnName] = useState("Annee");
   const [yearNormalization, setYearNormalization] = useState(false);
@@ -826,7 +826,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   ]);
 
   // ── Colonnes obligatoires ────────────────────────────────────────────────
-  // MDL_Lyon_TV_BEST default: no mandatory columns, min_input_count = 0.
+  // D4_8643_bs128_ep1500 default: no mandatory columns, min_input_count = 0.
   // Combined with feature_subset_grid = false below, the form submits a single
   // combination using exactly the selected input_cols (no Cartesian explosion).
   const defaultMandatory: string[] = isTv ? [] : [];
@@ -836,35 +836,40 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [minInputCount, setMinInputCount] = useState(0);
 
   // ── Hyperparametres (training) ───────────────────────────────────────────
-  // Defaults reflect MDL_Lyon_TV_BEST (Compact 6, best of 10 seeds, seed 1754) — the
-  // production-validated configuration. User can still override any value.
+  // Defaults reflect D4_8643_bs128_ep1500 (Batch_MDL_TV_Compact9 winner,
+  // tol 71.23%, R²=0.8346) — the production-validated configuration.
+  // User can still override any value.
   const [activations, setActivations] = useState<string[]>(["elu"]);
   const [learningRates, setLearningRates] = useState<string[]>(["0.01"]);
   const [losses, setLosses] = useState<string[]>(["mse"]);
-  const [minEpochs, setMinEpochs] = useState<string[]>(["1000"]);
-  const [maxEpochs, setMaxEpochs] = useState(1000);
+  const [minEpochs, setMinEpochs] = useState<string[]>(["1500"]);
+  const [maxEpochs, setMaxEpochs] = useState(1500);
   const [testSize, setTestSize] = useState(0.0);
 
   // ── Architecture ─────────────────────────────────────────────────────────
-  // Neurons factors [3.0, 2.0, 1.0] = the "[3, 2, 1]" preset (3 hidden layers
-  // of 3N / 2N / 1N neurons where N is the feature count).
-  const [selectedArchs, setSelectedArchs] = useState<string[]>(["[3, 2, 1]"]);
+  // Neurons factors [8.0, 6.0, 4.0, 3.0] = the "[8, 6, 4, 3]" preset (4 hidden
+  // layers of 8N / 6N / 4N / 3N neurons where N is the feature count).
+  // Validated as the winning architecture on Batch Compact9.
+  const [selectedArchs, setSelectedArchs] = useState<string[]>(["[8, 6, 4, 3]"]);
   const [useBatchNorm, setUseBatchNorm] = useState(false);
-  const [dropouts, setDropouts] = useState<string[]>(["0.02"]);
-  const [batchSizes, setBatchSizes] = useState<string[]>(["256"]);
+  const [dropouts, setDropouts] = useState<string[]>(["0.015"]);
+  const [batchSizes, setBatchSizes] = useState<string[]>(["128"]);
 
   // ── Avance (seed, ponderation) ───────────────────────────────────────────
-  // Seed 1751 = the winning seed identified by the best-of-10 sweep on Lyon TV.
-  // Permanent weighting ON with weight 2.0 was part of the validated config.
-  const [seed, setSeed] = useState(1754);
-  const [useWeighting, setUseWeighting] = useState(true);
+  // Seed 1750 = reference seed for D4_8643_bs128_ep1500. Strong multi-seed
+  // variance observed (58-67% on same config) → n_seeds=3 recommended in prod.
+  // Both weighting flags OFF — exhaustive testing showed no effect on this
+  // dataset (recent_year weighting actually degrades tol by −3 pp).
+  const [seed, setSeed] = useState(1750);
+  const [useWeighting, setUseWeighting] = useState(false);
   const [flagWeight, setFlagWeight] = useState(2.0);
   const [useRecentYearWeighting, setUseRecentYearWeighting] = useState(false);
   const [recentYearWeight, setRecentYearWeight] = useState(2.0);
 
   // ── Phase 2A / 3 / 4 — Régularisation et architecture avancée ──────────
-  // Defaults match types.py ModelTypeConfig.default_* so a user who never
-  // opens this section gets byte-identical behaviour to before the refonte.
+  // All advanced ML flags OFF/default — exhaustively tested on D4_8643_bs128_ep1500
+  // config, each option regressed. A user who never opens this section gets
+  // the production-validated configuration.
   const [optimizer, setOptimizer] = useState<Optimizer>("adam");
   const [weightDecay, setWeightDecay] = useState(0);
   const [useSkipConnection, setUseSkipConnection] = useState(false);
@@ -907,7 +912,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   // Returns the breakdown so the resume panel can explain WHERE the total
   // comes from (feature_subsets × hyperparams) — avoids the "I configured 2
   // combos but got 8" surprise reported on Lyon.
-  // Note: feature_subset_grid is hardcoded to false at submit (MDL_Lyon_TV_BEST
+  // Note: feature_subset_grid is hardcoded to false at submit (D4_8643_bs128_ep1500
   // default = single combo, no Cartesian explosion). Keep featureSets = 1 here
   // so the resume panel matches what the backend will receive.
   const combinationsBreakdown = useMemo(() => {
@@ -980,10 +985,10 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     const parsedActivations = activations.length > 0 ? activations : ["elu"];
 
     const finalLrs = lrs.length > 0 ? lrs : [0.01];
-    const finalEps = eps.length > 0 ? eps : [500];
-    const finalDrps = drps.length > 0 ? drps : [0.05];
-    const finalBss = bss.length > 0 ? bss : [256];
-    const finalArchs = archs.length > 0 ? archs : [[1.0, 1.0]];
+    const finalEps = eps.length > 0 ? eps : [1500];
+    const finalDrps = drps.length > 0 ? drps : [0.015];
+    const finalBss = bss.length > 0 ? bss : [128];
+    const finalArchs = archs.length > 0 ? archs : [[8.0, 6.0, 4.0, 3.0]];
 
     const usedDefaults =
       lrs.length === 0 ||
@@ -1010,7 +1015,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
       year_normalization: useYearFeature ? yearNormalization : false,
       mandatory_input_cols: mandatoryCols,
       min_input_count: minInputCount,
-      // MDL_Lyon_TV_BEST default: single combination, no Cartesian explosion
+      // D4_8643_bs128_ep1500 default: single combination, no Cartesian explosion
       // over feature subsets. User can still build a grid by adjusting
       // mandatory_input_cols / min_input_count, but the default trains exactly
       // the selected input_cols once.
@@ -1103,7 +1108,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
   // Auto-adjust minInputCount so it never goes below mandatoryCols.length.
   // (0 is a valid value when no mandatory cols are set — matches the
-  // MDL_Lyon_TV_BEST default of "no feature subset grid, no minimum".)
+  // D4_8643_bs128_ep1500 default of "no feature subset grid, no minimum".)
   useEffect(() => {
     const floor = mandatoryCols.length;
     setMinInputCount((prev) => Math.max(prev, floor));
@@ -1134,7 +1139,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             </label>
             <p className="text-[11px] text-text-subtle mb-2">
               Chaque facteur multiplie N (= nombre de features) pour definir le nombre
-              de neurones par couche. Ex: [2, 1, 0.5] → couches de 2N, 1N, 0.5N neurones.
+              de neurones par couche. Ex: [8, 6, 4, 3] → couches de 8N, 6N, 4N, 3N neurones.
             </p>
             <div className="flex flex-wrap gap-1.5">
               {PREDEFINED_ARCHS.map((arch) => {
@@ -1204,7 +1209,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             <TagInput
               values={dropouts}
               onChange={setDropouts}
-              placeholder="0.05, 0.1..."
+              placeholder="0.015, 0.02..."
             />
           </div>
         </Section>
@@ -1272,7 +1277,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               <TagInput
                 values={batchSizes}
                 onChange={setBatchSizes}
-                placeholder="256, 128..."
+                placeholder="128, 256..."
               />
             </div>
           </div>
@@ -1289,7 +1294,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             <TagInput
               values={minEpochs}
               onChange={setMinEpochs}
-              placeholder="500, 1000, 2000..."
+              placeholder="1500, 1000, 2000..."
             />
             <p className="text-[10px] text-text-subtle mt-0.5">
               EarlyStopping ne demarre qu&apos;apres cette epoque.
@@ -1523,12 +1528,12 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             onChange={setMinInputCount}
             min={mandatoryCols.length}
             max={inputCols.length || 10}
-            help={`Minimum = ${mandatoryCols.length} (colonnes obligatoires). Defaut MDL_Lyon_TV_BEST : 0 (pas de grille de sous-ensembles).`}
+            help={`Minimum = ${mandatoryCols.length} (colonnes obligatoires). Defaut D4_8643_bs128_ep1500 : 0 (pas de grille de sous-ensembles).`}
             tooltipKey="min_input_count"
           />
 
           {/* Auto grid summary — feature_subset_grid is off by default
-              (MDL_Lyon_TV_BEST). The form trains exactly the selected
+              (D4_8643_bs128_ep1500). The form trains exactly the selected
               input_cols once; no Cartesian explosion over feature subsets. */}
           <div className="flex items-center gap-2 text-[11px] text-text-subtle pt-2 border-t border-border">
             <Hash size={11} aria-hidden="true" />
