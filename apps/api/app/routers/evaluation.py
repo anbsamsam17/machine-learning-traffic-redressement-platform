@@ -2227,26 +2227,30 @@ async def run_evaluation(
     model_name = body.model_name or "model"
 
     if body.model_name and body.model_dir:
-        # Load from disk. Three resolutions tried in order :
+        # Load from disk. Multiple resolutions tried in order :
         #   1. body.model_dir / body.model_name  (standard nested layout)
-        #   2. body.model_dir                    (model_dir already points at
-        #                                         the model folder — common when
-        #                                         outputDir == models root and
-        #                                         the scanner exposed the root
-        #                                         as a model named "models").
-        #   3. body.model_dir parent / body.model_name (model_dir ends with the
-        #                                         model name — covers the
-        #                                         duplicate-join case where
-        #                                         outputDir already had the
-        #                                         model folder appended).
+        #   2. body.model_dir                    (model files at the root of
+        #                                         the dir — common when training
+        #                                         did not create a run sub-folder)
+        #   3. parent(body.model_dir) / body.model_name (duplicate-join case)
+        #   4. body.model_dir / "models" / body.model_name (extra "models" wrap)
+        # A candidate is accepted only when it contains the expected model file
+        # (model.keras OR NNarchitecture.json) — this avoids accepting any dir
+        # that happens to share a name with the requested model.
         model_dir_path = Path(body.model_dir)
-        candidates: list[Path] = [model_dir_path / body.model_name]
-        if model_dir_path.name == body.model_name:
-            candidates.extend([model_dir_path, model_dir_path.parent / body.model_name])
-        model_path = next(
-            (c for c in candidates if c.exists() and c.is_dir()),
-            None,
-        )
+        candidates: list[Path] = [
+            model_dir_path / body.model_name,
+            model_dir_path,
+            model_dir_path.parent / body.model_name,
+            model_dir_path / "models" / body.model_name,
+        ]
+
+        def _is_valid_model_dir(p: Path) -> bool:
+            if not p.exists() or not p.is_dir():
+                return False
+            return (p / "model.keras").exists() or (p / "NNarchitecture.json").exists()
+
+        model_path = next((c for c in candidates if _is_valid_model_dir(c)), None)
         if model_path is None:
             tried = " | ".join(str(c) for c in candidates)
             raise HTTPException(
