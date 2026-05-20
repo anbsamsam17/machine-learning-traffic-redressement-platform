@@ -66,6 +66,10 @@ class EvalResponse(BaseModel):
     model_name: str
     metrics: MetricsResult
     report_url: str
+    # P1.1 - bootstrap CI95 on tol_in_pct, p80 (err_rel), r2.
+    # Keys: "tol_in_pct" -> [low, high], "p80" -> [low, high], "r2" -> [low, high].
+    # None when bootstrap was skipped (n<30 or bootstrap_iter=0).
+    metrics_ci95: dict[str, list[float] | None] | None = None
 
 
 class ReportResponse(BaseModel):
@@ -203,6 +207,136 @@ def _compute_metrics(
         ld_rmse=round(ld_rmse, 4) if ld_rmse is not None else None,
         median_relative_error=round(median_rel, 2) if median_rel is not None else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# P1.1 - Bootstrap CI95 on tol_in, p80, R-squared
+# ---------------------------------------------------------------------------
+
+# Bootstrap is only meaningful for moderately-sized samples - under this
+# threshold the percentile interval is too noisy to be informative.
+_BOOTSTRAP_MIN_SAMPLES = 30
+
+
+def bootstrap_ci95(
+    metric_fn,
+    observed: np.ndarray,
+    predicted: np.ndarray,
+    weights: np.ndarray | None = None,
+    n_iter: int = 1000,
+    seed: int = 1750,
+) -> tuple[float, float, float] | None:
+    """Compute the bootstrap mean and 95% percentile CI of ``metric_fn``.
+
+    Parameters
+    ----------
+    metric_fn
+        Callable ``(obs, pred, weights) -> float``. ``weights`` may be ``None``.
+    observed, predicted
+        1D arrays of equal length.
+    weights
+        Optional per-sample weights (e.g. ``flag_comptage`` / ``flag_y2025``).
+        When provided, resampled in lockstep with ``observed`` / ``predicted``.
+    n_iter
+        Number of bootstrap resamples (default 1000).
+    seed
+        RNG seed for reproducibility (project convention: 1750).
+
+    Returns
+    -------
+    ``(mean, ci_low, ci_high)`` where ``ci_low`` / ``ci_high`` are the 2.5th /
+    97.5th percentiles across resamples. Returns ``None`` when ``observed`` has
+    fewer than ``_BOOTSTRAP_MIN_SAMPLES`` rows (bootstrap unreliable on tiny
+    samples) or when no finite metric value could be computed.
+    """
+    obs = np.asarray(observed, dtype=np.float64).ravel()
+    pred = np.asarray(predicted, dtype=np.float64).ravel()
+    n = obs.shape[0]
+    if n < _BOOTSTRAP_MIN_SAMPLES or pred.shape[0] != n:
+        return None
+    if n_iter < 1:
+        return None
+
+    w = None
+    if weights is not None:
+        w = np.asarray(weights, dtype=np.float64).ravel()
+        if w.shape[0] != n:
+            w = None  # mismatched weights -> drop them, don't crash
+
+    rng = np.random.default_rng(seed)
+    values: list[float] = []
+    for _ in range(int(n_iter)):
+        idx = rng.integers(0, n, size=n)
+        obs_b = obs[idx]
+        pred_b = pred[idx]
+        w_b = w[idx] if w is not None else None
+        try:
+            v = float(metric_fn(obs_b, pred_b, w_b))
+        except Exception:
+            continue
+        if not math.isfinite(v):
+            continue
+        values.append(v)
+
+    if not values:
+        return None
+
+    arr = np.asarray(values, dtype=np.float64)
+    mean = float(np.mean(arr))
+    ci_low = float(np.percentile(arr, 2.5))
+    ci_high = float(np.percentile(arr, 97.5))
+    return mean, ci_low, ci_high
+
+
+# --- Metric function adapters (signature: (obs, pred, w) -> float) ---
+
+def _metric_r2(obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None) -> float:
+    """R-squared (coefficient of determination). Weights, when provided, scale
+    the squared residuals and the centred variance consistently."""
+    residuals = obs - pred
+    if w is not None and w.sum() > 0:
+        wsum = float(w.sum())
+        mean_obs = float(np.sum(w * obs) / wsum)
+        ss_res = float(np.sum(w * residuals ** 2))
+        ss_tot = float(np.sum(w * (obs - mean_obs) ** 2))
+    else:
+        ss_res = float(np.sum(residuals ** 2))
+        ss_tot = float(np.sum((obs - np.mean(obs)) ** 2))
+    if ss_tot <= 0:
+        return 0.0
+    return 1.0 - ss_res / ss_tot
+
+
+def _metric_p80_err_rel(
+    obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None
+) -> float:
+    """80th percentile of the absolute relative error |obs-pred|/obs * 100,
+    matching ``compute_flow_metrics``'s ``err_rel_p80``. Weights are accepted
+    for API symmetry but the percentile is computed un-weighted (consistent
+    with the un-bootstrapped report value)."""
+    del w  # unused - kept for signature compatibility
+    nonzero = obs != 0
+    if not nonzero.any():
+        return float("nan")
+    err_rel = np.abs((obs[nonzero] - pred[nonzero]) / obs[nonzero]) * 100.0
+    return float(np.nanpercentile(err_rel, 80))
+
+
+def _metric_tol_in_pct(
+    obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None
+) -> float:
+    """Percentage of rows whose Tolerance_IN_OUT == 1 (inclus). Here ``obs``
+    is repurposed to carry the pre-computed Tolerance_IN_OUT codes and
+    ``pred`` is ignored - this lets us reuse the same bootstrap_ci95 plumbing
+    without introducing a separate sampler. Weights are unused (un-weighted
+    ratio)."""
+    del pred, w
+    valid = ~np.isnan(obs)
+    if not valid.any():
+        return float("nan")
+    n_valid = int(valid.sum())
+    n_in = int((obs[valid] == 1).sum())
+    return 100.0 * n_in / n_valid
 
 
 # ---------------------------------------------------------------------------
@@ -819,6 +953,7 @@ def _generate_html_report(
     y_pred: np.ndarray,
     df: pd.DataFrame | None = None,
     sensitivity_html: str | None = None,
+    metrics_ci95: dict[str, list[float] | None] | None = None,
 ) -> str:
     """Generate a self-contained HTML evaluation report matching the original Streamlit style.
 
@@ -839,6 +974,9 @@ def _generate_html_report(
     sensitivity_html : str | None
         Pre-built sensitivity analysis HTML section. When provided, inserted
         after the Folium map section.
+    metrics_ci95 : dict | None
+        Bootstrap CI95 intervals (P1.1) keyed by ``tol_in_pct`` / ``p80`` /
+        ``r2``. Each value is ``[ci_low, ci_high]`` or ``None`` when skipped.
     """
 
     # --- Build stats row (same structure as original rows[]) ---
@@ -934,6 +1072,24 @@ def _generate_html_report(
     pct10_style = _card_style(pct10, 60.0, 40.0, higher_is_better=True)
     pct15_style = _card_style(pct15, 70.0, 50.0, higher_is_better=True)
     pct20_style = _card_style(pct20, 80.0, 60.0, higher_is_better=True)
+
+    # P1.1 - CI95 helper for inline display next to metric values
+    def _ci_span(key: str, digits: int = 2, suffix: str = "") -> str:
+        if not metrics_ci95:
+            return ""
+        ci = metrics_ci95.get(key)
+        if not ci or len(ci) != 2:
+            return ""
+        lo, hi = ci
+        if lo is None or hi is None:
+            return ""
+        return (
+            f' <small style="font-size:11px;color:#56637a;font-weight:600;">'
+            f'(CI95 [{lo:.{digits}f}{suffix}, {hi:.{digits}f}{suffix}])</small>'
+        )
+
+    tol_in_pct_val = (100.0 * row["tol_in"] / row["tol_total"]) if row.get("tol_total") else float("nan")
+    r2_val = metrics.r_squared
 
     # --- Barplot ---
     if df is not None and "TVr" in df.columns and "TMJABCTV" in df.columns:
@@ -1060,7 +1216,7 @@ def _generate_html_report(
     </div>
     <div class="card" style="{tol_style}">
       <div class="k">Capteurs tolerance inclus</div>
-      <div class="v">{row['tol_in']}/{row['tol_total']}</div>
+      <div class="v">{row['tol_in']}/{row['tol_total']} <small style="font-size:13px;color:#56637a;">({_fmt(tol_in_pct_val)}%)</small>{_ci_span('tol_in_pct', digits=2, suffix='%')}</div>
     </div>
     <div class="card" style="{err_style}">
       <div class="k">Err. rel. mediane</div>
@@ -1068,7 +1224,11 @@ def _generate_html_report(
     </div>
     <div class="card">
       <div class="k">Err. rel. p80</div>
-      <div class="v">{_fmt(row.get('err_rel_p80'))}%</div>
+      <div class="v">{_fmt(row.get('err_rel_p80'))}%{_ci_span('p80', digits=2, suffix='%')}</div>
+    </div>
+    <div class="card">
+      <div class="k">R&sup2;</div>
+      <div class="v">{_fmt(r2_val, digits=4)}{_ci_span('r2', digits=4)}</div>
     </div>
     <div class="card">
       <div class="k">GEH &lt; 5</div>
@@ -1294,6 +1454,15 @@ async def upload_validation(
 @router.post("/run", response_model=EvalResponse)
 async def run_evaluation(
     body: EvalRequest,
+    bootstrap_iter: int = Query(
+        1000,
+        ge=0,
+        le=10000,
+        description=(
+            "Bootstrap iterations for CI95 on tol_in_pct / p80 / R-squared. "
+            "Set to 0 to skip entirely. When non-zero, must lie in [100, 10000]."
+        ),
+    ),
     current_user: UserRecord = Depends(get_current_user),
 ) -> EvalResponse:
     """Run model evaluation on validation data.
@@ -1302,6 +1471,16 @@ async def run_evaluation(
     1. model_name + model_dir: load model from disk (output_dir from training)
     2. Fallback to session-stored model (legacy)
     """
+    # Validate bootstrap_iter - Query's ge=0/le=10000 only enforces the outer
+    # envelope; the contract is "0 OR [100, 10000]" (P1.1 spec). Any other
+    # value is a 422-equivalent client error.
+    if bootstrap_iter != 0 and bootstrap_iter < 100:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"bootstrap_iter must be 0 or within [100, 10000]; got {bootstrap_iter}."
+            ),
+        )
     import os
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
@@ -1592,6 +1771,80 @@ async def run_evaluation(
     if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
         report_df = _add_tolerance_columns(report_df)
 
+    # P1.1 - Bootstrap CI95 for tol_in_pct, p80 (err_rel), R-squared.
+    # Skipped when bootstrap_iter == 0 (opt-out) or n < 30 (handled inside
+    # bootstrap_ci95). The metric pipeline above does NOT apply any
+    # flag_comptage / flag_y2025 reweighting today, so we pass weights=None
+    # - the bootstrap stays consistent with the un-bootstrapped metric.
+    metrics_ci95: dict[str, list[float] | None] | None = None
+    if bootstrap_iter > 0:
+        metrics_ci95 = {}
+
+        # R-squared - bootstrap on (y_true, y_pred) directly.
+        r2_res = await asyncio.to_thread(
+            bootstrap_ci95, _metric_r2, y_true, y_pred, None, bootstrap_iter, 1750,
+        )
+        metrics_ci95["r2"] = (
+            [round(r2_res[1], 6), round(r2_res[2], 6)] if r2_res else None
+        )
+
+        # p80 of relative error - bootstrap on the (TMJABCTV, TVr) pair so it
+        # matches the reported err_rel_p80. Fall back to (y_true, y_pred)
+        # when the report columns aren't available (matches the report's own
+        # fallback path).
+        if (
+            "TMJABCTV" in report_df.columns and "TVr" in report_df.columns
+        ):
+            obs_p80 = pd.to_numeric(report_df["TMJABCTV"], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
+            pred_p80 = pd.to_numeric(report_df["TVr"], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
+            mask = np.isfinite(obs_p80) & np.isfinite(pred_p80)
+            obs_p80, pred_p80 = obs_p80[mask], pred_p80[mask]
+        else:
+            obs_p80, pred_p80 = y_true, y_pred
+        p80_res = await asyncio.to_thread(
+            bootstrap_ci95,
+            _metric_p80_err_rel,
+            obs_p80,
+            pred_p80,
+            None,
+            bootstrap_iter,
+            1750,
+        )
+        metrics_ci95["p80"] = (
+            [round(p80_res[1], 4), round(p80_res[2], 4)] if p80_res else None
+        )
+
+        # tol_in_pct - bootstrap on Tolerance_IN_OUT codes (1/2/3). We pass
+        # the codes as ``observed`` and a dummy zero array as ``predicted``;
+        # the adapter only reads ``observed`` (see _metric_tol_in_pct).
+        if "Tolerance_IN_OUT" in report_df.columns:
+            tol_codes = pd.to_numeric(
+                report_df["Tolerance_IN_OUT"], errors="coerce"
+            ).to_numpy(dtype=np.float64)
+            tol_codes = tol_codes[~np.isnan(tol_codes)]
+            if tol_codes.size > 0:
+                dummy = np.zeros_like(tol_codes)
+                tol_res = await asyncio.to_thread(
+                    bootstrap_ci95,
+                    _metric_tol_in_pct,
+                    tol_codes,
+                    dummy,
+                    None,
+                    bootstrap_iter,
+                    1750,
+                )
+                metrics_ci95["tol_in_pct"] = (
+                    [round(tol_res[1], 2), round(tol_res[2], 2)] if tol_res else None
+                )
+            else:
+                metrics_ci95["tol_in_pct"] = None
+        else:
+            metrics_ci95["tol_in_pct"] = None
+
     # Build sensitivity analysis section
     sensitivity_html = None
     try:
@@ -1622,6 +1875,7 @@ async def run_evaluation(
         y_pred=y_pred,
         df=report_df,
         sensitivity_html=sensitivity_html,
+        metrics_ci95=metrics_ci95,
     )
 
     # Store in session
@@ -1630,6 +1884,8 @@ async def run_evaluation(
     session_manager.store_data(body.session_id, "eval_y_pred", y_pred.tolist())
     session_manager.store_data(body.session_id, "eval_report_html", report_html)
     session_manager.store_data(body.session_id, "eval_model_name", model_name)
+    if metrics_ci95 is not None:
+        session_manager.store_data(body.session_id, "eval_metrics_ci95", metrics_ci95)
 
     # P1.4 — persist per-model evaluation artifacts so /api/evaluation/compare
     # can pair predictions from two different runs against the SAME observation
@@ -1647,8 +1903,9 @@ async def run_evaluation(
         session_manager.store_data(body.session_id, "eval_model_roster", roster)
 
     logger.info(
-        "Evaluation done: session=%s model=%s RMSE=%.4f R2=%.4f GEH<5=%.1f%%",
+        "Evaluation done: session=%s model=%s RMSE=%.4f R2=%.4f GEH<5=%.1f%% bootstrap_iter=%d",
         body.session_id, model_name, metrics.rmse, metrics.r_squared, metrics.geh_pct_below_5,
+        bootstrap_iter,
     )
 
     return EvalResponse(
@@ -1656,6 +1913,7 @@ async def run_evaluation(
         model_name=model_name,
         metrics=metrics,
         report_url=f"/api/evaluation/report/{body.session_id}",
+        metrics_ci95=metrics_ci95,
     )
 
 
