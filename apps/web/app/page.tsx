@@ -165,7 +165,10 @@ export default function HomePage() {
       {/* Animated background (full-viewport, behind everything) */}
       <LandingBg />
 
-      <main
+      {/* Avoid nested <main> — the root layout already wraps children in
+          <main id="main-content">. We use a <div> here with a region label
+          for screen readers. */}
+      <div
         id="landing"
         className="relative z-10 mx-auto w-full max-w-[1280px] px-4 sm:px-6 lg:px-8 pb-24"
       >
@@ -205,7 +208,7 @@ export default function HomePage() {
             </a>
           )}
         </footer>
-      </main>
+      </div>
 
       {/* SamWidget is mounted globally in app/layout.tsx, no per-page SamZone. */}
     </>

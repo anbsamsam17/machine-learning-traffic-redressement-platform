@@ -16,7 +16,8 @@ export const metadata = {
 
 export default function LoginPage() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
+    // Root layout already provides <main id="main-content">. Use <div> here.
+    <div className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
       {/* Animated FCD background — full-bleed, low opacity, decorative only */}
       <div
         aria-hidden="true"
@@ -85,6 +86,6 @@ export default function LoginPage() {
           </footer>
         </div>
       </PageEnter>
-    </main>
+    </div>
   );
 }

@@ -95,6 +95,11 @@ export default function DonneesPage() {
       setFile(f);
       setFileName(f.name);
       setIsAutoMapping(true);
+      // Reset gating flags — a new upload invalidates any previous mapping
+      // confirmation. Without this, the layout footer "Continuer" button
+      // stays enabled and the user can advance to Config with stale state.
+      setMappingValidated(false);
+      setPreviewReady(false);
 
       const samToastId = "donnees-upload";
       samNotify.analysing("Je lis ton fichier, ca prend quelques secondes...", {
