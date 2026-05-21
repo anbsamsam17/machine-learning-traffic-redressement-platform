@@ -3200,58 +3200,108 @@ async def run_evaluation(
     metrics = _compute_metrics(y_true, y_pred, body.high_flow_threshold, flows=flows)
 
     # --- Build enriched DataFrame for the HTML report ---
-    # Add TVr, tolerance, error columns (same logic as evaluate_best_model.py)
+    # Detect PL vs TV from the training_config output_cols.
+    _is_pl_model = False
+    if training_config and isinstance(training_config, dict):
+        _out_cols = training_config.get("output_cols") or []
+        if _out_cols and "pl" in str(_out_cols[0]).lower():
+            _is_pl_model = True
+
     report_df = sub.copy()
     report_df["TP_redressement"] = pd.to_numeric(y_pred, errors="coerce")
 
-    # TVr = TMJAFCDTV / TP_redressement * 100
-    tmja_fcd_col = None
-    for cand in ("TMJAFCDTV", "TMJATV"):
-        if cand in report_df.columns:
-            tmja_fcd_col = cand
-            break
-    if tmja_fcd_col is not None:
-        report_df["TVr"] = (
-            pd.to_numeric(report_df[tmja_fcd_col], errors="coerce")
-            / report_df["TP_redressement"]
-            * 100.0
-        )
+    if _is_pl_model:
+        # ── PL branch ── DPL = TMJOFCDPL / TP_redressement * 100, reference = TMJOBCPL.
+        from ..services.ml.types import PL_CONFIG
+        tmja_fcd_col = None
+        for cand in ("TMJAFCDPL", "TMJOFCDPL"):
+            if cand in report_df.columns:
+                tmja_fcd_col = cand
+                break
+        if tmja_fcd_col is not None:
+            report_df["DPL"] = (
+                pd.to_numeric(report_df[tmja_fcd_col], errors="coerce")
+                / report_df["TP_redressement"]
+                * 100.0
+            )
+        else:
+            report_df["DPL"] = pd.to_numeric(y_pred, errors="coerce")
+
+        if "TMJOBCPL" in report_df.columns:
+            report_df["TMJOBCPL"] = pd.to_numeric(report_df["TMJOBCPL"], errors="coerce")
+
+        # Erreur absolue & Erreur % vs TMJOBCPL
+        if "DPL" in report_df.columns and "TMJOBCPL" in report_df.columns:
+            report_df["Erreur absolue"] = (report_df["DPL"] - report_df["TMJOBCPL"]).abs().round(1)
+            denom = report_df["TMJOBCPL"].replace([np.inf, -np.inf], np.nan)
+            report_df["Erreur %"] = (
+                report_df["Erreur absolue"] / denom * 100.0
+            ).replace([np.inf, -np.inf], np.nan)
+        else:
+            report_df["Erreur absolue"] = np.nan
+            report_df["Erreur %"] = np.nan
+
+        # GEH (daily flows, no /24 — matches P0.1 fix in evaluation_pipeline)
+        if "DPL" in report_df.columns and "TMJOBCPL" in report_df.columns:
+            a = report_df["DPL"]
+            b = report_df["TMJOBCPL"]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                geh_vals = np.sqrt(2.0 * (a - b) ** 2 / (a + b))
+            report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace([np.inf, -np.inf], np.nan)
+
+        # lat/lon
+        if "__lat" in report_df.columns and "lat" not in report_df.columns:
+            report_df["lat"] = pd.to_numeric(report_df["__lat"], errors="coerce")
+        if "__lon" in report_df.columns and "lon" not in report_df.columns:
+            report_df["lon"] = pd.to_numeric(report_df["__lon"], errors="coerce")
+
+        # Tolerance columns using PL_CONFIG (produces DPLmin, DPLmax, Tolerance_IN_OUT)
+        if "DPL" in report_df.columns and "TMJOBCPL" in report_df.columns:
+            report_df = _add_tolerance_columns(report_df, PL_CONFIG)
     else:
-        # Fallback: treat y_pred directly as TVr
-        report_df["TVr"] = pd.to_numeric(y_pred, errors="coerce")
+        # ── TV branch (unchanged — TV model works in production) ──
+        # TVr = TMJAFCDTV / TP_redressement * 100
+        tmja_fcd_col = None
+        for cand in ("TMJAFCDTV", "TMJATV"):
+            if cand in report_df.columns:
+                tmja_fcd_col = cand
+                break
+        if tmja_fcd_col is not None:
+            report_df["TVr"] = (
+                pd.to_numeric(report_df[tmja_fcd_col], errors="coerce")
+                / report_df["TP_redressement"]
+                * 100.0
+            )
+        else:
+            report_df["TVr"] = pd.to_numeric(y_pred, errors="coerce")
 
-    # Ensure TMJABCTV is numeric
-    if "TMJABCTV" in report_df.columns:
-        report_df["TMJABCTV"] = pd.to_numeric(report_df["TMJABCTV"], errors="coerce")
+        if "TMJABCTV" in report_df.columns:
+            report_df["TMJABCTV"] = pd.to_numeric(report_df["TMJABCTV"], errors="coerce")
 
-    # Erreur absolue & Erreur %
-    if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
-        report_df["Erreur absolue"] = (report_df["TVr"] - report_df["TMJABCTV"]).abs().round(1)
-        denom = report_df["TMJABCTV"].replace([np.inf, -np.inf], np.nan)
-        report_df["Erreur %"] = (
-            report_df["Erreur absolue"] / denom * 100.0
-        ).replace([np.inf, -np.inf], np.nan)
-    else:
-        report_df["Erreur absolue"] = np.nan
-        report_df["Erreur %"] = np.nan
+        if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
+            report_df["Erreur absolue"] = (report_df["TVr"] - report_df["TMJABCTV"]).abs().round(1)
+            denom = report_df["TMJABCTV"].replace([np.inf, -np.inf], np.nan)
+            report_df["Erreur %"] = (
+                report_df["Erreur absolue"] / denom * 100.0
+            ).replace([np.inf, -np.inf], np.nan)
+        else:
+            report_df["Erreur absolue"] = np.nan
+            report_df["Erreur %"] = np.nan
 
-    # GEH
-    if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
-        a = report_df["TVr"] / 24.0
-        b = report_df["TMJABCTV"] / 24.0
-        with np.errstate(divide="ignore", invalid="ignore"):
-            geh_vals = np.sqrt(2.0 * (a - b) ** 2 / (a + b))
-        report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace([np.inf, -np.inf], np.nan)
+        if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
+            a = report_df["TVr"] / 24.0
+            b = report_df["TMJABCTV"] / 24.0
+            with np.errstate(divide="ignore", invalid="ignore"):
+                geh_vals = np.sqrt(2.0 * (a - b) ** 2 / (a + b))
+            report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace([np.inf, -np.inf], np.nan)
 
-    # lat/lon from __lat/__lon if needed
-    if "__lat" in report_df.columns and "lat" not in report_df.columns:
-        report_df["lat"] = pd.to_numeric(report_df["__lat"], errors="coerce")
-    if "__lon" in report_df.columns and "lon" not in report_df.columns:
-        report_df["lon"] = pd.to_numeric(report_df["__lon"], errors="coerce")
+        if "__lat" in report_df.columns and "lat" not in report_df.columns:
+            report_df["lat"] = pd.to_numeric(report_df["__lat"], errors="coerce")
+        if "__lon" in report_df.columns and "lon" not in report_df.columns:
+            report_df["lon"] = pd.to_numeric(report_df["__lon"], errors="coerce")
 
-    # Tolerance columns (TVrmin, TVrmax, Tolerance_IN_OUT)
-    if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
-        report_df = _add_tolerance_columns(report_df)
+        if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
+            report_df = _add_tolerance_columns(report_df)
 
     # P1.1 - Bootstrap CI95 for tol_in_pct, p80 (err_rel), R-squared.
     # Skipped when bootstrap_iter == 0 (opt-out) or n < 30 (handled inside
