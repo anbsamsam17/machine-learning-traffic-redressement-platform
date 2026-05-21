@@ -780,16 +780,13 @@ def _fmt(v, digits=2):
     return f"{v:.{digits}f}"
 
 
-def _add_tolerance_columns(df: pd.DataFrame, type_config=None) -> pd.DataFrame:
-    """Compute prediction tolerance columns — delegates to the unified
-    service implementation (B3). When ``type_config`` is None we default
-    to TV_CONFIG for backward compat; PL pipelines must pass PL_CONFIG.
+def _add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute TVrmin, TVrmax, Tolerance_IN_OUT — delegates to the
+    unified service implementation (B3).
     """
     from ..services.ml.evaluation_pipeline import add_tolerance_columns
-    if type_config is None:
-        from ..services.ml.types import TV_CONFIG
-        type_config = TV_CONFIG
-    return add_tolerance_columns(df, type_config)
+    from ..services.ml.types import TV_CONFIG
+    return add_tolerance_columns(df, TV_CONFIG)
 
 
 def _LEGACY_add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -848,16 +845,11 @@ def _LEGACY_add_tolerance_columns(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _compute_flow_metrics(df: pd.DataFrame, type_config=None) -> dict:
-    """Compute flow metrics — delegates to service.evaluation_pipeline (B3).
-    When ``type_config`` is None we default to TV_CONFIG for backward compat;
-    PL pipelines must pass PL_CONFIG so the metrics use DPL / TMJOBCPL.
-    """
+def _compute_flow_metrics(df: pd.DataFrame) -> dict:
+    """Compute flow metrics — delegates to service.evaluation_pipeline (B3)."""
     from ..services.ml.evaluation_pipeline import compute_flow_metrics
-    if type_config is None:
-        from ..services.ml.types import TV_CONFIG
-        type_config = TV_CONFIG
-    return compute_flow_metrics(df, type_config)
+    from ..services.ml.types import TV_CONFIG
+    return compute_flow_metrics(df, TV_CONFIG)
 
 
 def _LEGACY_compute_flow_metrics(df: pd.DataFrame) -> dict:
@@ -1584,23 +1576,9 @@ def _generate_html_report(
         empty-state message.
     """
 
-    # Resolve the model type (TV vs PL) from the training config so all
-    # downstream metric / tolerance helpers use the right reference columns.
-    # PL: predicted_col=DPL, reference=TMJOBCPL — TV: predicted_col=TVr,
-    # reference=TMJOBCTV.
-    from ..services.ml.types import PL_CONFIG, TV_CONFIG
-    _target_lower = ""
-    if training_config and isinstance(training_config, dict):
-        _out_cols = training_config.get("output_cols") or []
-        if _out_cols:
-            _target_lower = str(_out_cols[0]).lower()
-    _type_config = PL_CONFIG if "pl" in _target_lower else TV_CONFIG
-    _pred_col = _type_config.eval_predicted_col      # "TVr" or "DPL"
-    _ref_col = _type_config.eval_reference_col       # "TMJOBCTV" or "TMJOBCPL"
-
     # --- Build stats row (same structure as original rows[]) ---
-    if df is not None and _pred_col in df.columns and _ref_col in df.columns:
-        flow_metrics = _compute_flow_metrics(df, _type_config)
+    if df is not None and "TVr" in df.columns and "TMJABCTV" in df.columns:
+        flow_metrics = _compute_flow_metrics(df)
         tol_counts = _compute_tolerance_counts(df)
 
         err_pct = pd.to_numeric(df.get("Erreur %"), errors="coerce")
@@ -2582,11 +2560,9 @@ async def run_evaluation(
     if "__lon" in report_df.columns and "lon" not in report_df.columns:
         report_df["lon"] = pd.to_numeric(report_df["__lon"], errors="coerce")
 
-    # Tolerance columns — use the model's eval_predicted_col / eval_reference_col
-    # (TV: TVr/TMJOBCTV — PL: DPL/TMJOBCPL). The _type_config was resolved above
-    # from the model's training_config.output_cols.
-    if _pred_col in report_df.columns and _ref_col in report_df.columns:
-        report_df = _add_tolerance_columns(report_df, _type_config)
+    # Tolerance columns (TVrmin, TVrmax, Tolerance_IN_OUT)
+    if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
+        report_df = _add_tolerance_columns(report_df)
 
     # P1.1 - Bootstrap CI95 for tol_in_pct, p80 (err_rel), R-squared.
     # Skipped when bootstrap_iter == 0 (opt-out) or n < 30 (handled inside
