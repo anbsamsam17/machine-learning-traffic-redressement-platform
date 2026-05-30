@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { useTypewriter } from "@/lib/sam/use-typewriter";
 
 export interface SamBubbleProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Primary chat line. */
@@ -13,6 +14,8 @@ export interface SamBubbleProps extends React.HTMLAttributes<HTMLDivElement> {
   side?: "right" | "top";
   /** Visual size — matches SamAvatar `size`. */
   size?: "sm" | "md" | "lg";
+  /** Disable typewriter effect (default false). Useful for inline / non-chat use. */
+  noTypewriter?: boolean;
 }
 
 const SIZE_CLASSES: Record<NonNullable<SamBubbleProps["size"]>, string> = {
@@ -25,12 +28,30 @@ const SIZE_CLASSES: Record<NonNullable<SamBubbleProps["size"]>, string> = {
  * Chat-bubble used by `SamAvatar` and reusable for ad-hoc Sam notifications
  * (e.g. inline toast). Rendered with `role="status"` + `aria-live="polite"`
  * so screen readers announce mood changes without interrupting.
+ *
+ * Si le message fait plus de 30 caracteres, effet typewriter (25ms/char,
+ * skip si prefers-reduced-motion). Permet a Sam de "parler" plutot que
+ * d'apparaitre brutalement.
  */
 export const SamBubble = React.forwardRef<HTMLDivElement, SamBubbleProps>(
   function SamBubble(
-    { message, subtitle, side = "right", size = "md", className, ...rest },
+    {
+      message,
+      subtitle,
+      side = "right",
+      size = "md",
+      className,
+      noTypewriter = false,
+      ...rest
+    },
     ref
   ) {
+    const typed = useTypewriter(message, {
+      enabled: !noTypewriter,
+      msPerChar: 25,
+      skipThreshold: 30,
+    });
+
     return (
       <div
         ref={ref}
@@ -44,7 +65,7 @@ export const SamBubble = React.forwardRef<HTMLDivElement, SamBubbleProps>(
         )}
         {...rest}
       >
-        <p className="font-medium leading-tight">{message}</p>
+        <p className="font-medium leading-tight">{typed}</p>
         {subtitle ? (
           <p className="mt-1 text-xs leading-tight text-zinc-400">{subtitle}</p>
         ) : null}

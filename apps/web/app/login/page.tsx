@@ -7,6 +7,7 @@ import { LoginBg } from "@/components/login/animations/LoginBg";
 import { SignalLights } from "@/components/login/animations/SignalLights";
 import { NetworkGraph } from "@/components/login/animations/NetworkGraph";
 import { PageEnter } from "@/components/login/animations/PageEnter";
+import { ParticleField } from "@/components/ui";
 
 export const metadata = {
   title: "Connexion — MDL Trafic",
@@ -33,6 +34,22 @@ export default function LoginPage() {
       >
         <div className="absolute -top-40 -left-40 h-[480px] w-[480px] rounded-full bg-indigo-900/[0.08] blur-3xl" />
         <div className="absolute -bottom-40 -right-40 h-[480px] w-[480px] rounded-full bg-cyan-900/[0.06] blur-3xl" />
+      </div>
+
+      {/* UX5 ParticleField — subtle 1/0 binary cloud above LoginBg.
+          Density tuned low (44 max nodes) to stay decorative. Disabled
+          under prefers-reduced-motion (handled inside ParticleField). */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0 opacity-50"
+      >
+        <ParticleField
+          tone="cyan"
+          density={0.00005}
+          maxParticles={44}
+          linkDistance={130}
+          showBits
+        />
       </div>
 
       <PageEnter>

@@ -190,6 +190,23 @@ select option {
   border-radius: var(--radius);
 }
 
+/* ShimmerText (UX5) — keyframes globaux (evite la pollution de textContent
+   quand declares dans le composant). */
+@keyframes shimmer-slide {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text {
+    animation: none !important;
+    background-position: 50% 0 !important;
+  }
+}
+
 /* Sonner overrides — sober */
 [data-sonner-toast] {
   background: var(--color-bg-elevated) !important;

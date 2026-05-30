@@ -78,7 +78,8 @@ export function SamCoachingPanel({ mode = "tv" }: SamCoachingPanelProps = {}) {
     setHydrated(true);
   }, [STORAGE_KEY]);
 
-  // Mount animation: fade in + soft scale bump. Respects reduced-motion.
+  // Mount animation: slide-up + fade + scale, ease power3.out.
+  // Respects reduced-motion (apparition instantanee).
   useEffect(() => {
     if (!hydrated || dismissed) return;
     const el = rootRef.current;
@@ -87,13 +88,13 @@ export function SamCoachingPanel({ mode = "tv" }: SamCoachingPanelProps = {}) {
     mm.add(PREFERENCE, () => {
       gsap.fromTo(
         el,
-        { autoAlpha: 0, y: 8, scale: 0.99 },
+        { autoAlpha: 0, y: 16, scale: 0.96 },
         {
           autoAlpha: 1,
           y: 0,
           scale: 1,
-          duration: 0.5,
-          ease: "power2.out",
+          duration: 0.45,
+          ease: "power3.out",
         }
       );
       return () => {
@@ -110,12 +111,35 @@ export function SamCoachingPanel({ mode = "tv" }: SamCoachingPanelProps = {}) {
   }, [hydrated, dismissed]);
 
   function handleDismiss() {
-    setDismissed(true);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      // ignore — best-effort persistence
+    const el = rootRef.current;
+    const motionOk =
+      typeof window !== "undefined" &&
+      window.matchMedia(PREFERENCE).matches;
+    if (!el || !motionOk) {
+      setDismissed(true);
+      try {
+        window.localStorage.setItem(STORAGE_KEY, "1");
+      } catch {
+        // ignore
+      }
+      return;
     }
+    // Sortie : reverse + duration 0.25s.
+    gsap.to(el, {
+      autoAlpha: 0,
+      y: 8,
+      scale: 0.97,
+      duration: 0.25,
+      ease: "power2.in",
+      onComplete: () => {
+        setDismissed(true);
+        try {
+          window.localStorage.setItem(STORAGE_KEY, "1");
+        } catch {
+          // ignore
+        }
+      },
+    });
   }
 
   if (!hydrated || dismissed) return null;
@@ -136,9 +160,13 @@ export function SamCoachingPanel({ mode = "tv" }: SamCoachingPanelProps = {}) {
       aria-label="Recommandations de Sam pour la configuration"
       className={cn(
         // Glass card — cyan/violet bordered, sits above the form.
-        "relative overflow-hidden rounded-xl",
+        "relative overflow-hidden rounded-xl group/coaching",
         "border border-cyan-400/30 bg-bg-elevated/70 backdrop-blur",
         "shadow-[0_10px_40px_-15px_rgba(34,211,238,0.25)]",
+        // Hover : neon border subtil + glow renforce sans casser le layout.
+        "transition-[box-shadow,border-color] duration-300 ease-out",
+        "hover:border-cyan-400/50",
+        "hover:shadow-[0_10px_40px_-12px_rgba(34,211,238,0.40),0_0_24px_-6px_rgba(167,139,250,0.30)]",
         "p-5 sm:p-6"
       )}
       style={{ opacity: 0 }}

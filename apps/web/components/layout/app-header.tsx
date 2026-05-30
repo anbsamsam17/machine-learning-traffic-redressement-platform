@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { gsap } from "gsap";
 import {
   Car,
   Truck,
@@ -15,12 +16,14 @@ import {
   X,
   LogOut,
   User,
+  Home,
 } from "lucide-react";
 import { useAppStore, type AppMode } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { getToken, logout } from "@/lib/auth";
 import { apiClient } from "@/lib/api";
 import type { AuthMeResponse } from "@/lib/types/api";
+import { MagneticButton, NeonBorder } from "@/components/ui";
 
 const MODES = [
   { key: "tv" as AppMode, label: "Modele TV", icon: Car, path: "/donnees" },
@@ -41,18 +44,20 @@ export function AppHeader() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const firstLinkRef = useRef<HTMLButtonElement>(null);
 
+  // Animated underline pieces
+  const navRef = useRef<HTMLElement>(null);
+  const underlineRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
   const isAuthPage = pathname === "/login" || pathname === "/register";
 
   // A11y — close mobile drawer on Escape and move focus to the first
-  // interactive element when the drawer opens. Basic focus-trap.
+  // interactive element when the drawer opens.
   useEffect(() => {
     if (!mobileOpen) return;
-
-    // Defer to give the enter animation a tick to mount.
     const focusTimer = window.setTimeout(() => {
       firstLinkRef.current?.focus();
     }, 50);
-
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -66,10 +71,7 @@ export function AppHeader() {
     };
   }, [mobileOpen]);
 
-  // Fetch current user email — single call per pathname change.
-  // The full TanStack migration of this hook is a follow-up; for now we
-  // gate the call behind a token check so anonymous visitors don't hit
-  // /api/auth/me on every navigation.
+  // Fetch user email (single call per pathname change) — gate behind token.
   useEffect(() => {
     if (!getToken()) {
       setUserEmail(null);
@@ -89,6 +91,48 @@ export function AppHeader() {
     };
   }, [pathname]);
 
+  // Animated underline — slides between the active nav item smoothly.
+  // useLayoutEffect runs before paint so the underline never flashes.
+  useLayoutEffect(() => {
+    if (isAuthPage) return;
+    const underline = underlineRef.current;
+    const nav = navRef.current;
+    if (!underline || !nav) return;
+
+    const activeKey = mode ?? undefined;
+    const target = activeKey ? itemRefs.current[activeKey] : null;
+
+    if (!target) {
+      gsap.to(underline, {
+        opacity: 0,
+        duration: 0.18,
+        ease: "power2.out",
+      });
+      return;
+    }
+
+    const navRect = nav.getBoundingClientRect();
+    const itemRect = target.getBoundingClientRect();
+    const left = itemRect.left - navRect.left;
+    const width = itemRect.width;
+
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (reduceMotion) {
+      gsap.set(underline, { x: left, width, opacity: 1 });
+    } else {
+      gsap.to(underline, {
+        x: left,
+        width,
+        opacity: 1,
+        duration: 0.32,
+        ease: "power3.out",
+      });
+    }
+  }, [mode, pathname, isAuthPage]);
+
   function handleModeClick(m: AppMode, path: string) {
     if (m === mode) {
       router.push(path);
@@ -107,16 +151,9 @@ export function AppHeader() {
   }
 
   async function handleLogout() {
-    // Best-effort server-side cookie invalidation, then clear local
-    // token + app state. `logout` always resolves, even on network error.
     await logout();
     reset();
     setUserEmail(null);
-    // Hard navigation — bypass Next.js client cache so the middleware
-    // re-reads cookies on the *next* request (router.push alone left
-    // the user with a stale-looking header on the first click). The
-    // explicit replace + reload combo also flushes any cached
-    // /api/auth/me response held by SWR/TanStack queries elsewhere.
     if (typeof window !== "undefined") {
       window.location.replace("/login");
       return;
@@ -129,37 +166,51 @@ export function AppHeader() {
   return (
     <header
       role="banner"
-      className="sticky top-0 z-50 border-b border-border bg-bg/95 backdrop-blur supports-[backdrop-filter]:bg-bg/80"
+      className={cn(
+        "sticky top-0 z-50 border-b border-border/60",
+        "bg-bg/80 backdrop-blur-xl supports-[backdrop-filter]:bg-bg/60",
+        // subtle gradient overlay for premium depth
+        "before:absolute before:inset-0 before:pointer-events-none",
+        "before:bg-gradient-to-b before:from-accent/[0.02] before:to-transparent"
+      )}
     >
-      <div className="max-w-[1600px] mx-auto px-4 h-12 flex items-center justify-between gap-3">
-        {/* Logo + breadcrumb */}
-        <button
+      <div className="relative max-w-[1600px] mx-auto px-4 h-14 flex items-center justify-between gap-3">
+        {/* Logo + breadcrumb (Accueil) — MagneticButton ghost */}
+        <MagneticButton
+          variant="ghost"
+          size="sm"
           onClick={goHome}
-          className="flex items-center gap-2 text-text hover:text-accent transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded px-1"
+          strength={0.3}
           aria-label="Retour a l'accueil"
+          className="shrink-0 text-text hover:text-accent"
         >
-          <Car size={16} className="text-accent" aria-hidden="true" />
-          <span className="font-semibold text-sm hidden sm:block">
-            Accueil
-          </span>
-        </button>
+          <Home size={16} className="text-accent" aria-hidden="true" />
+          <span className="font-semibold text-sm hidden sm:block">Accueil</span>
+        </MagneticButton>
 
-        {/* Desktop nav */}
-        <nav aria-label="Navigation principale" className="hidden md:flex items-center gap-0.5">
+        {/* Desktop nav with animated underline */}
+        <nav
+          ref={navRef}
+          aria-label="Navigation principale"
+          className="relative hidden md:flex items-center gap-0.5"
+        >
           {MODES.map((m) => {
             const active = mode === m.key;
             const Icon = m.icon;
             return (
               <button
                 key={m.key}
+                ref={(el) => {
+                  itemRefs.current[m.key as string] = el;
+                }}
                 onClick={() => handleModeClick(m.key, m.path)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-medium transition-colors",
+                  "relative flex items-center gap-1.5 px-2.5 h-8 rounded text-xs font-medium transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                   active
-                    ? "bg-accent-subtle text-accent"
-                    : "text-text-muted hover:text-text hover:bg-bg-subtle"
+                    ? "text-accent"
+                    : "text-text-muted hover:text-text"
                 )}
               >
                 <Icon size={14} aria-hidden="true" />
@@ -167,18 +218,43 @@ export function AppHeader() {
               </button>
             );
           })}
+          {/* Sliding underline — absolute positioned, animated via GSAP.
+              Initially invisible until useLayoutEffect places it. */}
+          <div
+            ref={underlineRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-0 left-0 h-[2px] rounded-full bg-accent"
+            style={{
+              width: 0,
+              opacity: 0,
+              boxShadow:
+                "0 0 8px rgba(99,102,241,0.55), 0 0 1px rgba(99,102,241,0.85)",
+            }}
+          />
         </nav>
 
-        {/* Right side */}
+        {/* Right side — user pill + logout */}
         <div className="hidden md:flex items-center gap-2">
           {userEmail && (
-            <div className="flex items-center gap-1">
-              <div className="flex items-center gap-1.5 px-2 h-7 rounded bg-bg-elevated border border-border">
-                <User size={12} className="text-text-muted" aria-hidden="true" />
-                <span className="text-xs text-text-muted max-w-[180px] truncate">
-                  {userEmail}
-                </span>
-              </div>
+            <div className="flex items-center gap-1.5">
+              <NeonBorder
+                tone="accent"
+                thickness={1}
+                rotate={false}
+                speed={4.5}
+                className="rounded-full"
+              >
+                <div className="flex items-center gap-1.5 px-2.5 h-7 rounded-full">
+                  <User
+                    size={12}
+                    className="text-text-muted"
+                    aria-hidden="true"
+                  />
+                  <span className="text-xs text-text-muted max-w-[180px] truncate">
+                    {userEmail}
+                  </span>
+                </div>
+              </NeonBorder>
               <button
                 onClick={handleLogout}
                 className="p-1.5 rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -199,7 +275,11 @@ export function AppHeader() {
           aria-controls="mobile-nav-drawer"
           aria-label={mobileOpen ? "Fermer le menu" : "Ouvrir le menu"}
         >
-          {mobileOpen ? <X size={18} aria-hidden="true" /> : <Menu size={18} aria-hidden="true" />}
+          {mobileOpen ? (
+            <X size={18} aria-hidden="true" />
+          ) : (
+            <Menu size={18} aria-hidden="true" />
+          )}
         </button>
       </div>
 
@@ -210,7 +290,7 @@ export function AppHeader() {
           role="dialog"
           aria-modal="true"
           aria-label="Navigation"
-          className="md:hidden border-t border-border bg-bg-elevated"
+          className="md:hidden border-t border-border bg-bg-elevated/95 backdrop-blur-xl"
         >
           <div className="p-3 space-y-1">
             {MODES.map((m, idx) => {
@@ -238,7 +318,11 @@ export function AppHeader() {
               <div className="pt-2 mt-2 border-t border-border">
                 <div className="flex items-center justify-between px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <User size={14} className="text-text-muted" aria-hidden="true" />
+                    <User
+                      size={14}
+                      className="text-text-muted"
+                      aria-hidden="true"
+                    />
                     <span className="text-xs text-text-muted truncate max-w-[200px]">
                       {userEmail}
                     </span>

@@ -22,11 +22,20 @@ import {
   Database,
 } from "lucide-react";
 import { toast } from "sonner";
-import { samNotify, samMood } from "@/lib/sam-fallback";
-import { GradientText } from "@/components/ui/gradient-text";
+import { samNotify } from "@/lib/sam-fallback";
 import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
 import { StatCard } from "@/components/ui/stat-card";
+import {
+  GlowCardPremium,
+  MagneticButton,
+  NeonBorder,
+  RevealOnScroll,
+  ShimmerText,
+  StatBadge,
+  TabGroup,
+  type TabItem,
+} from "@/components/ui";
 import { DropZone } from "@/components/upload/drop-zone";
 import { useAppStore } from "@/lib/store";
 import { spawnConfetti } from "@/lib/success-effects";
@@ -493,23 +502,70 @@ export default function EvaluationPage() {
     } catch { toast.error("Impossible de telecharger le modele."); }
   }, [selectedModel, resolvedModelDir]);
 
+  // Best run heuristic — when metrics computed, surface a gold "best" badge
+  // on the metrics panel if R² > 0.95 or GEH<5% > 90%.
+  const isBestRun =
+    metrics !== null &&
+    (metrics.r_squared > 0.95 || metrics.geh_pct_below_5 > 90);
+
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <GradientText as="h1" className="text-2xl">Evaluation</GradientText>
-        <p className="text-sm text-slate-300">
-          Evaluez un modele {
-            mode === "pl"
+      {/* Header — ShimmerText H1, mode + best badge */}
+      <RevealOnScroll variant="fade" stagger={0.05}>
+        <div className="space-y-2">
+          <ShimmerText
+            as="h1"
+            variant={isBestRun ? "gold" : "cyan"}
+            className="text-2xl sm:text-3xl"
+          >
+            Evaluation
+          </ShimmerText>
+          <p className="text-sm text-text-muted">
+            Evaluez un modele{" "}
+            {mode === "pl"
               ? "PL"
               : mode === "hpm"
                 ? "HPM (8h-9h, v/h)"
                 : mode === "hps"
                   ? "HPS (17h-18h, v/h)"
-                  : "TV"
-          } sur un fichier de validation.
-          Cette etape peut etre lancee independamment.
-        </p>
-      </div>
+                  : "TV"}{" "}
+            sur un fichier de validation. Cette etape peut etre lancee
+            independamment.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <StatBadge
+              label="Mode"
+              value={
+                mode === "pl"
+                  ? "PL"
+                  : mode === "hpm"
+                    ? "HPM"
+                    : mode === "hps"
+                      ? "HPS"
+                      : "TV"
+              }
+              tone="violet"
+              size="sm"
+            />
+            {models.length > 0 && (
+              <StatBadge
+                label="Modeles"
+                value={models.length}
+                tone="accent"
+                size="sm"
+              />
+            )}
+            {isBestRun && (
+              <StatBadge
+                label="Best run"
+                value="GOLD"
+                tone="amber"
+                size="sm"
+              />
+            )}
+          </div>
+        </div>
+      </RevealOnScroll>
 
       {/* Empty-state non-bloquant (Tache 1) — l'evaluation peut s'amorcer
           sans session existante (upload validation + modeles externes), on
@@ -574,40 +630,35 @@ export default function EvaluationPage() {
         </label>
       </GlowCard>
 
-      {/* 2. Selection du modele — tabs */}
-      <GlowCard glowColor="cyan">
+      {/* 2. Selection du modele — TabGroup premium (session / upload) */}
+      <GlowCardPremium tone="cyan" intensity={0.5}>
         <div className="flex items-center gap-2 mb-4">
-          <FolderOpen size={18} className="text-cyan-400" />
-          <h3 className="text-sm font-semibold text-white">2. Selection du modele</h3>
+          <FolderOpen size={18} className="text-[#22d3ee]" />
+          <h3 className="text-sm font-semibold text-text">
+            2. Selection du modele
+          </h3>
         </div>
 
-        {/* Tab buttons */}
-        <div className="flex gap-1 p-1 rounded-xl bg-slate-900/60 border border-white/[0.06] mb-4">
-          <button
-            type="button"
-            onClick={() => setModelSource("session")}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium transition-all ${
-              modelSource === "session"
-                ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-            }`}
-          >
-            <Server size={14} />
-            Modeles de la session
-          </button>
-          <button
-            type="button"
-            onClick={() => setModelSource("upload")}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium transition-all ${
-              modelSource === "upload"
-                ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-            }`}
-          >
-            <Package size={14} />
-            Parcourir un dossier de modeles
-          </button>
-        </div>
+        {/* TabGroup — underline cyan slide */}
+        <TabGroup
+          tone="cyan"
+          value={modelSource}
+          onChange={(id) => setModelSource(id as ModelSource)}
+          renderPanels={false}
+          items={[
+            {
+              id: "session",
+              label: "Modeles de la session",
+              icon: <Server size={14} />,
+            },
+            {
+              id: "upload",
+              label: "Parcourir un dossier",
+              icon: <Package size={14} />,
+            },
+          ] satisfies TabItem[]}
+          className="mb-4"
+        />
 
         {/* Tab content: Session models */}
         {modelSource === "session" && (
@@ -744,7 +795,7 @@ export default function EvaluationPage() {
             </AnimatePresence>
           </div>
         )}
-      </GlowCard>
+      </GlowCardPremium>
 
       {/* 3. Mapping colonnes */}
       <AnimatePresence>
@@ -902,41 +953,150 @@ export default function EvaluationPage() {
         )}
       </AnimatePresence>
 
-      {/* 4. Lancer */}
+      {/* 4. Lancer — MagneticButton primary lg */}
       <div className="flex justify-center">
-        <NeonButton variant="primary"
-          icon={running ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
+        <MagneticButton
+          variant="primary"
+          size="lg"
           onClick={handleRun}
           disabled={running || !validationFile || !selectedModel || !allMapped}
-          className="px-10 py-4 text-base">
+        >
+          {running ? (
+            <Loader2 size={18} className="animate-spin" />
+          ) : (
+            <Play size={18} />
+          )}
           {running ? "Evaluation en cours..." : "4. Lancer l'evaluation"}
-        </NeonButton>
+        </MagneticButton>
       </div>
 
-      {/* 5. Metriques */}
+      {/* 5. Metriques — GlowCardPremium tone gold si best run, sinon accent */}
       <AnimatePresence>
         {metrics && (
-          <motion.div ref={metricsContainerRef} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative space-y-4">
-            <div className="flex items-center gap-2">
-              <BarChart3 size={18} className="text-accent" />
-              <h3 className="text-sm font-semibold text-white">
-                Metriques — <span className="text-accent">{selectedModel}</span>
-              </h3>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-              <StatCard label="MAE" value={metrics.mae.toFixed(2)} icon={<Activity size={18} />}
-                className={metricsFlash ? "animate-success-pulse" : ""} />
-              <StatCard label="RMSE" value={metrics.rmse.toFixed(2)} icon={<Target size={18} />}
-                className={metricsFlash ? "animate-success-pulse" : ""} />
-              <StatCard label="R²" value={metrics.r_squared.toFixed(4)} icon={<BarChart3 size={18} />}
-                trend={metrics.r_squared > 0.95 ? "up" : metrics.r_squared > 0.85 ? "neutral" : "down"}
-                className={metricsFlash ? "animate-success-pulse animate-count-flash" : ""} />
-              <StatCard label="GEH < 5%" value={`${metrics.geh_pct_below_5.toFixed(1)}%`} icon={<FileCheck size={18} />}
-                trend={metrics.geh_pct_below_5 > 85 ? "up" : "down"}
-                className={metricsFlash ? "animate-success-pulse animate-count-flash" : ""} />
-              <StatCard label="Echantillons" value={metrics.n_samples.toString()}
-                className={metricsFlash ? "animate-success-pulse" : ""} />
-            </div>
+          <motion.div
+            ref={metricsContainerRef}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="relative"
+          >
+            {isBestRun ? (
+              <NeonBorder tone="amber" speed={3.6}>
+                <div className="p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 size={18} className="text-amber-400" />
+                    <ShimmerText
+                      as="h3"
+                      variant="gold"
+                      className="text-sm font-semibold"
+                    >
+                      Best run - {selectedModel}
+                    </ShimmerText>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <StatCard
+                      label="MAE"
+                      value={metrics.mae.toFixed(2)}
+                      icon={<Activity size={18} />}
+                      className={metricsFlash ? "animate-success-pulse" : ""}
+                    />
+                    <StatCard
+                      label="RMSE"
+                      value={metrics.rmse.toFixed(2)}
+                      icon={<Target size={18} />}
+                      className={metricsFlash ? "animate-success-pulse" : ""}
+                    />
+                    <StatCard
+                      label="R²"
+                      value={metrics.r_squared.toFixed(4)}
+                      icon={<BarChart3 size={18} />}
+                      trend="up"
+                      className={
+                        metricsFlash
+                          ? "animate-success-pulse animate-count-flash"
+                          : ""
+                      }
+                    />
+                    <StatCard
+                      label="GEH < 5%"
+                      value={`${metrics.geh_pct_below_5.toFixed(1)}%`}
+                      icon={<FileCheck size={18} />}
+                      trend={metrics.geh_pct_below_5 > 85 ? "up" : "down"}
+                      className={
+                        metricsFlash
+                          ? "animate-success-pulse animate-count-flash"
+                          : ""
+                      }
+                    />
+                    <StatCard
+                      label="Echantillons"
+                      value={metrics.n_samples.toString()}
+                      className={metricsFlash ? "animate-success-pulse" : ""}
+                    />
+                  </div>
+                </div>
+              </NeonBorder>
+            ) : (
+              <GlowCardPremium tone="accent" intensity={0.5}>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 size={18} className="text-accent" />
+                    <h3 className="text-sm font-semibold text-text">
+                      Metriques -{" "}
+                      <span className="text-accent font-mono">
+                        {selectedModel}
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <StatCard
+                      label="MAE"
+                      value={metrics.mae.toFixed(2)}
+                      icon={<Activity size={18} />}
+                      className={metricsFlash ? "animate-success-pulse" : ""}
+                    />
+                    <StatCard
+                      label="RMSE"
+                      value={metrics.rmse.toFixed(2)}
+                      icon={<Target size={18} />}
+                      className={metricsFlash ? "animate-success-pulse" : ""}
+                    />
+                    <StatCard
+                      label="R²"
+                      value={metrics.r_squared.toFixed(4)}
+                      icon={<BarChart3 size={18} />}
+                      trend={
+                        metrics.r_squared > 0.95
+                          ? "up"
+                          : metrics.r_squared > 0.85
+                            ? "neutral"
+                            : "down"
+                      }
+                      className={
+                        metricsFlash
+                          ? "animate-success-pulse animate-count-flash"
+                          : ""
+                      }
+                    />
+                    <StatCard
+                      label="GEH < 5%"
+                      value={`${metrics.geh_pct_below_5.toFixed(1)}%`}
+                      icon={<FileCheck size={18} />}
+                      trend={metrics.geh_pct_below_5 > 85 ? "up" : "down"}
+                      className={
+                        metricsFlash
+                          ? "animate-success-pulse animate-count-flash"
+                          : ""
+                      }
+                    />
+                    <StatCard
+                      label="Echantillons"
+                      value={metrics.n_samples.toString()}
+                      className={metricsFlash ? "animate-success-pulse" : ""}
+                    />
+                  </div>
+                </div>
+              </GlowCardPremium>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -959,18 +1119,32 @@ export default function EvaluationPage() {
         )}
       </AnimatePresence>
 
-      {/* 7. Telechargements */}
+      {/* 7. Telechargements — MagneticButton secondary */}
       <AnimatePresence>
         {(reportBlob || metrics) && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap gap-3 justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-wrap gap-3 justify-center"
+          >
             {reportBlob && (
-              <NeonButton variant="secondary" icon={<Download size={16} />} onClick={downloadReport}>
+              <MagneticButton
+                variant="secondary"
+                size="md"
+                onClick={downloadReport}
+              >
+                <Download size={16} />
                 Telecharger le rapport HTML
-              </NeonButton>
+              </MagneticButton>
             )}
-            <NeonButton variant="secondary" icon={<Download size={16} />} onClick={downloadModelZip}>
+            <MagneticButton
+              variant="secondary"
+              size="md"
+              onClick={downloadModelZip}
+            >
+              <Download size={16} />
               Telecharger le modele (ZIP)
-            </NeonButton>
+            </MagneticButton>
           </motion.div>
         )}
       </AnimatePresence>

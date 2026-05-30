@@ -22,8 +22,17 @@ import { AuroraBg } from "@/components/backgrounds/aurora-bg";
 import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
-import { StatCard } from "@/components/ui/stat-card";
 import { DropZone } from "@/components/upload/drop-zone";
+// UX5 — primary CTAs (Generer / Telecharger) + ShimmerText sur le titre du
+// resultat + StatBadge pour le compteur "mappees" + RevealOnScroll sur les
+// stats. Aucune logique metier touchee.
+import {
+  MagneticButton,
+  ShimmerText,
+  StatBadge,
+  NeonBorder,
+  RevealOnScroll,
+} from "@/components/ui";
 import { useAppStore } from "@/lib/store";
 import { uploadFile, fetchJSON } from "@/lib/api";
 import { apiUrl } from "@/lib/api-url";
@@ -525,13 +534,22 @@ export default function CompteursPage() {
                       2. Mapping des colonnes
                     </h3>
                   </div>
-                  <div className="glass-light px-3 py-1.5 rounded-lg text-xs font-medium">
-                    <span className="text-accent">{mappedCount}</span>
-                    <span className="text-muted">
-                      {" "}
-                      / {TARGET_COLUMNS.length} mappees
-                    </span>
-                  </div>
+                  {/* UX5 : StatBadge — tone success/amber/danger selon la
+                      completion (vert si tout mappe, amber si partiel, danger
+                      si rien). */}
+                  <StatBadge
+                    tone={
+                      mappedCount === TARGET_COLUMNS.length
+                        ? "success"
+                        : mappedCount > 0
+                          ? "amber"
+                          : "danger"
+                    }
+                    size="md"
+                    icon={<Check />}
+                    label={`/ ${TARGET_COLUMNS.length} mappees`}
+                    value={mappedCount}
+                  />
                 </div>
 
                 {/* Progress bar */}
@@ -877,19 +895,33 @@ export default function CompteursPage() {
                   </div>
                 )}
 
+                {/* UX5 : MagneticButton primary entoure d'un NeonBorder cyan
+                    quand pret a generer (signal "ready to fire"). */}
                 <div className="flex justify-center">
-                  <NeonButton
-                    onClick={handleGenerate}
-                    disabled={!isComplete || generating}
-                    icon={
-                      generating ? undefined : <Play size={16} />
-                    }
-                    className={generating ? "animate-pulse-glow" : ""}
-                  >
-                    {generating
-                      ? "Generation en cours..."
-                      : "Generer le fichier compteurs"}
-                  </NeonButton>
+                  {isComplete && !generating ? (
+                    <NeonBorder tone="cyan" speed={2.4} className="rounded-md">
+                      <MagneticButton
+                        variant="primary"
+                        size="lg"
+                        onClick={handleGenerate}
+                      >
+                        <Play size={16} />
+                        Generer le fichier compteurs
+                      </MagneticButton>
+                    </NeonBorder>
+                  ) : (
+                    <MagneticButton
+                      variant="secondary"
+                      size="lg"
+                      onClick={handleGenerate}
+                      disabled={!isComplete || generating}
+                    >
+                      {generating ? null : <Play size={16} />}
+                      {generating
+                        ? "Generation en cours..."
+                        : "Generer le fichier compteurs"}
+                    </MagneticButton>
+                  )}
                 </div>
               </GlowCard>
             </motion.div>
@@ -905,33 +937,45 @@ export default function CompteursPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <GlowCard glowColor="accent">
-                <div className="text-center py-6 space-y-4">
+              <NeonBorder tone="success" speed={3.2}>
+                <div className="text-center px-6 py-7 space-y-5">
                   <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
                     <CircleDot size={28} />
                   </div>
-                  <p className="text-sm font-medium text-foreground">
-                    Fichier compteurs genere avec succes
-                  </p>
+                  {/* UX5 : ShimmerText "X capteurs extraits" — gold pour
+                      capter l'oeil et signaler le succes coherent. */}
+                  <ShimmerText
+                    as="h3"
+                    variant="cyan"
+                    className="text-base font-semibold"
+                  >
+                    {result.geojson_feature_count.toLocaleString("fr-FR")} capteurs extraits
+                  </ShimmerText>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-lg mx-auto">
-                    <StatCard
-                      label="Boucles generees"
-                      value={result.geojson_feature_count.toLocaleString(
-                        "fr-FR"
-                      )}
+                  <RevealOnScroll
+                    variant="scale"
+                    stagger={0.06}
+                    className="flex flex-wrap items-center justify-center gap-2 max-w-2xl mx-auto"
+                  >
+                    <StatBadge
+                      tone="cyan"
+                      icon={<MapPin />}
+                      label="boucles generees"
+                      value={result.geojson_feature_count.toLocaleString("fr-FR")}
                     />
-                    <StatCard
-                      label="Lignes source"
-                      value={result.stats.total_rows.toLocaleString(
-                        "fr-FR"
-                      )}
+                    <StatBadge
+                      tone="accent"
+                      icon={<FileText />}
+                      label="lignes source"
+                      value={result.stats.total_rows.toLocaleString("fr-FR")}
                     />
-                    <StatCard
-                      label="Colonnes"
+                    <StatBadge
+                      tone="violet"
+                      icon={<Layers />}
+                      label="colonnes"
                       value={result.stats.columns.length}
                     />
-                  </div>
+                  </RevealOnScroll>
 
                   {/* Type distribution */}
                   {result.stats.type_distribution && (
@@ -982,16 +1026,17 @@ export default function CompteursPage() {
                   )}
 
                   <div className="flex items-center justify-center gap-3 pt-2">
-                    <NeonButton
-                      variant="secondary"
-                      icon={<Download size={16} />}
+                    <MagneticButton
+                      variant="primary"
+                      size="lg"
                       onClick={handleDownload}
                     >
+                      <Download size={16} />
                       Telecharger GeoJSON
-                    </NeonButton>
+                    </MagneticButton>
                   </div>
                 </div>
-              </GlowCard>
+              </NeonBorder>
             </motion.div>
           )}
         </AnimatePresence>

@@ -69,6 +69,13 @@ import {
   type SelectedNode,
 } from "@/components/discontinuites/NodePanel";
 import { CauseCard } from "@/components/discontinuites/CauseCard";
+// UX5 — premium CTA + KPI badges
+import {
+  MagneticButton,
+  ShimmerText,
+  NeonBorder,
+  RevealOnScroll,
+} from "@/components/ui";
 
 // ---------------------------------------------------------------------------
 // Types backend
@@ -1078,13 +1085,18 @@ export default function DiscontinuitesPage() {
         </div>
       )}
 
-      {/* KPIs (uniquement en phase ready) */}
+      {/* KPIs (uniquement en phase ready) — UX5 : stagger reveal des cards */}
       {phase === "ready" && (
         <section
           className="border-b border-[#1f2740] bg-[rgba(15,20,36,.4)]"
           aria-label="Indicateurs cle"
         >
-          <div className="max-w-[1600px] mx-auto px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <RevealOnScroll
+            variant="slide-up"
+            stagger={0.06}
+            distance={12}
+            className="max-w-[1600px] mx-auto px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-3"
+          >
             <KpiCard
               label="Noeuds discontinus"
               value={fmtFR(totalNodes)}
@@ -1115,7 +1127,7 @@ export default function DiscontinuitesPage() {
               hint={`${fmtFR(topoCounts["Continuite"] ?? 0)} noeuds · cause #1 : ${dominantCause.c}`}
               accentColor={TOPO_PALETTE.Continuite}
             />
-          </div>
+          </RevealOnScroll>
         </section>
       )}
 
@@ -1189,17 +1201,27 @@ export default function DiscontinuitesPage() {
         >
           {phase !== "ready" && (
             <div
-              // Badge ambre solide : lisible sur fond clair (Voyager) ET sombre.
-              className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-[#FFB000] border border-amber-600/70 text-[#0d1117] text-xs font-semibold pointer-events-none flex items-center gap-2 shadow-lg"
+              className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none"
               role="status"
               aria-live="polite"
             >
-              <Eye size={12} aria-hidden />
-              <span>
-                Apercu Lyon — {phase === "analyzing"
-                  ? "analyse en cours, patiente quelques secondes"
-                  : "depose tes donnees pour passer en mode reel"}
-              </span>
+              {/* UX5 : badge ShimmerText gold + NeonBorder amber qui pulse
+                  un peu plus vite quand analyse en cours (signal d'activite). */}
+              <NeonBorder
+                tone="amber"
+                speed={phase === "analyzing" ? 1.8 : 3.4}
+                rotate={false}
+                className="rounded-full"
+              >
+                <div className="px-3 py-1.5 rounded-full flex items-center gap-2">
+                  <Eye size={12} aria-hidden className="text-[#FFB000]" />
+                  <ShimmerText variant="gold" className="text-xs">
+                    {phase === "analyzing"
+                      ? "Apercu Lyon — analyse en cours, patiente quelques secondes"
+                      : "Apercu Lyon — depose tes donnees pour passer en mode reel"}
+                  </ShimmerText>
+                </div>
+              </NeonBorder>
             </div>
           )}
           <div
@@ -1455,22 +1477,31 @@ function UploadBandeau({
         )}
       </div>
 
-      {/* Action button (sticky bottom) */}
+      {/* Action button (sticky bottom) — UX5 : MagneticButton amber +
+          NeonBorder pulse quand canAnalyze, idiome "ready to fire". */}
       <div className="sticky bottom-0 -mx-4 px-4 pb-3 pt-3 bg-gradient-to-t from-[rgba(15,20,36,.98)] via-[rgba(15,20,36,.92)] to-transparent">
-        <button
-          type="button"
-          onClick={onAnalyze}
-          disabled={!canAnalyze}
-          className={cn(
-            "w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB000] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d1117]",
-            canAnalyze
-              ? "bg-[#FFB000] text-[#1A1300] hover:bg-[#FFC233] cursor-pointer shadow-[0_0_24px_-8px_rgba(255,176,0,.6)]"
-              : "bg-[rgba(255,255,255,.05)] text-[#7d8aa8] cursor-not-allowed",
-          )}
-        >
-          <Upload size={16} />
-          Lancer l&apos;analyse
-        </button>
+        {canAnalyze ? (
+          <NeonBorder tone="amber" speed={2.6} className="rounded-md">
+            <MagneticButton
+              variant="primary"
+              size="md"
+              onClick={onAnalyze}
+              className="w-full bg-[#FFB000] !text-[#1A1300] hover:bg-[#FFC233] border-[#FFB000]"
+            >
+              <Upload size={16} />
+              Lancer l&apos;analyse
+            </MagneticButton>
+          </NeonBorder>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-[rgba(255,255,255,.05)] text-[#7d8aa8] cursor-not-allowed"
+          >
+            <Upload size={16} />
+            Lancer l&apos;analyse
+          </button>
+        )}
         <p className="text-[10px] text-[#7d8aa8] mt-1.5 text-center">
           Pipeline ~1 min sur 100k segments — long-running mais deterministe.
         </p>

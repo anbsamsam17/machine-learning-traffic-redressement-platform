@@ -4,9 +4,8 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { setToken } from "@/lib/auth";
-import { apiUrl } from "@/lib/api-url";
-import { parseApiError } from "@/lib/api";
+import { apiClient, ApiError } from "@/lib/api";
+import { fr } from "@/lib/i18n/fr";
 import { cn } from "@/lib/utils";
 import {
   GlowCardPremium,
@@ -15,19 +14,20 @@ import {
 } from "@/components/ui";
 
 /**
- * Premium login form — uses UX5 primitives.
+ * Premium register form — mirrors LoginForm visual treatment.
  *
  * Visual treatment:
  * - GlowCardPremium provides the conic-gradient halo
  * - On focus, a cyan ring + box-shadow grow around the card (CSS only,
- *   no remount — avoids losing form state mid-submit)
- * - MagneticButton handles the "Se connecter" submit
- * - ShimmerText for the gold "Connexion" heading
+ *   no remount — keeps form state stable across focus transitions)
+ * - MagneticButton handles the "Creer le compte" submit
+ * - ShimmerText for the gold "Inscription" heading
  */
-export function LoginForm() {
+export function RegisterForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -35,26 +35,26 @@ export function LoginForm() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (password !== confirm) {
+      setError(fr.auth.register.passwordsMismatch);
+      return;
+    }
+    if (password.length < 8) {
+      setError(fr.auth.register.passwordTooShort);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await fetch(apiUrl("/api/auth/login"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const fallback =
-          res.status === 401
-            ? "Email ou mot de passe incorrect"
-            : `Erreur ${res.status}`;
-        throw new Error(parseApiError(data, fallback));
-      }
-      const data = await res.json();
-      setToken(data.access_token);
-      router.push("/");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Erreur de connexion");
+      await apiClient.post("/api/auth/register", { email, password });
+      router.push("/login");
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.detail
+          : err instanceof Error
+          ? err.message
+          : "Erreur lors de l'inscription"
+      );
     } finally {
       setLoading(false);
     }
@@ -84,10 +84,10 @@ export function LoginForm() {
             duration={4.5}
             className="text-xl font-semibold"
           >
-            Connexion
+            Inscription
           </ShimmerText>
           <p className="mt-1.5 text-xs text-text-muted">
-            Accedez a votre espace de travail
+            {fr.auth.register.subtitle}
           </p>
         </div>
 
@@ -106,13 +106,13 @@ export function LoginForm() {
               htmlFor="email"
               className="mb-1.5 block text-xs font-medium text-zinc-200"
             >
-              Adresse email
+              {fr.auth.login.email}
             </label>
             <input
               id="email"
               type="email"
-              autoComplete="email"
               required
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onFocus={() => setFocused(true)}
@@ -127,19 +127,42 @@ export function LoginForm() {
               htmlFor="password"
               className="mb-1.5 block text-xs font-medium text-zinc-200"
             >
-              Mot de passe
+              {fr.auth.login.password}
             </label>
             <input
               id="password"
               type="password"
-              autoComplete="current-password"
               required
+              minLength={8}
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               className="w-full rounded-md border border-white/[0.1] bg-white/[0.03] px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-all focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 focus:shadow-[0_0_0_4px_rgba(6,182,212,0.08)]"
-              placeholder="••••••••"
+              placeholder="Minimum 8 caracteres"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="confirm"
+              className="mb-1.5 block text-xs font-medium text-zinc-200"
+            >
+              Confirmer le mot de passe
+            </label>
+            <input
+              id="confirm"
+              type="password"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              className="w-full rounded-md border border-white/[0.1] bg-white/[0.03] px-3 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-all focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 focus:shadow-[0_0_0_4px_rgba(6,182,212,0.08)]"
+              placeholder="Retapez le mot de passe"
             />
           </div>
 
@@ -147,13 +170,12 @@ export function LoginForm() {
             type="submit"
             variant="primary"
             size="lg"
-            tabIndex={0}
             disabled={loading}
             aria-disabled={loading}
             strength={0.25}
             className="w-full uppercase tracking-wider text-sm"
           >
-            {loading ? "Connexion..." : "Se connecter"}
+            {loading ? fr.auth.register.loading : fr.auth.register.submit}
             {!loading && (
               <ArrowRight className="h-4 w-4" strokeWidth={2} aria-hidden />
             )}
@@ -161,12 +183,12 @@ export function LoginForm() {
         </form>
 
         <p className="mt-6 text-center text-xs text-text-muted">
-          Pas encore de compte ?{" "}
+          {fr.auth.register.hasAccount}{" "}
           <Link
-            href="/register"
+            href="/login"
             className="font-medium text-cyan-300 underline-offset-4 transition-colors hover:text-cyan-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 rounded-sm"
           >
-            Creer un compte
+            {fr.auth.register.login}
           </Link>
         </p>
       </GlowCardPremium>

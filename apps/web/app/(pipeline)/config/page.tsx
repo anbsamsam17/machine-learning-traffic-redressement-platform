@@ -3,13 +3,18 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Database, ArrowRight } from "lucide-react";
+import { Database, ArrowRight, Sparkles } from "lucide-react";
 import { apiUrl } from "@/lib/api-url";
 import { toast } from "sonner";
 import { samNotify } from "@/lib/sam-fallback";
-import { GradientText } from "@/components/ui/gradient-text";
-import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
+import {
+  GlowCardPremium,
+  ShimmerText,
+  RevealOnScroll,
+  StatBadge,
+  NeonBorder,
+} from "@/components/ui";
 import { ConfigForm, type TrainingConfig } from "@/components/pipeline/config-form";
 import { SamCoachingPanel } from "@/components/sam/sam-coaching-panel";
 import { useAppStore } from "@/lib/store";
@@ -135,51 +140,67 @@ export default function ConfigPage() {
     setTimeout(() => router.push("/training"), 600);
   }
 
+  const modeLabel =
+    mode === "pl"
+      ? "PL"
+      : mode === "hpm"
+        ? "HPM"
+        : mode === "hps"
+          ? "HPS"
+          : "TV";
+  const modeFullLabel =
+    mode === "pl"
+      ? "Poids Lourds"
+      : mode === "hpm"
+        ? "Heure de Pointe Matin (8h-9h, v/h)"
+        : mode === "hps"
+          ? "Heure de Pointe Soir (17h-18h, v/h)"
+          : "Tous Vehicules";
+
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <GradientText as="h1" className="text-2xl">
-          Configuration {
-            mode === "pl"
-              ? "PL"
-              : mode === "hpm"
-                ? "HPM"
-                : mode === "hps"
-                  ? "HPS"
-                  : "TV"
-          }
-        </GradientText>
-        <p className="text-sm text-slate-300">
-          Definissez les colonnes d&apos;entree, les hyperparametres et la
-          grille de recherche pour l&apos;entrainement{" "}
-          <span className="font-semibold text-indigo-300">
-            {mode === "pl"
-              ? "Poids Lourds"
-              : mode === "hpm"
-                ? "Heure de Pointe Matin (8h-9h, v/h)"
-                : mode === "hps"
-                  ? "Heure de Pointe Soir (17h-18h, v/h)"
-                  : "Tous Vehicules"}
-          </span>
-          .
-        </p>
-      </div>
+      {/* Header — ShimmerText H1 + preset badge highlight */}
+      <RevealOnScroll variant="fade" stagger={0.05}>
+        <div className="space-y-2">
+          <ShimmerText as="h1" variant="cyan" className="text-2xl sm:text-3xl">
+            Configuration {modeLabel}
+          </ShimmerText>
+          <p className="text-sm text-text-muted">
+            Definissez les colonnes d&apos;entree, les hyperparametres et la
+            grille de recherche pour l&apos;entrainement{" "}
+            <span className="font-semibold text-accent">{modeFullLabel}</span>.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <StatBadge label="Mode" value={modeLabel} tone="violet" size="sm" />
+            {sessionId && (
+              <StatBadge label="Session" value="Active" tone="success" size="sm" />
+            )}
+            <StatBadge
+              label="Preset"
+              value={mode === "pl" ? "Compact4" : "Compact9"}
+              tone="amber"
+              size="sm"
+              icon={<Sparkles size={11} />}
+            />
+          </div>
+        </div>
+      </RevealOnScroll>
 
       {/* Empty-state: pas de session active. On laisse la page se rendre
           (Tache 1 : pas de redirection) mais on guide l'utilisateur. */}
       {!sessionId && (
-        <GlowCard glowColor="cyan">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-300 shrink-0">
+        <NeonBorder tone="cyan" speed={3.2}>
+          <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-[rgba(6,182,212,0.10)] flex items-center justify-center text-[#22d3ee] shrink-0">
               <Database size={22} aria-hidden="true" />
             </div>
             <div className="flex-1 space-y-1">
-              <h3 className="text-sm font-semibold text-white">
+              <h3 className="text-sm font-semibold text-text">
                 Aucun jeu de donnees charge
               </h3>
-              <p className="text-xs text-slate-300">
+              <p className="text-xs text-text-muted">
                 Pour configurer un modele, importe d&apos;abord un jeu de
-                donnees via <strong>Etape 1 — Donnees</strong>.
+                donnees via <strong>Etape 1 - Donnees</strong>.
               </p>
             </div>
             <Link href="/donnees" className="shrink-0">
@@ -188,12 +209,12 @@ export default function ConfigPage() {
               </NeonButton>
             </Link>
           </div>
-        </GlowCard>
+        </NeonBorder>
       )}
 
       <SamCoachingPanel mode={mode} />
 
-      <GlowCard className="!p-0 overflow-visible">
+      <GlowCardPremium tone="accent" intensity={0.45} className="!p-0">
         <div className="p-6">
           {/* `key={mode ?? "init"}` force le remount de ConfigForm quand le
               store Zustand passe de null (avant hydration) à "tv"/"pl". Sans
@@ -213,7 +234,7 @@ export default function ConfigPage() {
             <ConfigFormSkeleton />
           )}
         </div>
-      </GlowCard>
+      </GlowCardPremium>
     </div>
   );
 }

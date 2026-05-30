@@ -42,18 +42,17 @@ import {
 import { useAppStore, type AppMode } from "@/lib/store";
 import { samMood } from "@/lib/sam/store";
 import { getPageMessage } from "@/lib/sam/page-messages";
-import { HeroLanding } from "@/components/landing/HeroLanding";
-import { ModesGrid } from "@/components/landing/ModesGrid";
+import { HeroPremium } from "@/components/landing/HeroPremium";
+import { ModesGridPremium } from "@/components/landing/ModesGridPremium";
 import { QuickStats } from "@/components/landing/QuickStats";
 import { RecentActivity } from "@/components/landing/RecentActivity";
-import { SamZone } from "@/components/landing/SamZone";
 import type {
   LandingContent,
   LandingMode,
   LandingModeContent,
 } from "@/components/landing/types";
-import { SamAvatar } from "@/components/avatar/SamAvatar";
 import { AnimatedBg } from "@/components/landing/animated-bg";
+import { ParticleField, RevealOnScroll } from "@/components/ui";
 import { landingContent as R } from "@/lib/content/landing";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,23 +175,40 @@ export default function HomePage() {
 
   return (
     <>
-      {/* Animated background (full-viewport, behind everything) */}
+      {/* Animated background (full-viewport, behind everything).
+          Two layers: the existing branded AnimatedBg (highways +
+          sensor graph) + a ParticleField on top with showBits for
+          a subtle 1/0 binary motif that matches the data-engineering
+          theme. Both are aria-hidden, pointer-events-none, and
+          disabled under prefers-reduced-motion. */}
       <AnimatedBg />
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-0 opacity-60"
+      >
+        <ParticleField
+          tone="accent"
+          density={0.00005}
+          maxParticles={42}
+          linkDistance={130}
+          showBits
+        />
+      </div>
 
       {/* Avoid nested <main> — the root layout already wraps children in
           <main id="main-content">. We use a <div> here with a region label
           for screen readers. */}
       <div
         id="landing"
-        className="relative z-10 mx-auto w-full max-w-[1280px] px-4 sm:px-6 lg:px-8 pb-24"
+        className="relative z-10 mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-10 pb-24"
       >
         {/* Hero */}
-        <HeroLanding
+        <HeroPremium
           eyebrow={content.eyebrow}
           title={content.title}
           subtitle={content.subtitle}
           tagline={content.tagline}
-          cta={content.cta}
+          cta={content.cta ?? "Demarrer"}
           onCta={() => {
             // Default CTA jumps to TV pipeline if unset by content module.
             handleModeSelect("tv");
@@ -206,20 +222,24 @@ export default function HomePage() {
         {content.quickStats.length > 0 && <QuickStats stats={content.quickStats} />}
 
         {/* Modes grid + activity sidebar */}
-        <section className="mt-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          <ModesGrid modes={content.modes} onSelect={handleModeSelect} />
+        <section className="mt-4 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
+          <ModesGridPremium modes={content.modes} onSelect={handleModeSelect} />
           <div className="space-y-6">
-            <RecentActivity items={content.recentActivity} />
+            <RevealOnScroll variant="fade" stagger={0.12} delay={0.25}>
+              <div data-reveal>
+                <RecentActivity items={content.recentActivity} />
+              </div>
+            </RevealOnScroll>
           </div>
         </section>
 
         {/* Footer */}
-        <footer className="mt-14 pt-6 border-t border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <p className="text-[11px] text-zinc-500">{content.footer.legal}</p>
+        <footer className="mt-16 pt-6 border-t border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <p className="text-[11px] text-text-subtle">{content.footer.legal}</p>
           {content.footer.helpLabel && content.footer.helpHref && (
             <a
               href={content.footer.helpHref}
-              className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+              className="text-[11px] text-text-muted hover:text-text transition-colors"
             >
               {content.footer.helpLabel} →
             </a>

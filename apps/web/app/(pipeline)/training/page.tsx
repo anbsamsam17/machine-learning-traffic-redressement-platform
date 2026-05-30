@@ -29,11 +29,18 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
 import { NeonButton } from "@/components/ui/neon-button";
 import { StatCard } from "@/components/ui/stat-card";
 import { SuccessBanner } from "@/components/ui/success-banner";
+import {
+  GlowCardPremium,
+  MagneticButton,
+  NeonBorder,
+  RevealOnScroll,
+  ShimmerText,
+  StatBadge,
+} from "@/components/ui";
 import { useAppStore } from "@/lib/store";
 import { playSuccessDing, spawnConfetti } from "@/lib/success-effects";
 import { samNotify, samMood } from "@/lib/sam-fallback";
@@ -43,6 +50,26 @@ interface LossPoint {
   epoch: number;
   loss: number;
   val_loss: number;
+}
+
+/** Wrapper visuel autour du panneau "progress + status".
+ *  En mode actif (training en cours) : NeonBorder cyan qui pulse.
+ *  Sinon : GlowCard premium standard. */
+function ProgressBarShell({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  if (active) {
+    return (
+      <NeonBorder tone="cyan" speed={2.4} thickness={1}>
+        <div className="p-5">{children}</div>
+      </NeonBorder>
+    );
+  }
+  return <GlowCard>{children}</GlowCard>;
 }
 
 interface LogEntry {
@@ -516,83 +543,162 @@ export default function TrainingPage() {
         </GlowCard>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <GradientText as="h1" className="text-2xl">
-            Entrainement {
-              mode === "pl"
-                ? "PL"
+      {/* Header — ShimmerText H1, status pulse-aware, premium CTAs */}
+      <RevealOnScroll variant="fade" stagger={0.05}>
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="space-y-2">
+            {status === "completed" ? (
+              <ShimmerText as="h1" variant="gold" className="text-2xl sm:text-3xl">
+                Modele entraine -{" "}
+                {mode === "pl"
+                  ? "PL"
+                  : mode === "hpm"
+                    ? "HPM (8h-9h)"
+                    : mode === "hps"
+                      ? "HPS (17h-18h)"
+                      : "TV"}
+              </ShimmerText>
+            ) : (
+              <ShimmerText
+                as="h1"
+                variant={status === "running" ? "cyan" : "white"}
+                className="text-2xl sm:text-3xl"
+              >
+                Entrainement{" "}
+                {mode === "pl"
+                  ? "PL"
+                  : mode === "hpm"
+                    ? "HPM (8h-9h)"
+                    : mode === "hps"
+                      ? "HPS (17h-18h)"
+                      : "TV"}
+              </ShimmerText>
+            )}
+            <p className="text-sm text-text-muted">
+              Entrainement grid search des modeles{" "}
+              {mode === "pl"
+                ? "Poids Lourds"
                 : mode === "hpm"
-                  ? "HPM (8h-9h)"
+                  ? "Heure de Pointe Matin (v/h)"
                   : mode === "hps"
-                    ? "HPS (17h-18h)"
-                    : "TV"
-            }
-          </GradientText>
-          <p className="text-sm text-slate-300">
-            Entrainement grid search des modeles{" "}
-            {mode === "pl"
-              ? "Poids Lourds"
-              : mode === "hpm"
-                ? "Heure de Pointe Matin (v/h)"
-                : mode === "hps"
-                  ? "Heure de Pointe Soir (v/h)"
-                  : "Tous Vehicules"}
-            . Suivez la progression en temps reel.
-          </p>
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex gap-3">
-          {status === "idle" && (
-            <NeonButton onClick={handleStartTraining} icon={<Play size={16} />}>
-              Lancer l&apos;entrainement
-            </NeonButton>
-          )}
-          {status === "starting" && (
-            <NeonButton disabled>Demarrage...</NeonButton>
-          )}
-          {status === "running" && (
-            <NeonButton
-              variant="secondary"
-              onClick={handleCancel}
-              icon={<Square size={16} />}
-            >
-              Annuler
-            </NeonButton>
-          )}
-          {status === "cancelling" && (
-            <NeonButton variant="secondary" disabled>
-              Annulation...
-            </NeonButton>
-          )}
-          {status === "cancelled" && (
-            <div className="flex gap-2">
-              <NeonButton
-                variant="ghost"
-                onClick={() => router.push("/config")}
-              >
-                Retour configuration
-              </NeonButton>
-              <NeonButton
-                onClick={handleResetAfterCancel}
-                icon={<Play size={16} />}
-              >
-                Relancer
-              </NeonButton>
+                    ? "Heure de Pointe Soir (v/h)"
+                    : "Tous Vehicules"}
+              . Suivez la progression en temps reel.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <StatBadge
+                label="Status"
+                value={
+                  status === "idle"
+                    ? "Pret"
+                    : status === "starting"
+                      ? "Demarrage"
+                      : status === "running"
+                        ? "En cours"
+                        : status === "completed"
+                          ? "Termine"
+                          : status === "failed"
+                            ? "Echec"
+                            : status === "cancelling"
+                              ? "Annulation"
+                              : "Annule"
+                }
+                tone={
+                  status === "completed"
+                    ? "success"
+                    : status === "running"
+                      ? "cyan"
+                      : status === "failed"
+                        ? "danger"
+                        : status === "cancelled" || status === "cancelling"
+                          ? "amber"
+                          : "neutral"
+                }
+                size="sm"
+              />
+              {totalModels > 1 && (
+                <StatBadge
+                  label="Modeles"
+                  value={`${currentModel + 1}/${totalModels}`}
+                  tone="accent"
+                  size="sm"
+                />
+              )}
+              {trainingConfig?.seed !== undefined && (
+                <StatBadge
+                  label="Seed"
+                  value={String(trainingConfig.seed)}
+                  tone="violet"
+                  size="sm"
+                />
+              )}
             </div>
-          )}
-          {status === "completed" && (
-            <NeonButton
-              onClick={goToEvaluation}
-              icon={<ChevronRight size={16} />}
-            >
-              Evaluation
-            </NeonButton>
-          )}
+          </div>
+
+          {/* Action buttons — MagneticButton premium */}
+          <div className="flex gap-3 shrink-0">
+            {status === "idle" && (
+              <MagneticButton
+                variant="primary"
+                size="lg"
+                onClick={handleStartTraining}
+              >
+                <Play size={16} />
+                Lancer l&apos;entrainement
+              </MagneticButton>
+            )}
+            {status === "starting" && (
+              <MagneticButton variant="primary" size="lg" disabled>
+                Demarrage...
+              </MagneticButton>
+            )}
+            {status === "running" && (
+              <MagneticButton
+                variant="secondary"
+                size="md"
+                onClick={handleCancel}
+              >
+                <Square size={16} />
+                Annuler
+              </MagneticButton>
+            )}
+            {status === "cancelling" && (
+              <MagneticButton variant="secondary" size="md" disabled>
+                Annulation...
+              </MagneticButton>
+            )}
+            {status === "cancelled" && (
+              <div className="flex gap-2">
+                <MagneticButton
+                  variant="ghost"
+                  size="md"
+                  onClick={() => router.push("/config")}
+                >
+                  Retour configuration
+                </MagneticButton>
+                <MagneticButton
+                  variant="primary"
+                  size="md"
+                  onClick={handleResetAfterCancel}
+                >
+                  <Play size={16} />
+                  Relancer
+                </MagneticButton>
+              </div>
+            )}
+            {status === "completed" && (
+              <MagneticButton
+                variant="primary"
+                size="lg"
+                onClick={goToEvaluation}
+              >
+                Voir evaluation
+                <ChevronRight size={16} />
+              </MagneticButton>
+            )}
+          </div>
         </div>
-      </div>
+      </RevealOnScroll>
 
       {/* Output dir - optional (server workspace used by default) */}
       {status === "idle" && (
@@ -630,53 +736,74 @@ export default function TrainingPage() {
         </div>
       )}
 
-      {/* Stats */}
-      <div ref={statsContainerRef} className="relative grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatCard
-          label="Modele en cours"
-          value={`${currentModel + 1} / ${totalModels}`}
-          icon={<Cpu size={18} />}
-          className={successCardPulse ? "animate-success-pulse" : ""}
-        />
-        <StatCard
-          label="Meilleure val_loss"
-          value={bestLoss !== null ? bestLoss.toFixed(6) : "--"}
-          icon={<Activity size={18} />}
-          trend={bestLoss !== null ? "down" : undefined}
-          className={successCardPulse ? "animate-success-pulse" : ""}
-        />
-        <StatCard
-          label="Temps ecoule"
-          value={`${Math.floor(elapsed / 60)}m ${elapsed % 60}s`}
-          icon={<Clock size={18} />}
-          className={successCardPulse ? "animate-success-pulse" : ""}
-        />
+      {/* Stats — StatBadge horizontal row, KPI live, ref pour confetti */}
+      <div ref={statsContainerRef} className="relative">
+        <div className="flex flex-wrap gap-2">
+          <StatCard
+            label="Modele en cours"
+            value={`${currentModel + 1} / ${totalModels}`}
+            icon={<Cpu size={18} />}
+            className={successCardPulse ? "animate-success-pulse" : ""}
+          />
+          <StatCard
+            label="Meilleure val_loss"
+            value={bestLoss !== null ? bestLoss.toFixed(6) : "--"}
+            icon={<Activity size={18} />}
+            trend={bestLoss !== null ? "down" : undefined}
+            className={successCardPulse ? "animate-success-pulse" : ""}
+          />
+          <StatCard
+            label="Temps ecoule"
+            value={`${Math.floor(elapsed / 60)}m ${elapsed % 60}s`}
+            icon={<Clock size={18} />}
+            className={successCardPulse ? "animate-success-pulse" : ""}
+          />
+        </div>
       </div>
 
-      {/* Progress bar */}
-      <GlowCard>
+      {/* Progress bar — NeonBorder cyan pulse quand running, GlowCard standard sinon. */}
+      <ProgressBarShell active={status === "running" || status === "starting"}>
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">
-              Epoch {currentEpoch} / {totalEpochs || "?"}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatBadge
+                label="Epoch"
+                value={`${currentEpoch} / ${totalEpochs || "?"}`}
+                tone={status === "running" ? "cyan" : "neutral"}
+                size="sm"
+              />
               {etaLabel && (
-                <span className="ml-3 text-slate-500">
-                  Reste {etaLabel}
-                </span>
+                <StatBadge
+                  label="Reste"
+                  value={etaLabel}
+                  tone="amber"
+                  size="sm"
+                />
               )}
-            </span>
-            <span className="text-indigo-400 font-medium">
+              {modelName && status === "running" && (
+                <StatBadge
+                  label="Run"
+                  value={modelName.length > 24 ? `${modelName.slice(0, 22)}...` : modelName}
+                  tone="violet"
+                  size="sm"
+                />
+              )}
+            </div>
+            <span className={status === "running" ? "text-[#22d3ee] font-semibold tabular-nums" : "text-accent font-medium"}>
               {Math.round(overallProgress)}%
             </span>
           </div>
-          <div className="h-3 rounded-full bg-slate-800/80 overflow-hidden">
+          <div className="h-3 rounded-full bg-bg-subtle overflow-hidden ring-1 ring-border/60">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${overallProgress}%` }}
               transition={{ duration: 0.5, ease: "easeOut" }}
-              className={status === "completed"
-                ? "h-full rounded-full success-bar-shine"
-                : "h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-violet-500"
+              className={
+                status === "completed"
+                  ? "h-full rounded-full success-bar-shine"
+                  : status === "running" || status === "starting"
+                    ? "h-full rounded-full bg-gradient-to-r from-[#22d3ee] via-[#6366f1] to-[#f59e0b] shadow-[0_0_18px_-2px_rgba(34,211,238,0.6)]"
+                    : "h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-violet-500"
               }
             />
           </div>
@@ -749,12 +876,12 @@ export default function TrainingPage() {
             )}
           </AnimatePresence>
         </div>
-      </GlowCard>
+      </ProgressBarShell>
 
       {/* Loss curve */}
       {lossData.length > 1 && (
-        <GlowCard>
-          <p className="text-xs text-slate-400 mb-3 flex items-center gap-2">
+        <GlowCardPremium tone="violet" intensity={0.4}>
+          <p className="text-xs text-text-muted mb-3 flex items-center gap-2">
             <BarChart3 size={14} /> Courbe de loss
           </p>
           <ResponsiveContainer width="100%" height={220}>
@@ -796,30 +923,30 @@ export default function TrainingPage() {
               />
             </LineChart>
           </ResponsiveContainer>
-        </GlowCard>
+        </GlowCardPremium>
       )}
 
       {/* Logs panel */}
       <GlowCard>
         <div className="flex items-center gap-2 mb-3">
-          <ScrollText size={14} className="text-slate-400" />
-          <p className="text-xs text-slate-400 font-medium">
+          <ScrollText size={14} className="text-text-muted" />
+          <p className="text-xs text-text-muted font-medium">
             Journal d&apos;entrainement
           </p>
-          <span className="text-[10px] text-slate-500 ml-auto">
+          <span className="text-[10px] text-text-subtle ml-auto tabular-nums">
             {logs.length} entrees
           </span>
         </div>
-        <div className="bg-slate-950/80 rounded-lg border border-white/[0.04] p-3 max-h-[300px] overflow-y-auto font-mono text-[11px] space-y-0.5">
+        <div className="bg-bg/80 rounded-lg border border-border p-3 max-h-[300px] overflow-y-auto font-mono text-[11px] space-y-0.5">
           {logs.length === 0 ? (
-            <p className="text-slate-500 text-center py-4">
+            <p className="text-text-subtle text-center py-4">
               Les logs apparaitront ici une fois l&apos;entrainement lance.
             </p>
           ) : (
             logs.map((log, i) => (
-              <div key={i} className="flex gap-2">
-                <span className="text-slate-500 shrink-0">[{log.time}]</span>
-                <span className={logTypeColors[log.type] ?? "text-slate-400"}>
+              <div key={i} className="flex gap-2 animate-[fadeIn_.25s_ease]">
+                <span className="text-text-subtle shrink-0 tabular-nums">[{log.time}]</span>
+                <span className={logTypeColors[log.type] ?? "text-text-muted"}>
                   {log.message}
                 </span>
               </div>

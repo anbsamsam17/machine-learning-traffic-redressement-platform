@@ -4,19 +4,23 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl } from "@/lib/api-url";
 import { fetchWithAuth } from "@/lib/auth";
-import { FileSpreadsheet, Wand2, Table2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { FileSpreadsheet, Wand2, Table2, AlertTriangle, CheckCircle2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
-import { samNotify, samMood } from "@/lib/sam-fallback";
+import { samNotify } from "@/lib/sam-fallback";
 import { DropZone } from "@/components/upload/drop-zone";
 import {
   ColumnMapper,
   type ColumnMapping,
 } from "@/components/mapping/column-mapper";
-import { GlowCard } from "@/components/ui/glow-card";
-import { NeonButton } from "@/components/ui/neon-button";
-import { GradientText } from "@/components/ui/gradient-text";
-import { StatCard } from "@/components/ui/stat-card";
 import { SuccessBanner } from "@/components/ui/success-banner";
+import {
+  GlowCardPremium,
+  MagneticButton,
+  NeonBorder,
+  RevealOnScroll,
+  ShimmerText,
+  StatBadge,
+} from "@/components/ui";
 import { useAppStore } from "@/lib/store";
 import { spawnConfetti } from "@/lib/success-effects";
 
@@ -457,44 +461,93 @@ export default function DonneesPage() {
     }
   }
 
+  // Mapping confidence aggregates — surfaced as StatBadges in the preview
+  // section. Auto-detection confidence per row keeps the mapping panel honest.
+  const mappedCount = useMemo(
+    () => mappings.filter((m) => m.source !== null).length,
+    [mappings]
+  );
+  const avgConfidence = useMemo(() => {
+    const mapped = mappings.filter((m) => m.source !== null);
+    if (mapped.length === 0) return 0;
+    return Math.round(
+      mapped.reduce((s, m) => s + m.confidence, 0) / mapped.length
+    );
+  }, [mappings]);
+
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <GradientText as="h1" className="text-2xl">
-          {meta.kind === "HPM" || meta.kind === "HPS"
-            ? `Donnees · Pipeline ${meta.kind} (${meta.kind === "HPM" ? "8h-9h" : "17h-18h"})`
-            : "Donnees"}
-        </GradientText>
-        <p className="text-sm text-slate-300">
-          Importez votre fichier de donnees brutes et configurez le mapping des
-          colonnes vers les {TARGET_COLUMNS.length} colonnes standard.
-          {(meta.kind === "HPM" || meta.kind === "HPS") && (
-            <>
-              {" "}Cible : <span className="font-mono text-amber-300">TxPen_{meta.kind}</span>
-              {" "}— sortie : <span className="font-mono text-amber-300">{meta.outputName}</span>
-              {" "}({meta.unit}).
-            </>
-          )}
-        </p>
-      </div>
-
-      {/* Upload */}
-      <GlowCard>
-        <div className="flex items-center gap-2 mb-4">
-          <FileSpreadsheet size={18} className="text-accent" />
-          <h3 className="text-sm font-semibold text-white">
-            Fichier source
-          </h3>
-          {isAutoMapping && (
-            <span className="text-xs text-cyan animate-pulse ml-2">
-              Auto-mapping en cours...
-            </span>
-          )}
+      {/* Header — ShimmerText H1 + meta line */}
+      <RevealOnScroll variant="fade" stagger={0.05}>
+        <div className="space-y-2">
+          <ShimmerText as="h1" variant="cyan" className="text-2xl sm:text-3xl">
+            {meta.kind === "HPM" || meta.kind === "HPS"
+              ? `Donnees - Pipeline ${meta.kind} (${meta.kind === "HPM" ? "8h-9h" : "17h-18h"})`
+              : "Donnees"}
+          </ShimmerText>
+          <p className="text-sm text-text-muted">
+            Importez votre fichier de donnees brutes et configurez le mapping
+            des colonnes vers les {TARGET_COLUMNS.length} colonnes standard.
+            {(meta.kind === "HPM" || meta.kind === "HPS") && (
+              <>
+                {" "}Cible : <span className="font-mono text-amber-300">TxPen_{meta.kind}</span>
+                {" "}- sortie : <span className="font-mono text-amber-300">{meta.outputName}</span>
+                {" "}({meta.unit}).
+              </>
+            )}
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <StatBadge label="Mode" value={meta.kind} tone="violet" size="sm" />
+            <StatBadge
+              label="Cibles standard"
+              value={TARGET_COLUMNS.length}
+              tone="accent"
+              size="sm"
+            />
+            <StatBadge
+              label="Cles critiques"
+              value={CRITICAL_COLS.length}
+              tone="amber"
+              size="sm"
+            />
+            {file && (
+              <StatBadge
+                label="Fichier"
+                value={file.name.length > 24 ? `${file.name.slice(0, 22)}...` : file.name}
+                tone="cyan"
+                size="sm"
+              />
+            )}
+          </div>
         </div>
-        <DropZone file={file} onFile={handleFile} onClear={handleClear} />
-      </GlowCard>
+      </RevealOnScroll>
 
-      {/* Mapping */}
+      {/* Upload — NeonBorder cyan quand auto-mapping en cours, sinon GlowCardPremium */}
+      {isAutoMapping ? (
+        <NeonBorder tone="cyan" speed={2.2} thickness={1}>
+          <div className="p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <FileSpreadsheet size={18} className="text-[#22d3ee]" />
+              <h3 className="text-sm font-semibold text-text">Fichier source</h3>
+              <span className="text-xs text-[#22d3ee] ml-2 inline-flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-[#22d3ee] animate-pulse" />
+                Auto-mapping en cours...
+              </span>
+            </div>
+            <DropZone file={file} onFile={handleFile} onClear={handleClear} />
+          </div>
+        </NeonBorder>
+      ) : (
+        <GlowCardPremium tone="cyan" intensity={0.5}>
+          <div className="flex items-center gap-2 mb-4">
+            <FileSpreadsheet size={18} className="text-[#22d3ee]" />
+            <h3 className="text-sm font-semibold text-text">Fichier source</h3>
+          </div>
+          <DropZone file={file} onFile={handleFile} onClear={handleClear} />
+        </GlowCardPremium>
+      )}
+
+      {/* Mapping — GlowCardPremium accent + StatBadge confidence + MagneticButton validation */}
       <AnimatePresence>
         {step === "mapping" && (
           <motion.div
@@ -502,22 +555,62 @@ export default function DonneesPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
           >
-            <GlowCard>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Table2 size={18} className="text-cyan" />
-                  <h3 className="text-sm font-semibold text-white">
-                    Mapping des colonnes
-                  </h3>
+            <GlowCardPremium tone="accent" intensity={0.55}>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Table2 size={18} className="text-[#22d3ee]" />
+                    <h3 className="text-sm font-semibold text-text">
+                      Mapping des colonnes
+                    </h3>
+                  </div>
+                  <StatBadge
+                    label="Mappees"
+                    value={`${mappedCount}/${TARGET_COLUMNS.length}`}
+                    tone={mappedCount >= 5 ? "success" : "neutral"}
+                    size="sm"
+                  />
+                  <StatBadge
+                    label="Critiques"
+                    value={`${mappedCriticalCount}/${CRITICAL_COLS.length}`}
+                    tone={
+                      mappedCriticalCount === CRITICAL_COLS.length
+                        ? "success"
+                        : mappedCriticalCount >= CRITICAL_COLS.length - 2
+                          ? "amber"
+                          : "danger"
+                    }
+                    size="sm"
+                  />
+                  {avgConfidence > 0 && (
+                    <StatBadge
+                      label="Confiance"
+                      value={`${avgConfidence}%`}
+                      tone={
+                        avgConfidence >= 90
+                          ? "success"
+                          : avgConfidence >= 70
+                            ? "amber"
+                            : "danger"
+                      }
+                      size="sm"
+                    />
+                  )}
                 </div>
-                <NeonButton
-                  variant="secondary"
+                <MagneticButton
+                  variant="primary"
+                  size="md"
                   onClick={handleValidateMapping}
-                  icon={<Wand2 size={14} />}
-                  className="text-xs"
+                  disabled={mappedCount < 5}
+                  title={
+                    mappedCount < 5
+                      ? "Mappez au moins 5 colonnes pour continuer"
+                      : undefined
+                  }
                 >
+                  <Wand2 size={14} />
                   Valider et generer la table
-                </NeonButton>
+                </MagneticButton>
               </div>
 
               {/* Critical columns warning */}
@@ -532,7 +625,7 @@ export default function DonneesPage() {
                     <span className="text-amber-400 font-semibold">
                       {unmappedCritical.length}/{CRITICAL_COLS.length} colonnes critiques non mappees
                     </span>
-                    <p className="text-slate-400 mt-1">
+                    <p className="text-text-muted mt-1">
                       {unmappedCritical.join(", ")}
                     </p>
                   </div>
@@ -550,7 +643,7 @@ export default function DonneesPage() {
                 initialMappings={mappings}
                 onMappingsChange={setMappings}
               />
-            </GlowCard>
+            </GlowCardPremium>
           </motion.div>
         )}
       </AnimatePresence>
@@ -562,7 +655,7 @@ export default function DonneesPage() {
         onClose={() => setShowStepComplete(false)}
       />
 
-      {/* Preview */}
+      {/* Preview — NeonBorder success quand validation faite, StatBadge tone-aware */}
       <AnimatePresence>
         {step === "preview" && previewRows.length > 0 && (
           <motion.div
@@ -572,92 +665,123 @@ export default function DonneesPage() {
             exit={{ opacity: 0, y: -10 }}
             className="relative"
           >
-            <GlowCard glowColor="cyan">
-              <div className="flex items-center gap-2 mb-4">
-                <Table2 size={18} className="text-emerald-400" />
-                <h3 className="text-sm font-semibold text-white">
-                  Apercu de la table d&apos;apprentissage
-                </h3>
+            <NeonBorder
+              tone={showStepComplete ? "success" : "cyan"}
+              speed={3.5}
+              thickness={1}
+            >
+              <div className="p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Table2 size={18} className="text-emerald-400" />
+                  <h3 className="text-sm font-semibold text-text">
+                    Apercu de la table d&apos;apprentissage
+                  </h3>
+                  {showStepComplete && (
+                    <motion.span
+                      initial={{ opacity: 0, scale: 0.7 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold"
+                    >
+                      <CheckCircle2 size={12} />
+                      Etape completee
+                    </motion.span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <StatBadge
+                    label="Lignes"
+                    value={(totalRows || previewRows.length).toLocaleString("fr-FR")}
+                    tone="cyan"
+                  />
+                  <StatBadge
+                    label="Mappees"
+                    value={`${mappings.filter((m) => m.source).length}/${TARGET_COLUMNS.length}`}
+                    tone="accent"
+                  />
+                  <StatBadge
+                    label="Critiques"
+                    value={`${mappedCriticalCount}/${CRITICAL_COLS.length}`}
+                    tone={
+                      mappedCriticalCount === CRITICAL_COLS.length
+                        ? "success"
+                        : "amber"
+                    }
+                  />
+                  <StatBadge
+                    label="Confiance moy."
+                    value={`${avgConfidence}%`}
+                    tone={
+                      avgConfidence >= 90
+                        ? "success"
+                        : avgConfidence >= 70
+                          ? "amber"
+                          : "danger"
+                    }
+                  />
+                </div>
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-bg-elevated/95 backdrop-blur">
+                      <tr className="border-b border-border">
+                        {Object.keys(previewRows[0]).slice(0, 8).map((col) => (
+                          <th
+                            key={col}
+                            className="px-3 py-2 text-left text-text font-semibold uppercase tracking-wider text-[10px]"
+                          >
+                            {col}
+                            {CRITICAL_COLS.includes(col) && (
+                              <span className="text-amber-400 ml-1">*</span>
+                            )}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((row, i) => (
+                        <tr
+                          key={i}
+                          className="border-b border-border/30 hover:bg-[rgba(99,102,241,0.06)] transition-colors"
+                        >
+                          {Object.values(row)
+                            .slice(0, 8)
+                            .map((val, j) => (
+                              <td
+                                key={j}
+                                className="px-3 py-1.5 text-text font-mono tabular-nums"
+                              >
+                                {String(val)}
+                              </td>
+                            ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-text-muted mt-3">
+                  Apercu de {previewRows.length} ligne{previewRows.length > 1 ? "s" : ""}
+                  {totalRows > previewRows.length ? ` sur ${totalRows.toLocaleString("fr-FR")}` : ""}
+                  {" - "}
+                  Affichage des 8 premieres colonnes sur{" "}
+                  {Object.keys(previewRows[0]).length} colonnes totales.
+                </p>
+
+                {/* CTA — Continuer vers Config en MagneticButton lg */}
                 {showStepComplete && (
-                  <motion.span
-                    initial={{ opacity: 0, scale: 0.7 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold"
-                  >
-                    <CheckCircle2 size={12} />
-                    Etape completee
-                  </motion.span>
+                  <div className="mt-5 pt-5 border-t border-border flex justify-end">
+                    <MagneticButton
+                      asChild
+                      variant="primary"
+                      size="lg"
+                    >
+                      <a href="/config">
+                        Continuer vers Configuration
+                        <ArrowRight size={16} />
+                      </a>
+                    </MagneticButton>
+                  </div>
                 )}
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                <StatCard
-                  label="Lignes"
-                  value={(totalRows || previewRows.length).toLocaleString("fr-FR")}
-                />
-                <StatCard
-                  label="Colonnes mappees"
-                  value={`${mappings.filter((m) => m.source).length}/${TARGET_COLUMNS.length}`}
-                />
-                <StatCard
-                  label="Critiques mappees"
-                  value={`${mappedCriticalCount}/${CRITICAL_COLS.length}`}
-                />
-                <StatCard
-                  label="Confiance moy."
-                  value={`${Math.round(
-                    mappings
-                      .filter((m) => m.source)
-                      .reduce((s, m) => s + m.confidence, 0) /
-                      Math.max(mappings.filter((m) => m.source).length, 1)
-                  )}%`}
-                />
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-border">
-                      {Object.keys(previewRows[0]).slice(0, 8).map((col) => (
-                        <th
-                          key={col}
-                          className="px-2 py-1.5 text-left text-slate-300 font-medium"
-                        >
-                          {col}
-                          {CRITICAL_COLS.includes(col) && (
-                            <span className="text-amber-400 ml-1">*</span>
-                          )}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewRows.map((row, i) => (
-                      <tr
-                        key={i}
-                        className="border-b border-border/30 hover:bg-surface-light/30"
-                      >
-                        {Object.values(row)
-                          .slice(0, 8)
-                          .map((val, j) => (
-                            <td
-                              key={j}
-                              className="px-2 py-1.5 text-white font-mono"
-                            >
-                              {String(val)}
-                            </td>
-                          ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-xs text-slate-400 mt-3">
-                Apercu de {previewRows.length} ligne{previewRows.length > 1 ? "s" : ""}
-                {totalRows > previewRows.length ? ` sur ${totalRows.toLocaleString("fr-FR")}` : ""}
-                {" — "}
-                Affichage des 8 premieres colonnes sur{" "}
-                {Object.keys(previewRows[0]).length} colonnes totales.
-              </p>
-            </GlowCard>
+            </NeonBorder>
           </motion.div>
         )}
       </AnimatePresence>

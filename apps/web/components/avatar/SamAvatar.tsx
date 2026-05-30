@@ -1,24 +1,21 @@
 "use client";
 
-import Image from "next/image";
 import * as React from "react";
 
 import {
   samAttentionPulse,
-  samIdleFloat,
-  samMoodTransition,
   samWelcomeEntrance,
 } from "@/lib/animations/sam";
 import {
   SAM_DEFAULT_MESSAGES,
   SAM_DEFAULT_SUBTITLES,
-  SAM_IMAGES,
   type SamMood,
 } from "@/lib/sam/moods";
 import { useSamStore } from "@/lib/sam/store";
 import { cn } from "@/lib/utils";
 
 import { SamBubble } from "./SamBubble";
+import { SamLottie } from "./SamLottie";
 
 export type SamPlacement = "card" | "inline" | "fixed-corner";
 export type SamSize = "sm" | "md" | "lg" | "xl";
@@ -103,44 +100,16 @@ export function SamAvatar({
   const subtitle =
     subtitleProp ?? storeSubtitle ?? SAM_DEFAULT_SUBTITLES[mood];
 
-  // Crossfade book-keeping: keep the previous mood mounted for one frame
-  // so GSAP can fade it out while the new image fades in.
-  const [previousMood, setPreviousMood] = React.useState<SamMood | null>(null);
-  const moodRef = React.useRef<SamMood>(mood);
-
-  React.useEffect(() => {
-    if (moodRef.current !== mood) {
-      setPreviousMood(moodRef.current);
-      moodRef.current = mood;
-    }
-  }, [mood]);
-
   const rootRef = React.useRef<HTMLDivElement | null>(null);
-  const floatRef = React.useRef<HTMLDivElement | null>(null);
   const frameRef = React.useRef<HTMLDivElement | null>(null);
-  const oldImgRef = React.useRef<HTMLDivElement | null>(null);
-  const newImgRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Mount: welcome entrance + idle float.
+  // Mount: welcome entrance only (idle est gere par SamLottie).
   React.useEffect(() => {
     const cleanupEntrance = samWelcomeEntrance(rootRef.current);
-    const cleanupFloat = samIdleFloat(floatRef.current);
     return () => {
       cleanupEntrance();
-      cleanupFloat();
     };
   }, []);
-
-  // Crossfade on mood change + clear the previousMood ghost when done.
-  React.useEffect(() => {
-    if (!previousMood) return;
-    const cleanup = samMoodTransition(oldImgRef.current, newImgRef.current);
-    const timer = window.setTimeout(() => setPreviousMood(null), 350);
-    return () => {
-      cleanup();
-      window.clearTimeout(timer);
-    };
-  }, [previousMood, mood]);
 
   // Pulse the shadow when the store version bumps (i.e. someone called
   // setMood). Visible without a hard ring thanks to the drop-shadow halo.
@@ -155,56 +124,21 @@ export function SamAvatar({
   if (placement === "fixed-corner" && !storeVisible) return null;
 
   const px = SIZE_PX[size];
-  const alt = `Sam avatar (humeur: ${mood})`;
   const dropShadow = MOOD_DROP_SHADOW[mood];
 
   const avatar = (
-    <div
-      ref={floatRef}
-      className={cn(
-        "relative inline-flex shrink-0 will-change-transform",
-        showBubble ? "" : ""
-      )}
-    >
+    <div className="relative inline-flex shrink-0 will-change-transform">
       <div
         ref={frameRef}
         className="relative"
         style={{ width: px, height: px, filter: dropShadow }}
       >
-        <div
-          className="relative"
-          style={{ width: px, height: px }}
-        >
-          {/* Previous mood (fading out) */}
-          {previousMood ? (
-            <div
-              ref={oldImgRef}
-              className="absolute inset-0"
-              aria-hidden="true"
-            >
-              <Image
-                src={SAM_IMAGES[previousMood]}
-                alt=""
-                width={px}
-                height={px}
-                priority={false}
-                className="h-full w-full object-contain"
-              />
-            </div>
-          ) : null}
-
-          {/* Current mood (fading in) */}
-          <div ref={newImgRef} className="absolute inset-0">
-            <Image
-              src={SAM_IMAGES[mood]}
-              alt={alt}
-              width={px}
-              height={px}
-              priority={placement !== "fixed-corner"}
-              className="h-full w-full object-contain"
-            />
-          </div>
-        </div>
+        <SamLottie
+          mood={mood}
+          size={px}
+          priority={placement !== "fixed-corner"}
+          withAura={placement !== "fixed-corner"}
+        />
       </div>
     </div>
   );

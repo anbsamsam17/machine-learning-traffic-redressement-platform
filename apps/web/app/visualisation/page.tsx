@@ -96,6 +96,13 @@ import {
   EMPTY_KPIS,
   type VisualisationKpis,
 } from "@/lib/visualisation/kpi";
+// UX5 — composants premium pour CTA upload + KPI bar
+import {
+  MagneticButton,
+  ShimmerText,
+  NeonBorder,
+  RevealOnScroll,
+} from "@/components/ui";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1076,8 +1083,13 @@ export default function VisualisationPage() {
           aria-label="Indicateurs cle"
         >
           {/* Grid auto-adaptatif : 4 colonnes par defaut, 6 si HPM/HPS
-              presents pour eviter le wrap visuel des cards supplementaires. */}
-          <div
+              presents pour eviter le wrap visuel des cards supplementaires.
+              UX5 : RevealOnScroll stagger des KPI cards quand on bascule
+              en mode actif (premier rendu seulement). */}
+          <RevealOnScroll
+            variant="slide-up"
+            stagger={0.05}
+            distance={12}
             className={cn(
               "max-w-[1600px] mx-auto px-4 py-3 grid grid-cols-2 gap-3",
               kpis.pmMedian != null || kpis.psMedian != null
@@ -1145,7 +1157,7 @@ export default function VisualisationPage() {
                 hint="aucun capteur charge"
               />
             )}
-          </div>
+          </RevealOnScroll>
         </section>
       )}
 
@@ -1222,12 +1234,21 @@ export default function VisualisationPage() {
           {!active && (
             <div
               ref={previewBadgeRef}
-              className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-[#FFB000] border border-amber-600/70 text-[#0d1117] text-xs font-semibold pointer-events-none flex items-center gap-2 shadow-lg"
+              className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none"
               role="status"
               aria-live="polite"
             >
-              <Eye size={12} aria-hidden />
-              <span>Apercu Lyon — depose tes donnees pour passer en mode reel</span>
+              {/* UX5 : badge "Apercu Lyon" ShimmerText gold + NeonBorder
+                  amber subtil. Conserve la lisibilite sur fond clair (Voyager)
+                  comme sur fond sombre. */}
+              <NeonBorder tone="amber" speed={3.4} rotate={false} className="rounded-full">
+                <div className="px-3 py-1.5 rounded-full flex items-center gap-2">
+                  <Eye size={12} aria-hidden className="text-[#FFB000]" />
+                  <ShimmerText variant="gold" className="text-xs">
+                    Apercu Lyon — depose tes donnees pour passer en mode reel
+                  </ShimmerText>
+                </div>
+              </NeonBorder>
             </div>
           )}
 
@@ -1499,22 +1520,33 @@ function UploadBandeau({
         )}
       </div>
 
-      {/* Action button (sticky bottom) */}
+      {/* Action button (sticky bottom) — UX5 : MagneticButton primary
+          quand canActivate, fallback bouton disabled stylise sinon. Le NeonBorder
+          cyan pulse autour du wrap pour signaler la pret-a-activer (idiome
+          "ready to fire"). */}
       <div className="sticky bottom-0 -mx-4 px-4 pb-3 pt-3 bg-gradient-to-t from-[rgba(15,20,36,.98)] via-[rgba(15,20,36,.92)] to-transparent">
-        <button
-          type="button"
-          onClick={onActivate}
-          disabled={!canActivate}
-          className={cn(
-            "w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22d3ee] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d1117]",
-            canActivate
-              ? "bg-[#22d3ee] text-[#0d1117] hover:bg-[#67e8f9] cursor-pointer shadow-[0_0_24px_-8px_rgba(34,211,238,.6)]"
-              : "bg-[rgba(255,255,255,.05)] text-[#7d8aa8] cursor-not-allowed",
-          )}
-        >
-          <Eye size={16} />
-          Voir mes donnees
-        </button>
+        {canActivate ? (
+          <NeonBorder tone="cyan" speed={2.6} className="rounded-md">
+            <MagneticButton
+              variant="primary"
+              size="md"
+              onClick={onActivate}
+              className="w-full bg-[#22d3ee] !text-[#0d1117] hover:bg-[#67e8f9] border-[#22d3ee]"
+            >
+              <Eye size={16} />
+              Voir mes donnees
+            </MagneticButton>
+          </NeonBorder>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-[rgba(255,255,255,.05)] text-[#7d8aa8] cursor-not-allowed"
+          >
+            <Eye size={16} />
+            Voir mes donnees
+          </button>
+        )}
         <p className="text-[10px] text-[#7d8aa8] mt-1.5 text-center">
           Astuce : un GeoJSON &gt; 100 MB peut prendre 10+ s a afficher.
         </p>

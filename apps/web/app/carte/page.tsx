@@ -20,7 +20,14 @@ import { AuroraBg } from "@/components/backgrounds/aurora-bg";
 import { GlowCard } from "@/components/ui/glow-card";
 import { GradientText } from "@/components/ui/gradient-text";
 import { NeonButton } from "@/components/ui/neon-button";
-import { StatCard } from "@/components/ui/stat-card";
+// UX5 — composants premium pour CTA result + badges KPI carte generee
+import {
+  MagneticButton,
+  ShimmerText,
+  StatBadge,
+  RevealOnScroll,
+  NeonBorder,
+} from "@/components/ui";
 import { useAppStore } from "@/lib/store";
 import { apiClient, uploadFile } from "@/lib/api";
 import { FcdUploadSection } from "@/components/carte/FcdUploadSection";
@@ -968,7 +975,9 @@ export default function CartePage() {
         />
 
         {/* ============================================================= */}
-        {/* RESULTS */}
+        {/* RESULTS — UX5 : NeonBorder success + ShimmerText + StatBadges */}
+        {/* + MagneticButton. La logique (stats, sessionId, download) est */}
+        {/* identique a la version originale.                              */}
         {/* ============================================================= */}
         <AnimatePresence>
           {done && stats && (
@@ -977,56 +986,82 @@ export default function CartePage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
             >
-              <GlowCard glowColor="cyan">
-                <div className="text-center py-4 space-y-5">
+              <NeonBorder tone="success" speed={3.2} className="overflow-hidden">
+                <div className="text-center px-6 py-7 space-y-5">
                   <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
                     <Map size={28} />
                   </div>
-                  <p className="text-sm font-medium text-white">
-                    Carte des debits generee avec succes
-                  </p>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl mx-auto">
-                    <StatCard
-                      label="Troncons totaux"
+                  <ShimmerText
+                    as="h3"
+                    variant="cyan"
+                    className="text-base font-semibold"
+                  >
+                    Carte generee avec succes
+                  </ShimmerText>
+
+                  <RevealOnScroll
+                    variant="scale"
+                    stagger={0.06}
+                    className="flex flex-wrap items-center justify-center gap-2 max-w-3xl mx-auto"
+                  >
+                    <StatBadge
+                      tone="accent"
+                      icon={<Layers />}
+                      label="troncons totaux"
                       value={stats.total_segments.toLocaleString("fr-FR")}
-                      icon={<Layers size={16} />}
                     />
-                    <StatCard
-                      label="Troncons filtres"
+                    <StatBadge
+                      tone="violet"
+                      icon={<Filter />}
+                      label="troncons filtres"
                       value={stats.filtered_segments.toLocaleString("fr-FR")}
-                      icon={<Filter size={16} />}
                     />
-                    <StatCard
-                      label="JOr moyen"
-                      value={stats.mean_tvr != null ? `${Math.round(stats.mean_tvr).toLocaleString("fr-FR")} veh/j` : "-"}
-                      icon={<Car size={16} />}
+                    <StatBadge
+                      tone="cyan"
+                      icon={<Car />}
+                      label="JOr moyen veh/j"
+                      value={
+                        stats.mean_tvr != null
+                          ? Math.round(stats.mean_tvr).toLocaleString("fr-FR")
+                          : "-"
+                      }
                     />
-                    <StatCard
-                      label="DPL moyen"
-                      value={stats.mean_dpl != null ? `${Math.round(stats.mean_dpl).toLocaleString("fr-FR")} PL/j` : "-"}
-                      icon={<Truck size={16} />}
+                    <StatBadge
+                      tone="amber"
+                      icon={<Truck />}
+                      label="DPL moyen PL/j"
+                      value={
+                        stats.mean_dpl != null
+                          ? Math.round(stats.mean_dpl).toLocaleString("fr-FR")
+                          : "-"
+                      }
                     />
-                  </div>
+                  </RevealOnScroll>
 
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                    <NeonButton
-                      icon={<Map size={16} />}
-                      onClick={() => sessionId && router.push(`/carte/visualiser/${sessionId}`)}
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                    <MagneticButton
+                      variant="primary"
+                      size="lg"
+                      onClick={() =>
+                        sessionId && router.push(`/carte/visualiser/${sessionId}`)
+                      }
                       disabled={!sessionId}
                     >
+                      <Map size={16} />
                       Visualiser sur la carte
-                    </NeonButton>
-                    <NeonButton
+                    </MagneticButton>
+                    <MagneticButton
                       variant="secondary"
-                      icon={<Download size={16} />}
+                      size="lg"
                       onClick={handleDownload}
                     >
+                      <Download size={16} />
                       Telecharger le GeoJSON
-                    </NeonButton>
+                    </MagneticButton>
                   </div>
                 </div>
-              </GlowCard>
+              </NeonBorder>
             </motion.div>
           )}
         </AnimatePresence>

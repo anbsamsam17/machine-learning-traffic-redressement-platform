@@ -292,7 +292,11 @@ export default function CarteVisualiserPage() {
             }
           }
           if (cancelled) return;
-          const blob = new Blob(chunks, { type: "application/json" });
+          // Cast chunks to BlobPart[] : Node/DOM lib v16 fait differer
+          // Uint8Array<ArrayBufferLike> de Uint8Array<ArrayBuffer> attendu par
+          // Blob. Les chunks proviennent reellement d'un ArrayBuffer (fetch
+          // ReadableStream), le cast est safe.
+          const blob = new Blob(chunks as BlobPart[], { type: "application/json" });
           const text = await blob.text();
           const data = JSON.parse(text) as SegmentCollection;
           setGeojson(data);
