@@ -212,7 +212,14 @@ export default function CompteursPage() {
     if (!uploadResult || sourceColumns.length === 0) return;
     const newMappings: Record<string, string | null> = {};
     for (const col of TARGET_COLUMNS) {
-      newMappings[col.key] = autoMap(col.key, sourceColumns);
+      const candidate = autoMap(col.key, sourceColumns);
+      // Bug 4 (T1) — On valide que la source proposee existe BIEN dans la
+      // liste des sourceColumns affichee dans les selects. Sinon le compteur
+      // disait "X/8 mappees" tandis que les selects affichaient "Non mappe"
+      // parce que la valeur dans le state n'apparaissait dans aucune option.
+      newMappings[col.key] = candidate && sourceColumns.includes(candidate)
+        ? candidate
+        : null;
     }
     setMappings(newMappings);
 
@@ -240,15 +247,27 @@ export default function CompteursPage() {
   }, [uploadResult, sourceColumns, hasGeometry]);
 
   // Determine unmapped columns
+  // Bug 4 (T1) — Une cible est consideree mappee uniquement si sa valeur est
+  // effectivement disponible dans sourceColumns (i.e. apparait dans une
+  // option du <select>). Sinon le compteur et les selects divergeraient.
+  const isEffectivelyMapped = useCallback(
+    (key: string): boolean => {
+      const v = mappings[key];
+      if (!v) return false;
+      return sourceColumns.includes(v);
+    },
+    [mappings, sourceColumns]
+  );
+
   const unmappedColumns = useMemo(() => {
-    return TARGET_COLUMNS.filter((col) => !mappings[col.key]).map(
+    return TARGET_COLUMNS.filter((col) => !isEffectivelyMapped(col.key)).map(
       (col) => col.key
     );
-  }, [mappings]);
+  }, [isEffectivelyMapped]);
 
   const mappedCount = useMemo(
-    () => TARGET_COLUMNS.filter((c) => mappings[c.key]).length,
-    [mappings]
+    () => TARGET_COLUMNS.filter((c) => isEffectivelyMapped(c.key)).length,
+    [isEffectivelyMapped]
   );
 
   // Check completeness

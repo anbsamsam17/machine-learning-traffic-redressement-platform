@@ -9,6 +9,64 @@ import { getApiBase } from "./api-url";
 
 const TOKEN_KEY = "mdl_access_token";
 
+// Module-level guard to avoid firing the "session expired" UX multiple
+// times if several concurrent requests fail with 401 simultaneously
+// (a common case when a page mounts and dispatches 3-4 fetches in parallel
+// while the token has just expired).
+let sessionExpiredHandled = false;
+
+/**
+ * Centralized handler invoked whenever a non-auth API call returns 401.
+ * - Clears the access token (localStorage + cookie).
+ * - Shows a toast notifying the user that the session has expired.
+ * - Redirects to /login with `reason=expired` and the previous URL preserved
+ *   in `redirect` so the user can resume after re-auth.
+ *
+ * Safe under SSR (no-op when `window` is undefined).
+ * Safe under concurrent 401s (idempotent: only the first call triggers UX).
+ */
+export function handleSessionExpired(): void {
+  if (typeof window === "undefined") return;
+  if (sessionExpiredHandled) return;
+  sessionExpiredHandled = true;
+
+  // 1. Drop the local token immediately so subsequent in-flight calls
+  //    do not re-send a dead Authorization header.
+  removeToken();
+
+  // 2. Toast (dynamic import so this module stays SSR-safe and we avoid
+  //    pulling sonner into bundles that never need it).
+  void import("sonner")
+    .then(({ toast }) => {
+      toast.error("Session expirée — reconnexion nécessaire", {
+        duration: 4000,
+      });
+    })
+    .catch(() => {
+      // Sonner failed to load — fall through to the redirect anyway.
+    });
+
+  // 3. Redirect after a short delay so the toast has a chance to render.
+  //    We use window.location.href (not next/router) because this helper
+  //    runs outside React.
+  const current = window.location.pathname + window.location.search;
+  const target = `/login?reason=expired&redirect=${encodeURIComponent(current)}`;
+  setTimeout(() => {
+    window.location.href = target;
+  }, 800);
+}
+
+/** Returns true when a 401 from this URL should trigger the session-expired flow. */
+export function shouldHandle401(url: string): boolean {
+  // Never intercept the auth endpoints themselves — otherwise a failed
+  // login would redirect the user back to /login in a loop and a refresh
+  // 401 would short-circuit the recovery path.
+  if (url.includes("/api/auth/login")) return false;
+  if (url.includes("/api/auth/refresh")) return false;
+  if (url.includes("/api/auth/register")) return false;
+  return true;
+}
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
@@ -81,9 +139,8 @@ export async function fetchWithAuth(
     headers,
   });
 
-  if (res.status === 401 && !url.includes("/api/auth/")) {
-    removeToken();
-    if (typeof window !== "undefined") window.location.href = "/login";
+  if (res.status === 401 && shouldHandle401(url)) {
+    handleSessionExpired();
   }
   return res;
 }

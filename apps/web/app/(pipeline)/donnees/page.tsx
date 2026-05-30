@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl } from "@/lib/api-url";
+import { fetchWithAuth } from "@/lib/auth";
 import { FileSpreadsheet, Wand2, Table2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { samNotify, samMood } from "@/lib/sam-fallback";
@@ -19,17 +20,17 @@ import { SuccessBanner } from "@/components/ui/success-banner";
 import { useAppStore } from "@/lib/store";
 import { spawnConfetti } from "@/lib/success-effects";
 
-// ── 26 target columns (Etape1_MDL_TV refonte FCD HERE) ────────────────────
+// ── 30 target columns (Etape1_MDL_TV refonte FCD HERE + HPM/HPS) ──────────
 // Mirrored from apps/api/app/routers/mapping.py:TARGET_COLUMNS.
 const TARGET_COLUMNS = [
   // Identification (4)
   "Identifiant", "Annee", "Adresse", "Type Compteur",
   // Comptage capteur (4)
   "TMJOBCTV", "TMJOBCPL", "TMJOBCTV_HPM", "TMJOBCTV_HPS",
-  // FCD HERE (2)
-  "TMJOFCDTV", "TMJOFCDPL",
-  // Taux de penetration (2)
-  "TxPen", "TxPenPL",
+  // FCD HERE (4) — TV/PL journalier + HPM/HPS horaires
+  "TMJOFCDTV", "TMJOFCDPL", "FCD_HPM_TV", "FCD_HPS_TV",
+  // Taux de penetration (4) — TV/PL journalier + HPM/HPS horaires
+  "TxPen", "TxPenPL", "TxPen_HPM", "TxPen_HPS",
   // Mapping (2)
   "segment_id_match", "mapmatch_status",
   // Reseau (1)
@@ -47,7 +48,8 @@ const TARGET_COLUMNS = [
 ];
 
 // ── Critical columns required for model training ──────────────────────────
-const CRITICAL_COLS = [
+// TV — cible TxPen, features FCD TV/PL + distances/vitesses.
+const CRITICAL_COLS_TV = [
   "TMJOBCTV",          // target principale TV
   "TMJOFCDTV",         // feature principale FCD TV
   "TMJOFCDPL",         // feature FCD PL
@@ -59,8 +61,105 @@ const CRITICAL_COLS = [
   "functional_class",
 ];
 
+// PL — cible TxPenPL.
+const CRITICAL_COLS_PL = [
+  "TMJOBCPL",
+  "TMJOFCDPL",
+  "TxPenPL",
+  "truck_avg_distance_m",
+  "truck_avg_min_distance_m",
+  "truck_avg_speed_kmh",
+  "functional_class",
+];
+
+// HPM — fenetre 8h-9h, cible TxPen_HPM (v/h).
+const CRITICAL_COLS_HPM = [
+  "TMJOBCTV_HPM",   // boucle de comptage 8h-9h (cible derivable)
+  "FCD_HPM_TV",     // FCD HERE 8h-9h
+  "TxPen_HPM",      // cible (recalculable si manquante)
+  "avg_distance_m",
+  "avg_speed_kmh",
+  "functional_class",
+];
+
+// HPS — fenetre 17h-18h, cible TxPen_HPS (v/h).
+const CRITICAL_COLS_HPS = [
+  "TMJOBCTV_HPS",
+  "FCD_HPS_TV",
+  "TxPen_HPS",
+  "avg_distance_m",
+  "avg_speed_kmh",
+  "functional_class",
+];
+
+function pickCriticalCols(mode: string | null | undefined): string[] {
+  switch (mode) {
+    case "hpm":
+      return CRITICAL_COLS_HPM;
+    case "hps":
+      return CRITICAL_COLS_HPS;
+    case "pl":
+      return CRITICAL_COLS_PL;
+    default:
+      return CRITICAL_COLS_TV;
+  }
+}
+
+// Mode → backend ModelKind (uppercase). The backend `mode` payload uses
+// "TV" | "PL" | "HPM" | "HPS". The frontend store keeps lowercase.
+function modeToBackend(mode: string | null | undefined): string {
+  switch (mode) {
+    case "hpm":
+      return "HPM";
+    case "hps":
+      return "HPS";
+    case "pl":
+      return "PL";
+    default:
+      return "TV";
+  }
+}
+
+// Pretty mode labels for headers and copy.
+function modeMeta(mode: string | null | undefined) {
+  switch (mode) {
+    case "hpm":
+      return {
+        kind: "HPM" as const,
+        label: "Heure de Pointe Matin (8h-9h)",
+        unit: "v/h",
+        outputName: "HPM_FCDr",
+      };
+    case "hps":
+      return {
+        kind: "HPS" as const,
+        label: "Heure de Pointe Soir (17h-18h)",
+        unit: "v/h",
+        outputName: "HPS_FCDr",
+      };
+    case "pl":
+      return {
+        kind: "PL" as const,
+        label: "Poids Lourds",
+        unit: "v/j",
+        outputName: "DPL",
+      };
+    default:
+      return {
+        kind: "TV" as const,
+        label: "Tous Vehicules",
+        unit: "v/j",
+        outputName: "TVr",
+      };
+  }
+}
+
 export default function DonneesPage() {
   const { mode, setFileName, setMappingValidated, setPreviewReady } = useAppStore();
+  const storedSessionId = useAppStore((s) => s.sessionId);
+  // Mode-aware constants (TV/PL/HPM/HPS). Recomputed when the store hydrates.
+  const CRITICAL_COLS = useMemo(() => pickCriticalCols(mode), [mode]);
+  const meta = useMemo(() => modeMeta(mode), [mode]);
   const [file, setFile] = useState<File | null>(null);
   const [sourceColumns, setSourceColumns] = useState<string[]>([]);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
@@ -90,6 +189,56 @@ export default function DonneesPage() {
     );
   }, [mappings]);
 
+  // ── Bug 1 (T1) — Defensive guard contre sessionId perime ─────────────────
+  // Quand le store contient un sessionId mais que le backend ne le reconnait
+  // plus (TTL expire / serveur redemarre / session purgee), on doit
+  // SILENCIEUSEMENT clear l'etat local et RESTER sur /donnees au lieu de
+  // naviguer ailleurs. Sans ce guard, restoreFromBackend + autres useEffect
+  // pouvaient produire des navigations imprevisibles ~1-2s apres le mount.
+  useEffect(() => {
+    if (!storedSessionId) return;
+    // On a deja une nouvelle session locale (fichier vient d'etre uploade) :
+    // on saute le check, l'upload aura cree une session valide cote backend.
+    if (file) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchWithAuth(apiUrl("/api/sessions/current"));
+        if (cancelled) return;
+        if (res.status === 404) {
+          // Backend ne connait plus de session active pour cet user.
+          // Clear le sessionId local + flags de pipeline, et RESTE sur la page.
+          useAppStore.setState({
+            sessionId: null,
+            taskId: null,
+            mappingValidated: false,
+            previewReady: false,
+          });
+          toast.info("Session expiree — charge un nouveau fichier");
+          return;
+        }
+        if (!res.ok) return;
+        const data = await res.json().catch(() => null);
+        if (cancelled || !data) return;
+        // Si le backend a une session pour cet user mais l'id ne matche pas
+        // le sessionId local (ex. autre device, store stale), on align sur
+        // le backend sans naviguer.
+        if (data.session_id && data.session_id !== storedSessionId) {
+          useAppStore.setState({ sessionId: data.session_id });
+        }
+      } catch {
+        // Network error — on n'a pas la confirmation, on laisse l'etat tel
+        // quel. L'utilisateur peut re-uploader si quelque chose casse.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Le guard ne doit s'executer qu'une fois par session active connue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedSessionId]);
+
   const handleFile = useCallback(
     async (f: File) => {
       setFile(f);
@@ -110,9 +259,10 @@ export default function DonneesPage() {
         // Step 1: Upload file to get session_id
         const formData = new FormData();
         formData.append("file", f);
-        formData.append("mode", mode ?? "tv");
+        // Backend ModelKind expects uppercase (TV/PL/HPM/HPS).
+        formData.append("mode", modeToBackend(mode));
 
-        const uploadResponse = await fetch(apiUrl("/api/upload"), {
+        const uploadResponse = await fetchWithAuth(apiUrl("/api/upload"), {
           method: "POST",
           body: formData,
         });
@@ -129,7 +279,7 @@ export default function DonneesPage() {
         useAppStore.getState().setSessionId(sessionId);
 
         // Step 2: Call auto-mapping with session_id
-        const mapResponse = await fetch(apiUrl("/api/mapping/auto"), {
+        const mapResponse = await fetchWithAuth(apiUrl("/api/mapping/auto"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: sessionId }),
@@ -208,7 +358,10 @@ export default function DonneesPage() {
         setIsAutoMapping(false);
       }
     },
-    [setFileName]
+    // `mode` change → backend payload changes (TV/PL/HPM/HPS), and
+    // `CRITICAL_COLS` flips per mode → missingCritical warning must reflect
+    // the right cible set.
+    [setFileName, setMappingValidated, setPreviewReady, mode, CRITICAL_COLS]
   );
 
   function handleClear() {
@@ -253,7 +406,7 @@ export default function DonneesPage() {
         return;
       }
 
-      const response = await fetch(apiUrl("/api/mapping/validate"), {
+      const response = await fetchWithAuth(apiUrl("/api/mapping/validate"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -308,11 +461,20 @@ export default function DonneesPage() {
     <div className="space-y-6">
       <div className="space-y-2">
         <GradientText as="h1" className="text-2xl">
-          Donnees
+          {meta.kind === "HPM" || meta.kind === "HPS"
+            ? `Donnees · Pipeline ${meta.kind} (${meta.kind === "HPM" ? "8h-9h" : "17h-18h"})`
+            : "Donnees"}
         </GradientText>
         <p className="text-sm text-slate-300">
           Importez votre fichier de donnees brutes et configurez le mapping des
           colonnes vers les {TARGET_COLUMNS.length} colonnes standard.
+          {(meta.kind === "HPM" || meta.kind === "HPS") && (
+            <>
+              {" "}Cible : <span className="font-mono text-amber-300">TxPen_{meta.kind}</span>
+              {" "}— sortie : <span className="font-mono text-amber-300">{meta.outputName}</span>
+              {" "}({meta.unit}).
+            </>
+          )}
         </p>
       </div>
 

@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl } from "@/lib/api-url";
+import { fetchWithAuth } from "@/lib/auth";
 import Link from "next/link";
 import {
   Download,
@@ -61,6 +62,15 @@ type ModelSource = "session" | "upload";
 export default function EvaluationPage() {
   const { mode, sessionId, setSessionId, outputDir } = useAppStore();
 
+  // APP-EVAL-FIX: keep the training session_id (in store) decoupled from the
+  // validation file's session_id. Uploading a validation file used to overwrite
+  // the store's sessionId, which then made loadModelsFromSession() query an
+  // empty (validation-only) session and lose the trained models. We now hold
+  // the validation-file session_id locally and only fall back to the store
+  // sessionId when no training session exists (upload-only flow).
+  const [validationSessionId, setValidationSessionId] = useState<string | null>(null);
+  const effectiveSessionId = validationSessionId ?? sessionId ?? null;
+
   const [validationFile, setValidationFile] = useState<File | null>(null);
   const [fileColumns, setFileColumns] = useState<string[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -117,16 +127,22 @@ export default function EvaluationPage() {
     try {
       const form = new FormData();
       form.append("file", f);
-      form.append("mode", mode === "pl" ? "PL" : "TV");
+      form.append("mode", mode === "pl" ? "PL" : mode === "hpm" ? "HPM" : mode === "hps" ? "HPS" : "TV");
 
-      const uploadRes = await fetch(apiUrl("/api/upload"), { method: "POST", body: form });
+      const uploadRes = await fetchWithAuth(apiUrl("/api/upload"), { method: "POST", body: form });
       if (!uploadRes.ok) {
         const e = await uploadRes.json().catch(() => ({}));
         throw new Error(e.detail ?? "Upload echoue");
       }
       const data = await uploadRes.json();
       const newSid: string = data.session_id;
-      setSessionId(newSid);
+      // APP-EVAL-FIX: only promote the validation session_id to the global
+      // store when there is no training session yet (upload-only flow). Otherwise
+      // keep it local so the trained models remain reachable via the store sid.
+      setValidationSessionId(newSid);
+      if (!sessionId) {
+        setSessionId(newSid);
+      }
       setFileColumns(data.columns ?? []);
 
       samNotify.success(`Fichier charge : ${f.name}`, { id: samToastId });
@@ -143,7 +159,7 @@ export default function EvaluationPage() {
     if (!sid) return;
     setLoadingModels(true);
     try {
-      const res = await fetch(apiUrl(`/api/models/list?session_id=${encodeURIComponent(sid)}`));
+      const res = await fetchWithAuth(apiUrl(`/api/models/list?session_id=${encodeURIComponent(sid)}`));
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const data = await res.json();
       const modelList: ModelInfo[] = data.models ?? [];
@@ -170,7 +186,11 @@ export default function EvaluationPage() {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
-    if (!sessionId) {
+    // APP-EVAL-FIX: use effective session id (validation upload preferred, store
+    // session id as fallback) so the folder upload works whether the user is in
+    // upload-only mode or arrived from a training session.
+    const sidForUpload = validationSessionId ?? sessionId;
+    if (!sidForUpload) {
       toast.error("Pas de session active. Chargez d'abord un fichier de validation.");
       return;
     }
@@ -186,7 +206,7 @@ export default function EvaluationPage() {
 
     try {
       const form = new FormData();
-      form.append("session_id", sessionId);
+      form.append("session_id", sidForUpload);
 
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i] as File & { webkitRelativePath?: string };
@@ -198,7 +218,7 @@ export default function EvaluationPage() {
         form.append("files", file, strippedPath);
       }
 
-      const res = await fetch(apiUrl("/api/models/upload-folder"), { method: "POST", body: form });
+      const res = await fetchWithAuth(apiUrl("/api/models/upload-folder"), { method: "POST", body: form });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail ?? "Upload echoue");
@@ -219,7 +239,7 @@ export default function EvaluationPage() {
     } finally {
       setUploading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, validationSessionId]);
 
   const clearFolder = useCallback(() => {
     setFolderName(null);
@@ -236,12 +256,14 @@ export default function EvaluationPage() {
   // APP-P1-9: explicit user gesture handler — arms the picker, then clicks
   // the freshly mounted input once. queueMicrotask waits for the ref to attach.
   const openFolderPicker = useCallback(() => {
-    if (!sessionId || uploading) return;
+    // APP-EVAL-FIX: allow opening the picker as long as either a training
+    // session (store sid) or a validation upload sid is available.
+    if (!effectiveSessionId || uploading) return;
     setFolderPickerArmed(true);
     queueMicrotask(() => {
       folderInputRef.current?.click();
     });
-  }, [sessionId, uploading]);
+  }, [effectiveSessionId, uploading]);
 
   // Auto-load session models on mount
   useEffect(() => {
@@ -354,15 +376,22 @@ export default function EvaluationPage() {
     samNotify.thinking("J'evalue le modele...", { id: samRunToastId });
 
     try {
-      let sid: string = sessionId ?? "";
+      // APP-EVAL-FIX: the session_id sent to the backend is the *validation*
+      // session (= where validation_df lives). It is independent from the
+      // training session_id, which is only used by the frontend to discover
+      // trained models (resolvedModelDir is already pointing to disk).
+      let sid: string = validationSessionId ?? sessionId ?? "";
       if (!sid) {
         const fd = new FormData();
         fd.append("file", validationFile);
-        fd.append("mode", mode === "pl" ? "PL" : "TV");
-        const r = await fetch(apiUrl("/api/upload"), { method: "POST", body: fd });
+        fd.append("mode", mode === "pl" ? "PL" : mode === "hpm" ? "HPM" : mode === "hps" ? "HPS" : "TV");
+        const r = await fetchWithAuth(apiUrl("/api/upload"), { method: "POST", body: fd });
         if (!r.ok) throw new Error("Impossible de creer la session");
         sid = (await r.json()).session_id as string;
-        setSessionId(sid);
+        setValidationSessionId(sid);
+        if (!sessionId) {
+          setSessionId(sid);
+        }
       }
 
       // Upload validation file only if we need to (the file was already uploaded
@@ -374,7 +403,7 @@ export default function EvaluationPage() {
         form.append("file", validationFile);
         form.append("session_id", sid);
         form.append("column_mapping", JSON.stringify(colMapping));
-        const uploadRes = await fetch(apiUrl("/api/evaluation/upload-validation"), { method: "POST", body: form });
+        const uploadRes = await fetchWithAuth(apiUrl("/api/evaluation/upload-validation"), { method: "POST", body: form });
         if (!uploadRes.ok) {
           // If upload fails (413 too large, etc.), the backend will fallback to raw_df
           console.warn("Re-upload validation failed, will use raw_df fallback");
@@ -390,7 +419,7 @@ export default function EvaluationPage() {
       const yearMappingDict = needsYearMapping
         ? Object.fromEntries(yearMapping.map((r) => [r.year.trim(), r.value]))
         : null;
-      const evalRes = await fetch(apiUrl("/api/evaluation/run"), {
+      const evalRes = await fetchWithAuth(apiUrl("/api/evaluation/run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -411,7 +440,7 @@ export default function EvaluationPage() {
       setMetrics(evalData.metrics);
 
       // Fetch report
-      const reportRes = await fetch(apiUrl(`/api/evaluation/report/${sid}`));
+      const reportRes = await fetchWithAuth(apiUrl(`/api/evaluation/report/${sid}`));
       if (reportRes.ok) {
         const reportData = await reportRes.json();
         setReportHtml(reportData.report_html);
@@ -437,7 +466,7 @@ export default function EvaluationPage() {
     } finally {
       setRunning(false);
     }
-  }, [validationFile, selectedModel, resolvedModelDir, sessionId, filterFlagPermanent, colMapping, allMapped, mode, setSessionId]);
+  }, [validationFile, selectedModel, resolvedModelDir, sessionId, validationSessionId, filterFlagPermanent, colMapping, allMapped, mode, setSessionId, needsYearMapping, yearMapping, yearSourceCol, unmappedCount, yearReady]);
 
   const downloadReport = useCallback(() => {
     if (!reportBlob) return;
@@ -452,7 +481,7 @@ export default function EvaluationPage() {
   const downloadModelZip = useCallback(async () => {
     if (!selectedModel || !resolvedModelDir) return;
     try {
-      const res = await fetch(apiUrl(`/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(resolvedModelDir.trim())}`));
+      const res = await fetchWithAuth(apiUrl(`/api/evaluation/download-model?model_name=${encodeURIComponent(selectedModel)}&model_dir=${encodeURIComponent(resolvedModelDir.trim())}`));
       if (!res.ok) throw new Error("Telechargement echoue");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -469,7 +498,15 @@ export default function EvaluationPage() {
       <div className="space-y-2">
         <GradientText as="h1" className="text-2xl">Evaluation</GradientText>
         <p className="text-sm text-slate-300">
-          Evaluez un modele {mode === "pl" ? "PL" : "TV"} sur un fichier de validation.
+          Evaluez un modele {
+            mode === "pl"
+              ? "PL"
+              : mode === "hpm"
+                ? "HPM (8h-9h, v/h)"
+                : mode === "hps"
+                  ? "HPS (17h-18h, v/h)"
+                  : "TV"
+          } sur un fichier de validation.
           Cette etape peut etre lancee independamment.
         </p>
       </div>
@@ -477,7 +514,7 @@ export default function EvaluationPage() {
       {/* Empty-state non-bloquant (Tache 1) — l'evaluation peut s'amorcer
           sans session existante (upload validation + modeles externes), on
           se contente donc d'une simple invitation discrete. */}
-      {!sessionId && !validationFile && (
+      {!effectiveSessionId && !validationFile && (
         <GlowCard glowColor="cyan">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-300 shrink-0">
@@ -513,7 +550,14 @@ export default function EvaluationPage() {
         <DropZone
           file={validationFile}
           onFile={handleValidationFile}
-          onClear={() => { setValidationFile(null); setFileColumns([]); setColMapping({}); }}
+          onClear={() => {
+            setValidationFile(null);
+            setFileColumns([]);
+            setColMapping({});
+            // APP-EVAL-FIX: clear the local validation session id so a fresh
+            // upload creates a new one cleanly.
+            setValidationSessionId(null);
+          }}
           accept={{ "application/json": [".geojson", ".json"], "text/csv": [".csv"] }}
           label="Deposez votre fichier de validation"
           description="GeoJSON ou CSV avec donnees de comptage"
@@ -635,7 +679,7 @@ export default function EvaluationPage() {
               <button
                 type="button"
                 onClick={openFolderPicker}
-                disabled={!sessionId || uploading}
+                disabled={!effectiveSessionId || uploading}
                 data-testid="open-folder-picker"
                 className="w-full relative flex flex-col items-center justify-center gap-4 p-10 rounded-2xl border-2 border-dashed border-white/[0.08] hover:border-indigo-500/40 bg-slate-900/30 hover:bg-indigo-500/5 transition-all duration-300 cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -670,7 +714,7 @@ export default function EvaluationPage() {
               </motion.div>
             )}
 
-            {!sessionId && (
+            {!effectiveSessionId && (
               <p className="text-xs text-amber-400">
                 Chargez d&apos;abord un fichier de validation pour activer l&apos;upload de modeles.
               </p>

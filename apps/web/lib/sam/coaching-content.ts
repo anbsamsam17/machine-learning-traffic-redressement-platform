@@ -37,6 +37,10 @@ export interface SamConfigRecommendations {
   advancedRecommendations: CoachingBullet[];
 }
 
+// ---------------------------------------------------------------------------
+// TV model (Tous Véhicules) — defaults from D4_8643_bs128_ep1500 winner
+// (Batch Compact9, BCFCDREF_AllYears_TV, 71.23% tol).
+// ---------------------------------------------------------------------------
 export const samConfigRecommendations: SamConfigRecommendations = {
   mainRecommendations: [
     {
@@ -124,6 +128,256 @@ export const samConfigRecommendations: SamConfigRecommendations = {
 };
 
 // ---------------------------------------------------------------------------
+// PL model (Poids Lourds) — defaults from E3_09_all3_plus_after winner
+// (Batch_MDL_PL_Compact4, BCFCDREF_AllYears_PL_enriched, 94,00 % tol /
+// 658/700 capteurs, R² 0,9722, MAE 0,1657, medE 7,99 %, GEH<5 99,86 %).
+// 8 seeds × 10 subsets soit 80 modèles entraînés sur Grand Lyon ; effets
+// marginaux mesurés vs subsets sans la feature (cf. memory/02_calibration_modele_PL.md).
+// ---------------------------------------------------------------------------
+export const samConfigRecommendationsPL: SamConfigRecommendations = {
+  mainRecommendations: [
+    {
+      label: "9 features Compact4 — subset `09_all3_plus_after`",
+      body:
+        "`TMJOFCDPL`, `functional_class`, 4 distances PL (`truck_avg_distance_m`, `truck_avg_min_distance_m`, `truck_avg_distance_before_m`, `truck_avg_distance_after_m`) + **3 features dérivées** (`fcd_log`, `tv_pl_ratio`, `dist_to_lyon_center`). +10,82 pp tol vs Compact3 base.",
+    },
+    {
+      label: "`dist_to_lyon_center` — meilleur gain marginal",
+      body:
+        "Distance Haversine au centre (Place Bellecour, km). Capte la décroissance radiale du trafic PL Grand Lyon. **+6,41 pp tol marginal** (mesure 6 subsets avec / 4 sans, 8 seeds). À recalculer si territoire différent.",
+    },
+    {
+      label: "`tv_pl_ratio` — composition de l'axe",
+      body:
+        "`TMJOFCDTV / (TMJOFCDPL + 0,1)`. Ratio faible (5-15) = axe lourd (autoroute), ratio élevé (>50) = voie urbaine résiduelle. **+6,07 pp tol marginal**.",
+    },
+    {
+      label: "Architecture 5 layers `[8, 6, 4, 3, 2]` + bs=64 + 1500 epochs",
+      body:
+        "Recipe figée Compact4 : `bs=64`, `lr=0,01`, `dropout=0,015`, `activation=elu`, `loss=mse`, `min_nb_epochs=max_epochs=1500`. EarlyStopping désactivé en pratique. Temps : ~213 s/modèle CPU.",
+    },
+    {
+      label: "Cible `TxPenPL` (sortie scalaire)",
+      body:
+        "Le réseau prédit `TxPenPL` ; le redressement métier est `DPL = TMJOFCDPL / TxPenPL × 100`. Validation contre `TMJOBCPL` (boucle de comptage PL).",
+    },
+  ],
+  pitfalls: [
+    {
+      label: "`fcd_log` seul (sans les 2 autres features)",
+      body:
+        "Subset `01_plus_log` → tol 79,77 % ± 5,11 (très instable, **inférieur** à la baseline 80,16 %). `fcd_log` n'a de valeur qu'en synergie avec `tv_pl_ratio` et `dist_to_lyon_center`.",
+    },
+    {
+      label: "Pondération `flag_permanent` / `recent_year` (toujours OFF en PL)",
+      body:
+        "Les 80 runs Compact4 ont `use_flag_permanent_weighting=false` et `use_flag_recent_year_weighting=false`. Aucun gain mesuré sur PL ; activer ces toggles écarte de la config validée.",
+    },
+    {
+      label: "Hold-out `test_size > 0`",
+      body:
+        "Défaut **0.0** comme tous les runs Compact4 (les 700 lignes servent à l'entraînement). Activer un split test_size > 0 réduit la taille d'apprentissage (déjà faible) et bruite l'EarlyStopping.",
+    },
+    {
+      label: "Feature `year_mapped` ou Embedding année",
+      body:
+        "Non utilisée dans le subset gagnant PL (vs config TV où elle figure dans les 7 inputs). À laisser OFF pour reproduire le Compact4.",
+    },
+    {
+      label: "Limite territoriale : `dist_to_lyon_center` non transposable",
+      body:
+        "Le centroïde (Place Bellecour, 45,7578° N / 4,8320° E) est hardcodé. Pour un autre territoire (Bordeaux, Île-de-France), recalculer la feature avec le centre local — sinon désactiver ce feature.",
+    },
+  ],
+  strategy: {
+    models: "Production : 9 features",
+    epochs: "1500 epochs forcés",
+    batch: "Multi-seed n=8 (1750..1757)",
+    rationale:
+      "Le winner individuel `E3_09_all3_plus_after` (seed 1752) atteint 94,00 % tol / R²=0,9722. Moyenne 8 seeds = 91,55 % ± 1,52 (très stable). En production, multi-seed `n_seeds=3..8` recommandé pour absorber la variance.",
+  },
+  advancedRecommendations: [
+    {
+      label: "Subset `07_all3` (8 features sans `truck_avg_distance_after_m`)",
+      body:
+        "Alternative à -0,55 pp tol_mean (91,00 % vs 91,55 %) mais à -0,01 pp std. Préférer si `truck_avg_distance_after_m` est manquant dans le territoire cible.",
+    },
+    {
+      label: "Subset `08_swap_log` (substitution `TMJOFCDPL` → `fcd_log`)",
+      body:
+        "Métriques identiques au subset `07` → le réseau apprend à représenter `log` depuis la feature brute. Conclusion : garder `TMJOFCDPL` en clair, ne pas remplacer.",
+    },
+    {
+      label: "`learning_rate = 0,01` — pas tester à 0,001",
+      body:
+        "Tous les 80 runs Compact4 utilisent `lr=0,01` (recipe figée). À 1500 epochs c'est calibré ; baisser à 1e-3 nécessiterait d'augmenter `max_epochs` à 3000+.",
+    },
+    {
+      label: "Normalisation : `functional_class` **non normalisé** (catégoriel 1-5)",
+      body:
+        "Les 8 autres features sont z-scorées (mask `[true, false, true, true, true, true, true, true, true]`). Si vous ajoutez une feature catégorielle, l'OFFer explicitement.",
+    },
+    {
+      label: "Toutes options Phase 2A / 3 testées — laisser OFF",
+      body:
+        "AdamW, Skip, BatchNorm, LayerNorm, target_log_transform, curriculum, hard-mining, quantile-head : aucune n'a été activée dans le winner Compact4. `optimizer=adam`, `dropout_schedule=uniform`, `clipnorm=null`.",
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// HPM model (Heure de Pointe Matin, 8h-9h) — pipeline horaire derive de TV
+// (architecture identique). Sortie HPM_FCDr (v/h). Cible TxPen_HPM, source
+// FCD horaire FCD_HPM_TV, compteur TMJOBCTV_HPM.
+// ---------------------------------------------------------------------------
+export const samConfigRecommendationsHPM: SamConfigRecommendations = {
+  mainRecommendations: [
+    {
+      label: "Tu modelises le debit en heure de pointe matin (8h-9h)",
+      body:
+        "Cible : `TxPen_HPM` (taux de penetration FCD HERE sur 8h-9h). Source FCD : `FCD_HPM_TV`. Compteur de reference : `TMJOBCTV_HPM`. **Unite partout : v/h** (vehicules par heure) — jamais v/j.",
+    },
+    {
+      label: "Sortie HPM_FCDr (debit redresse heure de pointe matin)",
+      body:
+        "Le modele predit `TxPen_HPM`, et la sortie metier est `HPM_FCDr = FCD_HPM_TV / TxPen_HPM × 100`. C'est ce que ton fichier de sortie contiendra (v/h).",
+    },
+    {
+      label: "Architecture identique a la chaine TV — defauts deja valides",
+      body:
+        "Le modele HPM partage la meme architecture neuronale que TV : 4 couches `[8, 6, 4, 3]`, batch_size 128, dropout 0.015, lr 0.01, loss mse, 1500 epochs. Les defauts du formulaire reprennent cette recette.",
+    },
+    {
+      label: "Charge un fichier qui contient TMJOBCTV_HPM et FCD_HPM_TV",
+      body:
+        "Ces deux colonnes sont indispensables. Si ton fichier source contient des colonnes horaires `FCDTV_h08` (8h-9h), tu peux les renommer en `FCD_HPM_TV` avant l'upload ou laisser l'auto-mapping faire la suggestion.",
+    },
+    {
+      label: "Features distance / vitesse / functional_class — meme schema TV",
+      body:
+        "Les proprietes du segment (`avg_distance_m`, `avg_speed_kmh`, `functional_class`) sont valables sur n'importe quelle fenetre horaire. Aucun changement vs TV — l'unique difference est la cible et la source FCD.",
+    },
+  ],
+  pitfalls: [
+    {
+      label: "Mention TVr / v/j dans tes sorties",
+      body:
+        "Le pipeline HPM produit `HPM_FCDr` en `v/h`. Ne confonds pas avec la sortie TV (`TVr` en `v/j`). Les deux modeles sont distincts et leurs sorties ne sont pas interchangeables.",
+    },
+    {
+      label: "Fenetre horaire alternative (7h-8h, 9h-10h)",
+      body:
+        "Le modele HPM est calibre sur 8h-9h. Si tu veux modeliser une autre fenetre (par ex. 7h-8h), il faut soit recalculer `TxPen_HPM` avec les nouvelles colonnes horaires, soit creer un modele dedie — ne pas remapper a la volee.",
+    },
+    {
+      label: "Ponderation capteurs permanents",
+      body:
+        "Inutilise dans le pipeline horaire (memes conclusions que TV : aucun gain mesurable). Garder OFF par defaut.",
+    },
+  ],
+  strategy: {
+    models: "Production : defauts HPM",
+    epochs: "1500 epochs forces",
+    batch: "bs=128 + multi-seed n=3",
+    rationale:
+      "Architecture TV portee a la cible 8h-9h. Reproduit la recette D4_8643 — varier batch_size ou architecture seulement en exploration.",
+  },
+  advancedRecommendations: [
+    {
+      label: "Si TxPen_HPM est manquant dans ton fichier",
+      body:
+        "Le backend peut le recalculer a partir de `TMJOBCTV_HPM` et `FCD_HPM_TV` (formule `TxPen_HPM = FCD_HPM_TV / TMJOBCTV_HPM × 100`). Verifie que ces deux colonnes sont mappees.",
+    },
+    {
+      label: "Source FCD horaire alternative (FCDTV_h08)",
+      body:
+        "Si ton fichier expose `FCDTV_h08` au lieu de `FCD_HPM_TV`, l'auto-mapping doit suggerer le bon alias. Verifie la suggestion avant de valider.",
+    },
+    {
+      label: "Toutes les options Phase 2A / 3 / 4 — laisser OFF",
+      body:
+        "Les conclusions TV portent : AdamW, Skip, BatchNorm, target_log_transform regressent. Garder Adam + ELU + tete de regression standard.",
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// HPS model (Heure de Pointe Soir, 17h-18h) — pipeline horaire derive de TV.
+// Sortie HPS_FCDr (v/h). Cible TxPen_HPS, source FCD horaire FCD_HPS_TV,
+// compteur TMJOBCTV_HPS.
+// ---------------------------------------------------------------------------
+export const samConfigRecommendationsHPS: SamConfigRecommendations = {
+  mainRecommendations: [
+    {
+      label: "Tu modelises le debit en heure de pointe soir (17h-18h)",
+      body:
+        "Cible : `TxPen_HPS` (taux de penetration FCD HERE sur 17h-18h). Source FCD : `FCD_HPS_TV`. Compteur de reference : `TMJOBCTV_HPS`. **Unite partout : v/h** (vehicules par heure) — jamais v/j.",
+    },
+    {
+      label: "Sortie HPS_FCDr (debit redresse heure de pointe soir)",
+      body:
+        "Le modele predit `TxPen_HPS`, et la sortie metier est `HPS_FCDr = FCD_HPS_TV / TxPen_HPS × 100`. C'est ce que ton fichier de sortie contiendra (v/h).",
+    },
+    {
+      label: "Architecture identique a la chaine TV — defauts deja valides",
+      body:
+        "Le modele HPS partage la meme architecture neuronale que TV : 4 couches `[8, 6, 4, 3]`, batch_size 128, dropout 0.015, lr 0.01, loss mse, 1500 epochs. Les defauts du formulaire reprennent cette recette.",
+    },
+    {
+      label: "Charge un fichier qui contient TMJOBCTV_HPS et FCD_HPS_TV",
+      body:
+        "Ces deux colonnes sont indispensables. Si ton fichier source contient des colonnes horaires `FCDTV_h17` (17h-18h), tu peux les renommer en `FCD_HPS_TV` avant l'upload ou laisser l'auto-mapping faire la suggestion.",
+    },
+    {
+      label: "Features distance / vitesse / functional_class — meme schema TV",
+      body:
+        "Les proprietes du segment (`avg_distance_m`, `avg_speed_kmh`, `functional_class`) sont valables sur n'importe quelle fenetre horaire. Aucun changement vs TV — l'unique difference est la cible et la source FCD.",
+    },
+  ],
+  pitfalls: [
+    {
+      label: "Mention TVr / v/j dans tes sorties",
+      body:
+        "Le pipeline HPS produit `HPS_FCDr` en `v/h`. Ne confonds pas avec la sortie TV (`TVr` en `v/j`). Les deux modeles sont distincts et leurs sorties ne sont pas interchangeables.",
+    },
+    {
+      label: "Fenetre horaire alternative (16h-17h, 18h-19h)",
+      body:
+        "Le modele HPS est calibre sur 17h-18h. Si tu veux modeliser une autre fenetre, il faut recalculer `TxPen_HPS` avec les nouvelles colonnes horaires, ou creer un modele dedie — ne pas remapper a la volee.",
+    },
+    {
+      label: "Ponderation capteurs permanents",
+      body:
+        "Inutilise dans le pipeline horaire (memes conclusions que TV : aucun gain mesurable). Garder OFF par defaut.",
+    },
+  ],
+  strategy: {
+    models: "Production : defauts HPS",
+    epochs: "1500 epochs forces",
+    batch: "bs=128 + multi-seed n=3",
+    rationale:
+      "Architecture TV portee a la cible 17h-18h. Reproduit la recette D4_8643 — varier batch_size ou architecture seulement en exploration.",
+  },
+  advancedRecommendations: [
+    {
+      label: "Si TxPen_HPS est manquant dans ton fichier",
+      body:
+        "Le backend peut le recalculer a partir de `TMJOBCTV_HPS` et `FCD_HPS_TV` (formule `TxPen_HPS = FCD_HPS_TV / TMJOBCTV_HPS × 100`). Verifie que ces deux colonnes sont mappees.",
+    },
+    {
+      label: "Source FCD horaire alternative (FCDTV_h17)",
+      body:
+        "Si ton fichier expose `FCDTV_h17` au lieu de `FCD_HPS_TV`, l'auto-mapping doit suggerer le bon alias. Verifie la suggestion avant de valider.",
+    },
+    {
+      label: "Toutes les options Phase 2A / 3 / 4 — laisser OFF",
+      body:
+        "Les conclusions TV portent : AdamW, Skip, BatchNorm, target_log_transform regressent. Garder Adam + ELU + tete de regression standard.",
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // Per-field tooltips — keys correspond to logical field names exposed by the
 // ConfigForm. Each entry combines a 1-sentence purpose with the rationale of
 // the chosen D4_8643_bs128_ep1500 default. Editing one entry updates every
@@ -143,7 +397,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Facteurs multiplicateurs de N (nombre de features) qui définissent le nombre de neurones par couche cachée.",
     recommendation:
-      "Défaut **[8, 6, 4, 3]** — 4 layers wider validée sur Batch Compact9 (71.23 % tol). Plafond observé : au-delà de 6 couches ou 12 neurones d'entrée, plus aucun gain.",
+      "TV — défaut **[8, 6, 4, 3]** (4 couches, Batch Compact9, 71.23 % tol). PL — défaut **[8, 6, 4, 3, 2]** (5 couches deep, Batch Compact4, 94,00 % tol). Plafond observé : au-delà de 6 couches ou 12 neurones d'entrée, plus aucun gain.",
   },
   activations: {
     purpose:
@@ -193,7 +447,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Nombre d'échantillons traités par étape de gradient.",
     recommendation:
-      "Défaut **128** — LE levier-clé : +4-5 pp tol vs bs=256. Surtout ne pas changer.",
+      "TV — défaut **128** : LE levier-clé Compact9, +4-5 pp tol vs bs=256. PL — défaut **64** (Batch Compact4, dataset Grand Lyon 700 lignes). Ne pas relever sans tester.",
   },
   min_nb_epochs_list: {
     purpose:
@@ -219,7 +473,7 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Liste des colonnes d'entrée utilisées comme features par le modèle.",
     recommendation:
-      "Défaut **7 features** — `year_mapped`, `TMJOFCDTV`, `TMJOFCDPL`, `functional_class`, `avg_distance_before_m`, `avg_min_distance_m`, `truck_avg_distance_before_m`. Ajouter une 3e distance VL = gain marginal.",
+      "TV — 7 features (D4_8643 Compact9) : `year_mapped`, `TMJOFCDTV`, `TMJOFCDPL`, `functional_class`, `avg_distance_before_m`, `avg_min_distance_m`, `truck_avg_distance_before_m`. PL — 9 features (E3_09_all3_plus_after Compact4) : `TMJOFCDPL`, `functional_class`, 4 distances trucks + 3 features dérivées (`fcd_log`, `tv_pl_ratio`, `dist_to_lyon_center`).",
   },
   output_cols: {
     purpose:
@@ -283,21 +537,21 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     purpose:
       "Graine aléatoire numpy / TensorFlow pour la reproductibilité.",
     recommendation:
-      "Défaut **1750** — variance multi-seed observée 58-67 % sur même config. Toujours essayer plusieurs graines (`n_seeds=3`) en production.",
+      "Défaut **1750** (convention projet). Côté PL, le winner individuel Compact4 est obtenu à seed **1752** (E3_09_all3_plus_after, 94,00 % tol). Variance multi-seed observée 58-67 % TV / 89,57-94,00 % PL → multi-seed `n_seeds=3` recommandé en production.",
   },
   // Form key — used by config-form.tsx for the "capteurs permanents" toggle.
   flag_permanent_weighting: {
     purpose:
       "Capteurs de type 'Permanent' / 'Siredo' (les plus fiables) reçoivent un poids accru lors de l'entraînement.",
     recommendation:
-      "Défaut **OFF** — testé exhaustivement, pondération sans effet ou négative sur ce dataset.",
+      "Défaut **OFF** — testé exhaustivement TV (Compact9) et PL (Compact4, 80 runs `use_flag_permanent_weighting=false`). Pondération sans effet ou négative sur les deux datasets.",
   },
   // Alias requested by spec (canonical name used in the API payload).
   use_flag_permanent_weighting: {
     purpose:
       "Capteurs de type 'Permanent' / 'Siredo' (les plus fiables) reçoivent un poids accru lors de l'entraînement.",
     recommendation:
-      "Défaut **OFF** — testé exhaustivement, pondération sans effet ou négative sur ce dataset.",
+      "Défaut **OFF** — testé exhaustivement TV (Compact9) et PL (Compact4, 80 runs `use_flag_permanent_weighting=false`). Pondération sans effet ou négative sur les deux datasets.",
   },
   flag_priority_weight: {
     purpose:
@@ -417,10 +671,69 @@ export const fieldTooltips: Record<string, FieldTooltip> = {
     recommendation:
       "Défaut **1000** — ajoute des CI95 fiables sur tol_in (coût compute négligeable). `0` désactive.",
   },
+
+  // ── PL features dérivées (Batch Compact4 winner) ─────────────────────────
+  // Tooltips dédiés au modèle Poids Lourds — affichés via la clé `feature_<name>`
+  // dans les chips d'INPUT_COLS lorsque mode === "pl".
+  feature_fcd_log: {
+    purpose:
+      "`log(1 + TMJOFCDPL)` — logarithme naturel du trafic PL FCD, compresse la distribution longue-traîne (skew positif fort) et linéarise la relation entrée → débit corrigé.",
+    recommendation:
+      "Ablation Compact4 : **+3,18 pp tol marginal** (6 subsets avec / 4 sans, 8 seeds). Calculé par `scripts/enrich_fcdrefglobal.py` via `np.log1p(TMJOFCDPL)`. Redondant si `TMJOFCDPL` est présent — garder les deux pour la stabilité.",
+  },
+  feature_tv_pl_ratio: {
+    purpose:
+      "`TMJOFCDTV / (TMJOFCDPL + 0,1)` — ratio trafic VL/PL (floor 0,1 pour éviter div/0). Encode la composition de l'axe : ratio bas (5-15) = axe lourd, ratio élevé (>50) = voie urbaine.",
+    recommendation:
+      "Ablation Compact4 : **+6,07 pp tol marginal**. Calculé par `scripts/enrich_fcdrefglobal.py`. Floor 0,1 (pas 1) pour conserver l'amplitude sur petits flux PL.",
+  },
+  feature_dist_to_lyon_center: {
+    purpose:
+      "Distance Haversine (km) entre le centroïde de la LINESTRING et Place Bellecour (45,7578° N / 4,8320° E). Capte la structure radiale du trafic PL Grand Lyon (pénétrantes vs hyper-centre).",
+    recommendation:
+      "Ablation Compact4 : **+6,41 pp tol marginal** (le plus fort apport individuel). À recalculer si autre territoire (centre local) ; à désactiver sur territoires polycentriques où l'effet radial n'existe pas.",
+  },
+  feature_TMJOFCDPL: {
+    purpose:
+      "TMJA FCD Poids Lourds — input principal du modèle PL, fournit l'intensité brute du trafic PL observée par les FCD HERE.",
+    recommendation:
+      "Toujours présent dans le winner Compact4. Z-scoré par défaut. Pente de TVr la plus marquée en analyse de sensibilité.",
+  },
+  feature_functional_class: {
+    purpose:
+      "Classe fonctionnelle HERE du segment (entier 1-5, 1 = autoroute, 5 = voie résidentielle).",
+    recommendation:
+      "Feature catégorielle — **normalisation OFF** (laisser raw 1-5). Marginale en isolé, utile en combinaison.",
+  },
+  feature_truck_avg_distance_m: {
+    purpose:
+      "Distance inter-trucks moyenne sur le segment (mètres), depuis la donnée FCD HERE.",
+    recommendation:
+      "Une des 4 distances PL inter-trucks. Apporte l'information micro-locale ; retirer une seule distance ne casse pas la convergence (subset 3pl reste à ~80 %).",
+  },
+  feature_truck_avg_min_distance_m: {
+    purpose:
+      "Distance minimale inter-trucks sur le segment (mètres).",
+    recommendation:
+      "Complémentaire à `truck_avg_distance_m` pour capter la variabilité des pelotons PL.",
+  },
+  feature_truck_avg_distance_before_m: {
+    purpose:
+      "Distance moyenne inter-trucks avec le segment précédent (mètres).",
+    recommendation:
+      "Information de continuité amont — utile pour les fins de rampe / sorties d'autoroute.",
+  },
+  feature_truck_avg_distance_after_m: {
+    purpose:
+      "Distance moyenne inter-trucks avec le segment suivant (mètres).",
+    recommendation:
+      "Information de continuité aval — la feature qui distingue le subset gagnant `09` (94 %) du subset `07` (91 % moyen).",
+  },
 };
 
 /**
  * Version stamp for the dismissed-localStorage key. Bump when the panel
  * copy is refreshed — users will see the new recommendations re-appear.
+ * Encodes both the TV winner (D4_8643) and PL winner (Compact4 E3_09).
  */
-export const SAM_COACHING_VERSION = "D4_8643_bs128_ep1500";
+export const SAM_COACHING_VERSION = "D4_8643_bs128_ep1500-PLCompact4_E3_09";

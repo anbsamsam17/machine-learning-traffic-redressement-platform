@@ -25,13 +25,17 @@ from pydantic import BaseModel
 from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
 from ..session import session_manager
+from ..training_guard import (
+    _get_user_lock,
+    release_training_slot,
+)
 from typing import TYPE_CHECKING
 
 from ..services.ml.grid_search import (
     build_feature_sets,
     generate_all_combinations,
 )
-from ..services.ml.types import PL_CONFIG, TV_CONFIG, ModelTypeConfig
+from ..services.ml.types import CONFIGS, PL_CONFIG, TV_CONFIG, ModelTypeConfig
 
 # Top-level constant - keep numeric default available for Pydantic field defaults
 SEED = 1750
@@ -47,10 +51,19 @@ router = APIRouter(prefix="/api/training", tags=["training"])
 class TrainingTask:
     """One in-flight or completed training run."""
 
-    def __init__(self, task_id: str, session_id: str, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        task_id: str,
+        session_id: str,
+        config: dict[str, Any],
+        user_id: str = "",
+    ) -> None:
         self.task_id = task_id
         self.session_id = session_id
         self.config = config
+        # A9: user_id used by the worker to release the per-user training lock
+        # in its try/finally block. Empty string for legacy/unowned tasks.
+        self.user_id = user_id
         self.status: str = "pending"
         self.progress: list[dict[str, Any]] = []
         self.result: dict[str, Any] | None = None
@@ -78,6 +91,9 @@ class TrainingConfig(BaseModel):
     session_id: str
     output_dir: str | None = None
 
+    # Accepts TV / PL / HPM / HPS. HPM/HPS are peak-hour single-output kinds:
+    # convention CEREMA (HPM = h08-h09, HPS = h17-h18), unit v/h, reference
+    # TMJOBCTV_HPM / TMJOBCTV_HPS. Pas de variante PL pour HPM/HPS.
     model_type: str = "TV"
     # Defaults aligned with the 26-column standardised schema (Etape1_MDL_TV).
     # Retrocompat names (TMJAFCDTV / car_* / km) are resolved transparently
@@ -148,8 +164,16 @@ _COL_RENAMES = {
 
 
 def _type_config_for(model_type: str) -> ModelTypeConfig:
-    if model_type and model_type.upper() == "PL":
-        return PL_CONFIG
+    """Resolve ModelTypeConfig from a free-form ``model_type`` string.
+
+    Supported kinds (case-insensitive): ``TV``, ``PL``, ``HPM`` (heure pointe
+    matin, 8h-9h, v/h), ``HPS`` (heure pointe soir, 17h-18h, v/h). HPM and HPS
+    are mono-output peak-hour kinds (no PL variant). Any unknown value silently
+    falls back to TV to preserve the historical default.
+    """
+    key = (model_type or "").upper()
+    if key in CONFIGS:
+        return CONFIGS[key]
     return TV_CONFIG
 
 
@@ -219,23 +243,67 @@ def _serialise_artifact_to_disk(
     *,
     seed: int,
     data_sha256: str,
+    kind: str | None = None,
 ) -> Path:
     """Write a TrainedModelArtifact under out_root/run_name/ in both
-    native .keras and legacy h5+json layouts (+ meta.json)."""
-    model_dir = out_root / artifact.run_name
+    native .keras and legacy h5+json layouts (+ meta.json).
+
+    When *kind* is "HPM" or "HPS" the run_name is prefixed (``model_HPM_*`` /
+    ``model_HPS_*``) so peak-hour models don't get confused with daily TV/PL
+    artifacts that already live in the same models/ folder. TV/PL keep their
+    historical un-prefixed layout (no kind argument or kind in {"TV","PL"}).
+    """
+    run_name = artifact.run_name
+    if kind in ("HPM", "HPS") and not run_name.startswith(f"model_{kind}_"):
+        run_name = f"model_{kind}_{run_name}"
+    model_dir = out_root / run_name
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        artifact.model.save(str(model_dir / "model.keras"))
-    except Exception as save_exc:  # noqa: BLE001
-        logger.warning(
-            "model.save(.keras) failed for %s (%s) - legacy h5 only",
-            artifact.run_name, save_exc,
-        )
-    (model_dir / "NNarchitecture.json").write_text(
-        artifact.model.to_json(), encoding="utf-8",
-    )
-    artifact.model.save_weights(str(model_dir / "NNweights.weights.h5"))
+    # AUDIT BUG P0-5 — TF-backed files (.keras, .weights.h5, NNarchitecture.json)
+    # are now written by the training pipeline itself, *inside* the grid loop,
+    # before tf.keras.backend.clear_session() destroys the underlying graph.
+    # When `_persisted_dir` is stamped on training_config, the TF files are
+    # already on disk and any attempt to re-save here would fail (graph is
+    # dead). We just verify the files exist and skip the save calls.
+    persisted_dir = artifact.training_config.get("_persisted_dir")
+    if persisted_dir and Path(persisted_dir) == model_dir:
+        # Files were written by the pipeline. Just sanity-check they exist.
+        for expected in ("model.keras", "NNarchitecture.json", "NNweights.weights.h5"):
+            if not (model_dir / expected).exists():
+                logger.warning(
+                    "Expected TF file %s missing in %s after pipeline persist",
+                    expected, model_dir,
+                )
+    else:
+        # Legacy path — pipeline didn't persist (e.g. caller didn't pass
+        # _persist_dir, or pipeline persist failed). The graph may still
+        # be alive on the very last artifact of a single-model grid; try
+        # the save anyway, but DON'T swallow exceptions silently.
+        try:
+            artifact.model.save(str(model_dir / "model.keras"))
+        except Exception as save_exc:  # noqa: BLE001
+            logger.error(
+                "model.save(.keras) failed for %s (%s) - legacy h5 only. "
+                "This is expected when training_pipeline.clear_session() ran "
+                "before this save (audit bug P0-5).",
+                artifact.run_name, save_exc,
+            )
+        try:
+            (model_dir / "NNarchitecture.json").write_text(
+                artifact.model.to_json(), encoding="utf-8",
+            )
+        except Exception as arch_exc:  # noqa: BLE001
+            logger.error(
+                "model.to_json() failed for %s: %s",
+                artifact.run_name, arch_exc,
+            )
+        try:
+            artifact.model.save_weights(str(model_dir / "NNweights.weights.h5"))
+        except Exception as w_exc:  # noqa: BLE001
+            logger.error(
+                "model.save_weights failed for %s: %s",
+                artifact.run_name, w_exc,
+            )
 
     coeffs = {
         "muX": [artifact.mu_x.tolist()],
@@ -315,7 +383,23 @@ def _training_worker(task: TrainingTask) -> None:
             data_sha = ""
 
         settings = get_settings()
-        cfg = {**cfg, "_max_grid_combinations": settings.MAX_GRID_COMBINATIONS}
+
+        # AUDIT BUG P0-5 — Pass the persistence sink down to run_training so
+        # the pipeline can save the TF graph BEFORE its in-loop clear_session()
+        # destroys it. The prefix mirrors the historical kind-prefix
+        # convention used by _serialise_artifact_to_disk (HPM/HPS get a
+        # `model_<KIND>_` folder prefix; TV/PL stay un-prefixed).
+        _kind_for_persist = (type_config.kind or type_config.name or "TV").upper()
+        _persist_prefix = (
+            f"model_{_kind_for_persist}_"
+            if _kind_for_persist in ("HPM", "HPS") else ""
+        )
+        cfg = {
+            **cfg,
+            "_max_grid_combinations": settings.MAX_GRID_COMBINATIONS,
+            "_persist_dir": output_dir,
+            "_persist_prefix": _persist_prefix,
+        }
 
         total_combinations = _count_combinations(cfg)
         task.progress.append({
@@ -360,33 +444,49 @@ def _training_worker(task: TrainingTask) -> None:
         else:
             logger.warning("No output_dir specified - models will NOT be saved to disk!")
 
+        # Resolve the kind label so HPM/HPS artifacts land in model_HPM_*
+        # / model_HPS_* folders. TV/PL keep their legacy un-prefixed layout.
+        _kind_label = (type_config.kind or type_config.name or "TV").upper()
         for run_name, artifact in results.items():
             metrics = artifact.training_metrics or {}
             val_loss = float(metrics.get("loss", metrics.get("val_loss", float("nan"))))
             epochs_trained = int(artifact.training_config.get("epochs_trained", 0))
 
+            # Effective on-disk name (may be prefixed for HPM/HPS).
+            disk_name = run_name
+            if _kind_label in ("HPM", "HPS") and not disk_name.startswith(f"model_{_kind_label}_"):
+                disk_name = f"model_{_kind_label}_{disk_name}"
+
+            # Persist the model kind BEFORE the spread so it's visible to API
+            # consumers AND saved to disk via _serialise_artifact_to_disk.
+            artifact.training_config["model_kind"] = _kind_label
+
             results_list.append({
-                "run_name": run_name,
+                "run_name": disk_name,
                 "val_loss": val_loss,
                 "epochs_trained": epochs_trained,
+                "model_kind": _kind_label,
                 **artifact.training_config,
             })
 
             if val_loss == val_loss and val_loss < best_val_loss:
                 best_val_loss = val_loss
-                best_name = run_name
+                best_name = disk_name
 
             if out_path is not None:
                 artifact.training_config["seed"] = seed
                 artifact.training_config["data_sha256"] = data_sha
+                # Belt-and-braces: re-assert model_kind right before disk write.
+                artifact.training_config["model_kind"] = _kind_label
                 _serialise_artifact_to_disk(
                     artifact, out_path, seed=seed, data_sha256=data_sha,
+                    kind=_kind_label,
                 )
 
             task.progress.append({
                 "type": "model_end",
                 "model_index": len(results_list) - 1,
-                "model_name": run_name,
+                "model_name": disk_name,
                 "val_loss": val_loss,
                 "epochs_trained": epochs_trained,
                 "best_val_loss": best_val_loss if best_val_loss != float("inf") else None,
@@ -411,6 +511,12 @@ def _training_worker(task: TrainingTask) -> None:
         task.status = "failed"
         task.error = str(exc)
         logger.exception("Training failed: task=%s", task.task_id)
+    finally:
+        # A9 (training_guard): release the per-user lock acquired in
+        # start_training. Idempotent (release_training_slot ignores
+        # double-release via RuntimeError catch).
+        if task.user_id:
+            release_training_slot(task.user_id)
 
 
 @router.post("/start", response_model=TrainingStartResponse)
@@ -432,6 +538,10 @@ async def start_training(
     settings = get_settings()
 
     user_label = config_dict.get("output_dir") or ""
+    # The on-disk layout keeps every artifact under the session's "models/"
+    # folder. We do NOT add a kind sub-folder here so the existing /list and
+    # /upload-folder endpoints keep working unchanged — instead each run_name
+    # itself is prefixed by the kind (see _serialise_artifact_to_disk below).
     server_output = str(Path(settings.WORKSPACE_ROOT) / body.session_id / "models")
     config_dict["output_dir"] = server_output
     config_dict["output_label"] = user_label
@@ -453,11 +563,23 @@ async def start_training(
             ),
         )
 
+    # A9 (training_guard): acquire the per-user training lock BEFORE
+    # spinning up the worker thread. If the user already has an inflight
+    # training run, raise 409 immediately. The lock is released in the
+    # worker's try/finally block (or here if we fail before launching).
+    user_lock = _get_user_lock(current_user.user_id)
+    if not user_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="Un entrainement est deja en cours pour ce compte.",
+        )
+
     task_id = uuid.uuid4().hex[:12]
     task = TrainingTask(
         task_id=task_id,
         session_id=body.session_id,
         config=config_dict,
+        user_id=current_user.user_id,
     )
 
     with _tasks_lock:
@@ -470,8 +592,14 @@ async def start_training(
     except Exception:
         logger.exception("Failed to persist training_task_id on session %s", body.session_id)
 
-    thread = threading.Thread(target=_training_worker, args=(task,), daemon=True)
-    thread.start()
+    try:
+        thread = threading.Thread(target=_training_worker, args=(task,), daemon=True)
+        thread.start()
+    except Exception:
+        # Failed to start thread — release the lock so the user isn't
+        # stuck on a permanent 409.
+        release_training_slot(current_user.user_id)
+        raise
 
     logger.info(
         "Grid search started: task=%s session=%s combos=%d output_dir=%s max_epochs=%d",

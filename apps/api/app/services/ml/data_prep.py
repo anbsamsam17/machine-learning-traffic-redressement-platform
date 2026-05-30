@@ -48,6 +48,61 @@ def _resolve_aliases(
     return df
 
 
+def derive_hpm_hps_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Derive FCD_HPM_TV, FCD_HPS_TV, TxPen_HPM, TxPen_HPS if absent.
+
+    Idempotent: when the columns already exist (as in the curated
+    ``BCFCDREF_2025_HPM_HPS.geojson`` snapshot), they are left untouched.
+    Otherwise the function falls back to the 24-hour ``FCDTV_h{HH}`` columns
+    produced by upstream enrichment (``FCDTV_h08`` for HPM, ``FCDTV_h17`` for
+    HPS) and computes ``TxPen = FCD / BC * 100`` whenever both numerator and
+    denominator are available.
+
+    Convention CEREMA Grand Lyon :
+    - HPM = heure h08 (8h00-8h59)
+    - HPS = heure h17 (17h00-17h59)
+    - TxPen = FCD / BC * 100 (taux de pénétration, %)
+
+    Notes
+    -----
+    * Mutates the DataFrame in place AND returns it (mirrors the surrounding
+      helpers in this module).
+    * Division by zero or NaN counters silently yields NaN (no exception),
+      consistent with ``_derive_target`` further down.
+    """
+    # ---- 1. Alias hourly FCD columns if direct names are missing ----------
+    if "FCD_HPM_TV" not in df.columns and "FCDTV_h08" in df.columns:
+        df["FCD_HPM_TV"] = pd.to_numeric(df["FCDTV_h08"], errors="coerce")
+    if "FCD_HPS_TV" not in df.columns and "FCDTV_h17" in df.columns:
+        df["FCD_HPS_TV"] = pd.to_numeric(df["FCDTV_h17"], errors="coerce")
+
+    # ---- 2. Compute TxPen_HPM / TxPen_HPS from FCD + BC when possible ----
+    if (
+        "TxPen_HPM" not in df.columns
+        and {"FCD_HPM_TV", "TMJOBCTV_HPM"}.issubset(df.columns)
+    ):
+        fcd_hpm = pd.to_numeric(df["FCD_HPM_TV"], errors="coerce")
+        bc_hpm = pd.to_numeric(df["TMJOBCTV_HPM"], errors="coerce")
+        # Mask out zero / negative counters: division would explode to inf.
+        denom = bc_hpm.where(bc_hpm > 0)
+        df["TxPen_HPM"] = (fcd_hpm / denom * 100.0).replace(
+            [np.inf, -np.inf], np.nan
+        )
+
+    if (
+        "TxPen_HPS" not in df.columns
+        and {"FCD_HPS_TV", "TMJOBCTV_HPS"}.issubset(df.columns)
+    ):
+        fcd_hps = pd.to_numeric(df["FCD_HPS_TV"], errors="coerce")
+        bc_hps = pd.to_numeric(df["TMJOBCTV_HPS"], errors="coerce")
+        denom = bc_hps.where(bc_hps > 0)
+        df["TxPen_HPS"] = (fcd_hps / denom * 100.0).replace(
+            [np.inf, -np.inf], np.nan
+        )
+
+    return df
+
+
 def _derive_target(
     df: pd.DataFrame, type_config: ModelTypeConfig
 ) -> pd.DataFrame:
@@ -298,6 +353,13 @@ def prepare_training_data(
     # Step 1: resolve aliases
     gdf = _resolve_aliases(gdf, type_config)
 
+    # Step 1b: derive HPM / HPS columns (idempotent — only fills gaps).
+    # Done AFTER alias resolution so hourly FCD aliases (FCDTV_h08 etc.)
+    # have already been mapped to the canonical FCD_HPM_TV / FCD_HPS_TV
+    # names where applicable, and BEFORE target derivation so the HPM/HPS
+    # configs can rely on TxPen_HPM / TxPen_HPS being available.
+    gdf = derive_hpm_hps_columns(gdf)
+
     # Step 2: derive target
     gdf = _derive_target(gdf, type_config)
 
@@ -502,26 +564,19 @@ def split_train_valid(
         if idx_valid is not None:
             valid_sample_weight = all_sw[idx_valid]
 
-        # Normalise so sum(weights) == N_train: keeps the effective LR
-        # stable and lets EarlyStopping compare losses across weighted /
-        # non-weighted runs. Same renormalisation rule applied to both
-        # the binary flag scheme (P0.5) and the new log scheme (P2A.4).
+        # P0.5 — normalise so sum(weights) == N_train: keeps the effective
+        # learning rate stable and lets EarlyStopping compare losses across
+        # weighted / non-weighted runs.
         n = len(train_sample_weight)
         total = float(train_sample_weight.sum())
         if total > 0:
             train_sample_weight = train_sample_weight * (n / total)
-        else:
-            # Degenerate: all weights == 0. Fall back to uniform so we do
-            # not produce a fit-time crash inside Keras.
-            train_sample_weight = np.ones(n, dtype=float)
 
         if valid_sample_weight is not None:
             n_v = len(valid_sample_weight)
             total_v = float(valid_sample_weight.sum())
             if total_v > 0:
                 valid_sample_weight = valid_sample_weight * (n_v / total_v)
-            else:
-                valid_sample_weight = np.ones(n_v, dtype=float)
 
     return {
         "x_full": x_full,

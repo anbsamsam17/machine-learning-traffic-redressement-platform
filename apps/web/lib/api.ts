@@ -1,4 +1,8 @@
 /**
+ * apiClient: client HTTP préféré pour les nouveaux endpoints.
+ * TODO: migration progressive depuis fetchWithAuth (lib/auth.ts).
+ * Voir audit T3 — unification recommandée P1.
+ *
  * Centralized typed API client.
  *
  * - Injects `Authorization: Bearer ${token}` on every request.
@@ -8,7 +12,7 @@
  *   are kept so existing call sites keep working while migration completes.
  */
 import { getApiBase, apiUrl } from "./api-url";
-import { getToken, removeToken } from "./auth";
+import { getToken, handleSessionExpired, shouldHandle401 } from "./auth";
 
 export class ApiError extends Error {
   status: number;
@@ -92,13 +96,10 @@ function fullUrl(path: string): string {
 }
 
 async function handle<T>(res: Response): Promise<T> {
-  if (res.status === 401) {
-    // Don't redirect auth endpoints (login/register/me) — let caller handle.
-    const isAuth = res.url.includes("/api/auth/");
-    if (!isAuth && typeof window !== "undefined") {
-      removeToken();
-      window.location.href = "/login";
-    }
+  if (res.status === 401 && shouldHandle401(res.url)) {
+    // Centralized handler: clears the token, shows a toast and
+    // redirects to /login?reason=expired&redirect=<current>.
+    handleSessionExpired();
   }
   if (!res.ok) {
     let detail = res.statusText || "Unknown error";

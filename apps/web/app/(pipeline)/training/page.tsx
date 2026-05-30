@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/api-url";
+import { fetchWithAuth } from "@/lib/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -36,6 +37,7 @@ import { SuccessBanner } from "@/components/ui/success-banner";
 import { useAppStore } from "@/lib/store";
 import { playSuccessDing, spawnConfetti } from "@/lib/success-effects";
 import { samNotify, samMood } from "@/lib/sam-fallback";
+import { useTrainingCancel } from "@/lib/hooks/use-training-cancel";
 
 interface LossPoint {
   epoch: number;
@@ -65,7 +67,7 @@ export default function TrainingPage() {
   const [localOutputDir, setLocalOutputDir] = useState(outputDir ?? "");
 
   const [status, setStatus] = useState<
-    "idle" | "starting" | "running" | "completed" | "failed"
+    "idle" | "starting" | "running" | "completed" | "failed" | "cancelling" | "cancelled"
   >("idle");
   const [currentEpoch, setCurrentEpoch] = useState(0);
   const [totalEpochs, setTotalEpochs] = useState(0);
@@ -113,7 +115,7 @@ export default function TrainingPage() {
   useEffect(() => {
     if (taskId && status === "idle") {
       // Check if task is still running
-      fetch(apiUrl(`/api/training/status/${taskId}`))
+      fetchWithAuth(apiUrl(`/api/training/status/${taskId}`))
         .then((r) => r.json())
         .then((data) => {
           if (data.status === "running" || data.status === "pending") {
@@ -145,7 +147,7 @@ export default function TrainingPage() {
 
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await fetch(apiUrl(`/api/training/status/${tid}`));
+        const res = await fetchWithAuth(apiUrl(`/api/training/status/${tid}`));
         if (!res.ok) return;
         const data = await res.json();
 
@@ -241,6 +243,14 @@ export default function TrainingPage() {
           samNotify.error("Training echoue. Console pour les details.", { title: "Erreur" });
           if (pollingRef.current) clearInterval(pollingRef.current);
         }
+
+        if (data.status === "cancelled") {
+          // Backend a confirme l'annulation — bascule l'UI en etat final
+          // "Annule" et stoppe le polling principal.
+          setStatus("cancelled");
+          addLog("Entrainement annule par l'utilisateur.", "info");
+          if (pollingRef.current) clearInterval(pollingRef.current);
+        }
       } catch {
         // Network error, keep polling
       }
@@ -312,8 +322,11 @@ export default function TrainingPage() {
         output_dir: dirValue || null,
       };
 
-      // Debug: log actual payload keys to verify config is transmitted
-      console.log("[Training] Payload being sent:", JSON.stringify(payload, null, 2));
+      // Debug: log payload only in dev. Bug 3 (T3, P0) — evite de fuiter la
+      // config training en clair dans la console en production.
+      if (process.env.NODE_ENV === "development") {
+        console.log("[Training] Payload being sent:", JSON.stringify(payload, null, 2));
+      }
 
       // Log config summary
       const arr = (k: string) => Array.isArray(payload[k]) ? (payload[k] as unknown[]).length : 1;
@@ -327,7 +340,7 @@ export default function TrainingPage() {
         addLog("Feature subset grid : DESACTIVE (un seul feature set)", "info");
       }
 
-      const res = await fetch(apiUrl("/api/training/start"), {
+      const res = await fetchWithAuth(apiUrl("/api/training/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -365,17 +378,58 @@ export default function TrainingPage() {
     }
   }
 
-  async function handleCancel() {
-    if (!taskId) return;
-    try {
-      await fetch(apiUrl(`/api/training/cancel/${taskId}`), { method: "POST" });
+  // Bug 2 (T1) — handleCancel doit pousser le frontend jusqu'a l'etat
+  // final "cancelled" en pollant le backend apres l'envoi de la demande.
+  // Sans ce polling dedie, l'utilisateur restait bloque sur "Annulation
+  // demandee..." avec barre figee meme apres confirmation backend.
+  const trainingCancel = useTrainingCancel({
+    onRequested: () => {
       addLog("Annulation demandee...", "info");
       toast.info("Annulation en cours");
+    },
+    onConfirmed: () => {
+      // Backend a confirme. Le polling principal a deja pu basculer le
+      // status; on force ici au cas ou la confirmation arrive plus tot.
+      setStatus("cancelled");
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      toast.info("Training annule");
       samNotify.info("Training annule.");
-    } catch {
-      toast.error("Impossible d'annuler");
+    },
+    onTimeout: () => {
+      // Le backend n'a jamais confirme dans la fenetre de 10s — on
+      // bascule quand meme l'UI cote frontend pour debloquer l'utilisateur.
+      setStatus("cancelled");
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      toast.error("Backend n'a pas confirme l'annulation (timeout)");
+    },
+    onError: (msg) => {
+      toast.error(`Impossible d'annuler : ${msg}`);
       samNotify.error("Impossible d'annuler le training.");
-    }
+    },
+  });
+
+  async function handleCancel() {
+    if (!taskId) return;
+    setStatus("cancelling");
+    await trainingCancel.cancel(taskId);
+  }
+
+  // Stop le polling cancel quand le composant unmount.
+  useEffect(() => {
+    return () => trainingCancel.stop();
+  }, [trainingCancel]);
+
+  function handleResetAfterCancel() {
+    // Remet l'UI a l'etat initial pour permettre un nouveau lancement.
+    setStatus("idle");
+    setTaskId(null);
+    setLogs([]);
+    setLossData([]);
+    setBestLoss(null);
+    setCurrentEpoch(0);
+    setTotalEpochs(0);
+    setElapsed(0);
+    setErrorMsg(null);
   }
 
   function goToEvaluation() {
@@ -385,6 +439,23 @@ export default function TrainingPage() {
 
   const overallProgress =
     totalEpochs > 0 ? (currentEpoch / totalEpochs) * 100 : 0;
+
+  // Bonus — ETA simple "reste ~X min". Estimation lineaire :
+  // temps total estime = elapsed * (totalEpochs / currentEpoch)
+  // ETA = total estime - elapsed. Affiche uniquement en cours d'entrainement
+  // et apres quelques epochs pour eviter les estimations folles initiales.
+  const etaSeconds =
+    status === "running" && currentEpoch >= 2 && totalEpochs > 0 && elapsed > 0
+      ? Math.max(0, Math.round((elapsed * totalEpochs) / currentEpoch - elapsed))
+      : null;
+  const etaLabel =
+    etaSeconds === null
+      ? null
+      : etaSeconds < 60
+        ? `~${etaSeconds}s`
+        : etaSeconds < 3600
+          ? `~${Math.round(etaSeconds / 60)} min`
+          : `~${Math.floor(etaSeconds / 3600)}h ${Math.round((etaSeconds % 3600) / 60)}min`;
 
   const logTypeColors: Record<string, string> = {
     info: "text-slate-400",
@@ -449,12 +520,26 @@ export default function TrainingPage() {
       <div className="flex items-center justify-between">
         <div className="space-y-2">
           <GradientText as="h1" className="text-2xl">
-            Entrainement {mode === "pl" ? "PL" : "TV"}
+            Entrainement {
+              mode === "pl"
+                ? "PL"
+                : mode === "hpm"
+                  ? "HPM (8h-9h)"
+                  : mode === "hps"
+                    ? "HPS (17h-18h)"
+                    : "TV"
+            }
           </GradientText>
           <p className="text-sm text-slate-300">
             Entrainement grid search des modeles{" "}
-            {mode === "pl" ? "Poids Lourds" : "Tous Vehicules"}. Suivez la
-            progression en temps reel.
+            {mode === "pl"
+              ? "Poids Lourds"
+              : mode === "hpm"
+                ? "Heure de Pointe Matin (v/h)"
+                : mode === "hps"
+                  ? "Heure de Pointe Soir (v/h)"
+                  : "Tous Vehicules"}
+            . Suivez la progression en temps reel.
           </p>
         </div>
 
@@ -476,6 +561,27 @@ export default function TrainingPage() {
             >
               Annuler
             </NeonButton>
+          )}
+          {status === "cancelling" && (
+            <NeonButton variant="secondary" disabled>
+              Annulation...
+            </NeonButton>
+          )}
+          {status === "cancelled" && (
+            <div className="flex gap-2">
+              <NeonButton
+                variant="ghost"
+                onClick={() => router.push("/config")}
+              >
+                Retour configuration
+              </NeonButton>
+              <NeonButton
+                onClick={handleResetAfterCancel}
+                icon={<Play size={16} />}
+              >
+                Relancer
+              </NeonButton>
+            </div>
           )}
           {status === "completed" && (
             <NeonButton
@@ -553,6 +659,11 @@ export default function TrainingPage() {
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">
               Epoch {currentEpoch} / {totalEpochs || "?"}
+              {etaLabel && (
+                <span className="ml-3 text-slate-500">
+                  Reste {etaLabel}
+                </span>
+              )}
             </span>
             <span className="text-indigo-400 font-medium">
               {Math.round(overallProgress)}%
@@ -606,6 +717,34 @@ export default function TrainingPage() {
                   Entrainement echoue
                 </p>
                 <p className="text-xs text-red-300/70 mt-1">{errorMsg}</p>
+              </motion.div>
+            )}
+            {status === "cancelling" && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center py-3 rounded-lg bg-amber-500/10 border border-amber-500/20"
+              >
+                <p className="text-sm font-medium text-amber-300">
+                  Annulation en cours...
+                </p>
+                <p className="text-xs text-amber-300/70 mt-1">
+                  Attente de la confirmation du serveur.
+                </p>
+              </motion.div>
+            )}
+            {status === "cancelled" && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center py-3 rounded-lg bg-slate-500/10 border border-slate-500/20"
+              >
+                <p className="text-sm font-medium text-slate-200">
+                  Entrainement annule
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Vous pouvez relancer une session ou ajuster la configuration.
+                </p>
               </motion.div>
             )}
           </AnimatePresence>

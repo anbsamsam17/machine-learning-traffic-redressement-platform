@@ -10,9 +10,10 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from pydantic import BaseModel
 
+from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
 from ..error_messages import user_message
 from ..session import session_manager
@@ -69,7 +70,13 @@ class ModelUploadResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
-    """Parse raw bytes into a pandas DataFrame (GeoJSON, CSV, or SHP)."""
+    """Parse raw bytes into a pandas DataFrame (GeoJSON, CSV, SHP, or Parquet).
+
+    Parquet supports the geo-parquet flavour (geometry stored as WKB) used by
+    FCDREFGLOBAL — when present, the geometry column is converted to GeoJSON
+    dicts so the rest of the pipeline (heading, map) can consume it like any
+    other geojson upload.
+    """
     suffix = Path(filename).suffix.lower()
 
     if suffix == ".csv":
@@ -79,6 +86,23 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
             except UnicodeDecodeError:
                 continue
         raise ValueError("Impossible de decoder le fichier CSV.")
+
+    if suffix == ".parquet":
+        try:
+            import geopandas as gpd
+            gdf = gpd.read_parquet(io.BytesIO(content))
+            df = pd.DataFrame(gdf.drop(columns="geometry", errors="ignore"))
+            if "geometry" in gdf.columns:
+                df["geometry"] = gdf["geometry"].apply(
+                    lambda g: g.__geo_interface__ if g else None
+                )
+                df["__geometry_json"] = gdf["geometry"].apply(
+                    lambda g: json.dumps(g.__geo_interface__) if g else None
+                )
+            return df
+        except Exception:
+            # Fall back to plain parquet (no geometry)
+            return pd.read_parquet(io.BytesIO(content))
 
     if suffix in {".geojson", ".json"}:
         raw = json.loads(content.decode("utf-8"))
@@ -141,6 +165,7 @@ async def upload_data(
     request: Request,
     file: UploadFile = File(...),
     mode: str = Form("TV"),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> UploadResponse:
     """Upload a raw data file (GeoJSON, CSV, or zipped Shapefile), parse it in memory."""
     settings = get_settings()
@@ -161,20 +186,22 @@ async def upload_data(
         logger.exception("upload_data: failed to parse file %s", file.filename)
         raise HTTPException(status_code=400, detail=user_message(exc))
 
-    session = session_manager.create_session(mode=mode)
+    # P0-1: bind the session to the authenticated user so subsequent calls
+    # can enforce ownership via `require_owned_session(...)`. Without the
+    # owner, any authenticated user could access any session by guessing
+    # its id (IDOR).
+    session = session_manager.create_session(mode=mode, owner_user_id=current_user.user_id)
     session_manager.store_data(session.session_id, "raw_df", df)
     session_manager.store_data(session.session_id, "filename", file.filename)
 
-    # If the user is authenticated, register this session as their active one
-    # so GET /api/sessions/current can restore the frontend state after a
+    # Register this session as the user's active one so
+    # GET /api/sessions/current can restore the frontend state after a
     # reload (APP-P0-4). Done after data is stored so the very next call to
     # /current already sees a usable session.
-    current_user = await get_current_user_optional(request)
-    if current_user is not None:
-        try:
-            session_manager.set_user_session(current_user.user_id, session.session_id)
-        except Exception:
-            logger.exception("Failed to bind session %s to user %s", session.session_id, current_user.user_id)
+    try:
+        session_manager.set_user_session(current_user.user_id, session.session_id)
+    except Exception:
+        logger.exception("Failed to bind session %s to user %s", session.session_id, current_user.user_id)
 
     preview = df.head(10).fillna("").to_dict(orient="records")
     # Convert geometry dicts to string in preview for JSON serialization
@@ -201,11 +228,12 @@ async def upload_data(
 async def upload_validation_data(
     file: UploadFile = File(...),
     session_id: str = Form(...),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> ValidationUploadResponse:
     """Upload a validation dataset for model evaluation."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    # P0-2: enforce ownership — refuses cross-tenant access with 404 (not 403
+    # to avoid leaking session id existence).
+    session = require_owned_session(session_id, current_user)
 
     settings = get_settings()
     content = await file.read()
@@ -240,11 +268,11 @@ async def upload_validation_data(
 async def upload_model(
     file: UploadFile = File(...),
     session_id: str = Form(...),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> ModelUploadResponse:
     """Upload a model archive (.zip containing .h5, .json, .mat)."""
-    session = session_manager.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    # P0-2: enforce ownership before touching the session.
+    session = require_owned_session(session_id, current_user)
 
     content = await file.read()
     if not (file.filename or "").lower().endswith(".zip"):

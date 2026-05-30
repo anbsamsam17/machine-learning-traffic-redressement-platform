@@ -4,8 +4,11 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { apiUrl } from "./api-url";
 import { fetchWithAuth } from "./auth";
+import type { AppMode } from "./types/api";
 
-export type AppMode = "tv" | "pl" | "carte" | "compteurs" | null;
+// Re-export so existing call sites `import { AppMode } from "@/lib/store"` keep
+// working. Single source of truth lives in `lib/types/api.ts` (T3 unification).
+export type { AppMode };
 
 export interface PipelineStep {
   id: string;
@@ -145,7 +148,15 @@ export const useAppStore = create<AppState>()(
           if (!data || !data.session_id) return false;
 
           const currentStep = backendStepToStepperIndex(data.step);
-          const normalizedMode = (data.mode === "pl" ? "pl" : "tv") as AppMode;
+          // Accept tv / pl / hpm / hps from backend (case-insensitive).
+          // Backend sends ModelKind in uppercase (TV/PL/HPM/HPS); the
+          // frontend store uses lowercase variants.
+          const rawMode = String(data.mode ?? "").toLowerCase();
+          const normalizedMode = (
+            rawMode === "pl" || rawMode === "hpm" || rawMode === "hps"
+              ? rawMode
+              : "tv"
+          ) as AppMode;
 
           set((s) => ({
             // Always trust the backend session id over whatever is in sessionStorage

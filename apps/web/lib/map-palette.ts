@@ -46,14 +46,23 @@ export function getColorForTVr(value: number): string {
   return color;
 }
 
+// Lookup avec fallback : nouveau schema utilise `JOr` (rename TVr->JOr cascade
+// complet, cf carte.py changement 4). On garde `TVr` en alias pour les
+// GeoJSON historiques. ["coalesce", a, b, c] retourne le premier non-null/
+// non-undefined ; MapLibre traite null/undefined comme "absent" donc on
+// utilise coalesce.
+const _trafficGet = (): unknown =>
+  ["to-number", ["coalesce", ["get", "JOr"], ["get", "TVr"]], 0];
+
 /**
- * Build a Maplibre `step` paint expression keyed on the `TVr` property.
+ * Build a Maplibre `step` paint expression keyed on the `JOr` property
+ * (legacy alias `TVr` supporte via coalesce).
  * Format: ["step", input, default, stop1, color1, stop2, color2, ...]
  */
 export function buildTvrStepExpression(): unknown[] {
   const expr: unknown[] = [
     "step",
-    ["to-number", ["get", "TVr"], 0],
+    _trafficGet(),
     TVR_STOPS[0].color, // values < first threshold (none, since first.min === 0)
   ];
   for (let i = 1; i < TVR_STOPS.length; i++) {
@@ -63,30 +72,31 @@ export function buildTvrStepExpression(): unknown[] {
 }
 
 /**
- * Compute line width as a function of zoom + TVr (heavier segments stay
- * visible when zoomed out, fine streets get thinner).
+ * Compute line width as a function of zoom + JOr (heavier segments stay
+ * visible when zoomed out, fine streets get thinner). Legacy alias `TVr`
+ * supporte via coalesce.
  */
 export function buildLineWidthExpression(): unknown[] {
   // interpolate(linear, zoom, z1, w1, z2, w2)
-  // and inside, scale by TVr magnitude.
+  // and inside, scale by JOr magnitude (coalesce TVr fallback).
   return [
     "interpolate",
     ["linear"],
     ["zoom"],
     8, [
-      "interpolate", ["linear"], ["to-number", ["get", "TVr"], 0],
+      "interpolate", ["linear"], _trafficGet(),
       0, 0.6,
       2000, 1.0,
       10000, 1.8,
     ],
     13, [
-      "interpolate", ["linear"], ["to-number", ["get", "TVr"], 0],
+      "interpolate", ["linear"], _trafficGet(),
       0, 1.2,
       2000, 2.2,
       10000, 4.5,
     ],
     17, [
-      "interpolate", ["linear"], ["to-number", ["get", "TVr"], 0],
+      "interpolate", ["linear"], _trafficGet(),
       0, 2.0,
       2000, 4.0,
       10000, 8.0,

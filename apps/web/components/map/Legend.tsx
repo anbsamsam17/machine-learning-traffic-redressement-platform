@@ -39,7 +39,7 @@ export function Legend({
         className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-white/5"
         aria-expanded={!collapsed}
       >
-        <span>Trafic TVr (veh/j)</span>
+        <span>Trafic JOr (veh/j)</span>
         {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
 

@@ -5,8 +5,12 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   Car,
   Truck,
+  Sunrise,
+  Sunset,
   Map,
   Activity,
+  MapPinned,
+  AlertCircle,
   Menu,
   X,
   LogOut,
@@ -21,8 +25,12 @@ import type { AuthMeResponse } from "@/lib/types/api";
 const MODES = [
   { key: "tv" as AppMode, label: "Modele TV", icon: Car, path: "/donnees" },
   { key: "pl" as AppMode, label: "Modele PL", icon: Truck, path: "/donnees" },
+  { key: "hpm" as AppMode, label: "Modele HPM", icon: Sunrise, path: "/donnees" },
+  { key: "hps" as AppMode, label: "Modele HPS", icon: Sunset, path: "/donnees" },
   { key: "carte" as AppMode, label: "Carte", icon: Map, path: "/carte" },
   { key: "compteurs" as AppMode, label: "Compteurs", icon: Activity, path: "/compteurs" },
+  { key: "visualisation" as AppMode, label: "Visualisation", icon: MapPinned, path: "/visualisation" },
+  { key: "discontinuites" as AppMode, label: "Discontinuites", icon: AlertCircle, path: "/discontinuites" },
 ] as const;
 
 export function AppHeader() {

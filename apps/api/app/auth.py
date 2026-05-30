@@ -20,13 +20,14 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 import bcrypt
 from pydantic import BaseModel, EmailStr
 
 from .config import get_settings
+from .rate_limit import limit_auth_login, limit_auth_register
 from .session import Session, session_manager
 
 logger = logging.getLogger(__name__)
@@ -315,7 +316,9 @@ class UserResponse(BaseModel):
 # here for the future router-level decorators expected by A6.
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest) -> UserResponse:
+@limit_auth_register()
+async def register(request: Request, body: RegisterRequest) -> UserResponse:
+    """P0-6: 5 registrations per hour per IP — caps account enumeration."""
     if len(body.password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -330,7 +333,9 @@ async def register(body: RegisterRequest) -> UserResponse:
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, response: Response) -> TokenResponse:
+@limit_auth_login()
+async def login(request: Request, body: LoginRequest, response: Response) -> TokenResponse:
+    """P0-6: 10 logins per minute per IP — slows brute-force attacks."""
     user = user_store.authenticate(body.email, body.password)
     if user is None:
         raise HTTPException(

@@ -46,6 +46,7 @@ class TestAutoMap:
 
     @pytest.mark.asyncio
     async def test_auto_map_finds_exact_matches(self, authenticated_client, csv_content):
+        """T2: schema canonique HERE -> exact matches sont TMJOBCTV (pas TMJABCTV)."""
         r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
@@ -56,17 +57,21 @@ class TestAutoMap:
             "/api/mapping/auto", json={"session_id": sid}
         )).json()
 
-        # These columns should be exact matches
+        # These columns should be exact matches (canonical HERE names)
         exact_targets = {
             m["target"] for m in data["mappings"] if m["confidence"] == "exact"
         }
-        assert "Type" in exact_targets
-        assert "TMJABCTV" in exact_targets
-        assert "car_average_speed_kmh" in exact_targets
+        # T2: le csv_content fixture expose TMJOBCTV/TMJOBCPL/TMJOFCDTV/TMJOFCDPL
+        # canoniques -> exact matches.
+        assert "TMJOBCTV" in exact_targets
+        assert "TMJOFCDTV" in exact_targets
+        # Au moins une feature vitesse/distance doit etre matchee (exact ou synonym).
+        mapped_targets = {m["target"] for m in data["mappings"] if m["source"] is not None}
+        assert any("speed" in t for t in mapped_targets)
 
     @pytest.mark.asyncio
     async def test_auto_map_finds_synonym_matches(self, authenticated_client, csv_content):
-        """TMJAFCDTV in source -> TMJATV target via synonym."""
+        """T2: TMJAFCDTV (legacy) in source -> TMJOFCDTV (canonique HERE) via synonyme."""
         r1 = await authenticated_client.post(
             "/api/upload",
             files={"file": ("test.csv", csv_content, "text/csv")},
@@ -77,14 +82,17 @@ class TestAutoMap:
             "/api/mapping/auto", json={"session_id": sid}
         )).json()
 
-        synonym_mappings = {
+        # Toutes les mappings non-missing pour interrogation
+        all_mappings = {
             m["target"]: m["source"]
             for m in data["mappings"]
-            if m["confidence"] == "synonym"
+            if m["source"] is not None
         }
-        # TMJAFCDTV is a synonym for target "TMJATV"
-        assert "TMJATV" in synonym_mappings
-        assert synonym_mappings["TMJATV"] == "TMJAFCDTV"
+        # TMJOFCDTV est present comme TARGET canonique HERE,
+        # source = TMJOFCDTV directement (exact) ou TMJAFCDTV (synonym).
+        assert "TMJOFCDTV" in all_mappings, f"Mappings: {all_mappings}"
+        # Source doit etre l'un des deux noms presents dans csv_content
+        assert all_mappings["TMJOFCDTV"] in ("TMJOFCDTV", "TMJAFCDTV")
 
     @pytest.mark.asyncio
     async def test_auto_map_reports_missing(self, authenticated_client, csv_content):

@@ -20,6 +20,8 @@ infrastructure lives here so it is testable in isolation.
 
 from __future__ import annotations
 
+import os
+import sys
 from typing import Callable
 
 from slowapi import Limiter
@@ -44,9 +46,24 @@ def _user_or_ip_key(request: Request) -> str:
     return f"ip:{get_remote_address(request)}"
 
 
+# Rate limiting can be disabled via the ``DISABLE_RATE_LIMIT`` env var, or is
+# auto-disabled when the process is running under pytest. The test suite
+# registers and logs in many users from 127.0.0.1 — without disabling we'd
+# trip the 5/hour register cap after a handful of tests. Production
+# deployments leave the var unset and never run via pytest, so the auth caps
+# (P0-6) stay effective.
+_RATE_LIMIT_DISABLED = (
+    os.environ.get("DISABLE_RATE_LIMIT", "").lower() in {"1", "true", "yes"}
+    or "pytest" in sys.modules
+)
+
 # Default policy is intentionally permissive (200/minute) — actual hard
 # limits are applied per route via the decorators below.
-limiter = Limiter(key_func=_user_or_ip_key, default_limits=["200/minute"])
+limiter = Limiter(
+    key_func=_user_or_ip_key,
+    default_limits=["200/minute"],
+    enabled=not _RATE_LIMIT_DISABLED,
+)
 
 
 # Convenience decorator factories — keeps router code readable and lets

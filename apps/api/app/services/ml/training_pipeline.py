@@ -7,10 +7,12 @@ No disk I/O is performed.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
 from datetime import datetime
+from pathlib import Path
 import threading  # noqa: F401 -- used in type hint string
 from typing import Any, Callable
 
@@ -284,6 +286,10 @@ def _train_single(
     has_validation = x_valid_norm is not None and y_valid_norm is not None
     early_stop_monitor = "val_loss" if has_validation else "loss"
 
+    # P0.3 — min_delta=1e-4 avoids stopping on noisy oscillations of the
+    # small (5%) validation set. Combined with start_from_epoch (= the
+    # user-requested minimum) so the model always trains the asked minimum
+    # before EarlyStopping can trip.
     early_stop = keras.callbacks.EarlyStopping(
         monitor=early_stop_monitor,
         patience=patience,
@@ -538,6 +544,71 @@ def _train_single(
 
 
 # ---------------------------------------------------------------------------
+# Per-artifact TF serialization (must run BEFORE tf.keras.backend.clear_session)
+# ---------------------------------------------------------------------------
+
+def _persist_tf_artifact(
+    artifact: "TrainedModelArtifact",
+    out_root: Path,
+    *,
+    run_name: str,
+) -> Path:
+    """Serialize the TF model + weights + architecture to disk for one artifact.
+
+    AUDIT BUG P0-5 — Originally `tf.keras.backend.clear_session()` ran in the
+    grid-search loop right after the artifact was stored in ``results``. The
+    Python reference to ``artifact.model`` survived, but the underlying TF
+    graph was destroyed, so any later ``artifact.model.save("model.keras")``
+    in the caller (``training.py:_serialise_artifact_to_disk``) raised — and
+    the exception was swallowed by a broad ``except: pass``. Net effect:
+    the native ``.keras`` format was silently lost for the whole grid.
+
+    Fix: write every TF-backed file (``model.keras``, ``NNweights.weights.h5``,
+    ``NNarchitecture.json``) here, *inside the loop, before* clear_session.
+    The caller still writes the pure-JSON metadata (training_config, metrics,
+    norm coefficients, meta) — those don't touch the TF graph and are safe
+    to defer.
+
+    Returns the directory the artifact was written to. The path is also
+    stamped on ``artifact.training_config["_persisted_dir"]`` so the caller
+    knows the TF files are already on disk and must skip re-saving them.
+    """
+    model_dir = out_root / run_name
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    # Native .keras (TF 2.15+ recommended single-file format). Must be written
+    # while the TF graph is alive.
+    try:
+        artifact.model.save(str(model_dir / "model.keras"))
+    except Exception as exc:  # noqa: BLE001 — log loudly, never swallow.
+        _logger.error(
+            "model.save(.keras) failed for %s in %s: %s",
+            run_name, model_dir, exc,
+        )
+
+    # Architecture (JSON, also requires a live graph for to_json()).
+    try:
+        (model_dir / "NNarchitecture.json").write_text(
+            artifact.model.to_json(), encoding="utf-8",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _logger.error(
+            "model.to_json() failed for %s: %s", run_name, exc,
+        )
+
+    # Legacy h5 weights (kept for backward compat with downstream code that
+    # still loads weights-only artifacts).
+    try:
+        artifact.model.save_weights(str(model_dir / "NNweights.weights.h5"))
+    except Exception as exc:  # noqa: BLE001
+        _logger.error(
+            "model.save_weights failed for %s: %s", run_name, exc,
+        )
+
+    return model_dir
+
+
+# ---------------------------------------------------------------------------
 # Full grid search pipeline
 # ---------------------------------------------------------------------------
 
@@ -580,8 +651,10 @@ def run_training(
     # this guarantees each (run_idx) yields a reproducible outcome.
     try:
         tf.config.experimental.enable_op_determinism()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 — non-fatal on older TF
+        _logger.debug(
+            "enable_op_determinism unavailable on this TF build: %s", exc,
+        )
 
     # Prepare data
     prepared = prepare_training_data(df, type_config, config=config)
@@ -655,6 +728,31 @@ def run_training(
             "Unknown scaler '%s'; falling back to 'standard'.", scaler_cfg
         )
         scaler_cfg = "standard"
+
+    # AUDIT BUG P0-5 — Optional in-loop TF persistence. When `_persist_dir`
+    # is set, every artifact's TF-backed files (.keras, .weights.h5,
+    # NNarchitecture.json) are serialised *inside* the grid loop, BEFORE
+    # `tf.keras.backend.clear_session()` runs. This is the only safe moment
+    # to write them: clear_session destroys the TF graph behind every model
+    # already accumulated in `results`, so any deferred `model.save(...)`
+    # by the caller silently fails.
+    #
+    # `_persist_prefix` mirrors the historical kind-prefix convention
+    # (model_HPM_* / model_HPS_*) so the caller can keep its routing logic.
+    _persist_dir_cfg = config.get("_persist_dir") or config.get("output_dir")
+    _persist_prefix_cfg = str(config.get("_persist_prefix", "") or "")
+    _persist_root: Path | None = None
+    if _persist_dir_cfg:
+        try:
+            _persist_root = Path(str(_persist_dir_cfg))
+            _persist_root.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:  # noqa: BLE001 — log + disable, never crash training
+            _logger.error(
+                "Failed to prepare TF persist dir %s: %s — TF saves will be "
+                "skipped, caller will fall back to the legacy (and broken) path.",
+                _persist_dir_cfg, exc,
+            )
+            _persist_root = None
 
     # Bug 5 — year_embedding plumbing. The request body field is
     # `use_year_embedding`; legacy callers used `year_embedding`. Accept both.
@@ -987,17 +1085,44 @@ def run_training(
                     feature_engineering_echo=_fe_block,
                 )
                 # Stamp multi-seed metadata in the echo for downstream code.
+                # Failing here would corrupt downstream reporting, so log
+                # explicitly rather than swallowing silently (audit bonus).
                 try:
                     artifact.training_config["n_seeds"] = int(n_seeds)
                     artifact.training_config["seed_index"] = int(seed_idx)
                     artifact.training_config["base_run_name"] = combo.run_name
-                except Exception:  # noqa: BLE001 — defensive only
-                    pass
+                except Exception as exc:  # noqa: BLE001 — defensive
+                    _logger.error(
+                        "Failed to stamp multi-seed metadata on %s: %s",
+                        run_name_eff, exc,
+                    )
+
+                # AUDIT BUG P0-5 — Persist TF-backed files NOW, while the
+                # graph is still alive. clear_session() below will destroy
+                # the graph behind every model already in `results`, so any
+                # later artifact.model.save(...) call by the caller will
+                # raise. Writing here (and stamping `_persisted_dir` on the
+                # config) lets the caller skip the broken re-save path.
+                if _persist_root is not None:
+                    disk_run_name = f"{_persist_prefix_cfg}{run_name_eff}"
+                    try:
+                        persisted_dir = _persist_tf_artifact(
+                            artifact, _persist_root, run_name=disk_run_name,
+                        )
+                        artifact.training_config["_persisted_dir"] = str(persisted_dir)
+                        artifact.training_config["_persisted_run_name"] = disk_run_name
+                    except Exception as exc:  # noqa: BLE001 — never crash the grid
+                        _logger.error(
+                            "TF persistence failed for %s: %s — caller will "
+                            "fall back to legacy save (likely broken).",
+                            run_name_eff, exc,
+                        )
 
                 results[run_name_eff] = artifact
                 # C7: free TF state between every model (not just between
                 # feature groups) — long grids otherwise leak ~hundreds of
-                # MB on CPU.
+                # MB on CPU. SAFE here because _persist_tf_artifact() above
+                # already wrote every TF-backed file to disk.
                 import gc as _gc
                 del artifact
                 _gc.collect()

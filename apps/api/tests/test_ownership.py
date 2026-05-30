@@ -190,3 +190,138 @@ class TestPickleRefused:
         assert len(out) == 2
         # Dict was cast to JSON str; never pickled.
         assert isinstance(out.loc[0, "geometry"], str)
+
+
+# ---------------------------------------------------------------------------
+# T2 — IDOR cross-tenant via HTTP routers
+# ---------------------------------------------------------------------------
+#
+# Ces tests vont au-dela des helpers (get_owned_session / require_owned_session)
+# pour valider que les ROUTERS HTTP refusent bien le cross-tenant.
+#
+# NOTE : ils dependent du fix de l'agent A1 (securite) qui plugue
+# `require_owned_session` partout. Si A1 n'a pas fini, certains peuvent
+# echouer avec 200 au lieu de 403/404.
+
+class TestIDORCrossTenantHTTP:
+    """User B ne doit JAMAIS pouvoir acceder a la session de User A."""
+
+    async def _register_and_login(self, client, email: str, password: str = "test-pass-12345") -> dict:
+        """Register + login un user via le client async, retourne le token."""
+        r = await client.post("/api/auth/register", json={"email": email, "password": password})
+        # 201 si nouveau, 409 si deja existe (re-login OK dans ce cas)
+        assert r.status_code in (200, 201, 409), r.text
+        r = await client.post("/api/auth/login", json={"email": email, "password": password})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    @pytest.mark.asyncio
+    async def test_upload_creates_owned_session(self, authenticated_client, csv_content):
+        """POST /api/upload retourne une session avec owner_user_id non-vide."""
+        r = await authenticated_client.post(
+            "/api/upload",
+            files={"file": ("data.csv", csv_content, "text/csv")},
+            data={"mode": "TV"},
+        )
+        assert r.status_code == 200
+        sid = r.json()["session_id"]
+        # Verifier au niveau backend que la session a bien un owner
+        from app.session import session_manager
+        sess = session_manager.get_session(sid)
+        assert sess is not None
+        assert sess.owner_user_id  # non-vide
+        # L'owner doit correspondre a l'user de authenticated_client
+        assert sess.owner_user_id == authenticated_client.user_id
+
+    @pytest.mark.asyncio
+    async def test_user_b_cannot_access_user_a_session(self, client, csv_content):
+        """User A cree une session ; User B (autre token) -> 404 sur acces."""
+        # User A : register + login + upload
+        suffix_a = secrets.token_hex(4)
+        tok_a = await self._register_and_login(client, f"alice+{suffix_a}@example.com")
+        client.headers.update({"Authorization": f"Bearer {tok_a['access_token']}"})
+        r = await client.post(
+            "/api/upload",
+            files={"file": ("data.csv", csv_content, "text/csv")},
+            data={"mode": "TV"},
+        )
+        assert r.status_code == 200
+        sid_a = r.json()["session_id"]
+
+        # User B : autre register + login
+        suffix_b = secrets.token_hex(4)
+        tok_b = await self._register_and_login(client, f"bob+{suffix_b}@example.com")
+        client.headers.update({"Authorization": f"Bearer {tok_b['access_token']}"})
+
+        # User B tente d'acceder a la session A
+        # On essaie plusieurs routes proteges par require_owned_session
+        # (au moins une doit refuser le cross-tenant)
+        # /api/sessions/{sid} (si la route existe)
+        # /api/mapping/auto
+        r_b = await client.post(
+            "/api/mapping/auto",
+            json={"session_id": sid_a},
+        )
+        # Accept 404 (no leak) ou 403 (explicit forbid). NE PAS accepter 200.
+        assert r_b.status_code in (403, 404), (
+            f"IDOR leak: user B got status={r_b.status_code} for user A's session"
+        )
+
+    @pytest.mark.asyncio
+    async def test_mapping_auto_requires_ownership(self, client, csv_content):
+        """User B -> 403/404 sur /api/mapping/auto avec session_id de user A."""
+        # User A
+        suffix_a = secrets.token_hex(4)
+        tok_a = await self._register_and_login(client, f"alice2+{suffix_a}@example.com")
+        client.headers.update({"Authorization": f"Bearer {tok_a['access_token']}"})
+        r = await client.post(
+            "/api/upload",
+            files={"file": ("data.csv", csv_content, "text/csv")},
+            data={"mode": "TV"},
+        )
+        sid_a = r.json()["session_id"]
+
+        # User B
+        suffix_b = secrets.token_hex(4)
+        tok_b = await self._register_and_login(client, f"bob2+{suffix_b}@example.com")
+        client.headers.update({"Authorization": f"Bearer {tok_b['access_token']}"})
+        r_b = await client.post(
+            "/api/mapping/auto",
+            json={"session_id": sid_a},
+        )
+        assert r_b.status_code in (403, 404)
+
+    @pytest.mark.asyncio
+    async def test_models_list_requires_ownership(self, client, csv_content):
+        """User B -> 403/404 sur /api/models/list?session_id=<session de A>."""
+        suffix_a = secrets.token_hex(4)
+        tok_a = await self._register_and_login(client, f"alice3+{suffix_a}@example.com")
+        client.headers.update({"Authorization": f"Bearer {tok_a['access_token']}"})
+        r = await client.post(
+            "/api/upload",
+            files={"file": ("data.csv", csv_content, "text/csv")},
+            data={"mode": "TV"},
+        )
+        sid_a = r.json()["session_id"]
+
+        suffix_b = secrets.token_hex(4)
+        tok_b = await self._register_and_login(client, f"bob3+{suffix_b}@example.com")
+        client.headers.update({"Authorization": f"Bearer {tok_b['access_token']}"})
+        r_b = await client.get(f"/api/models/list?session_id={sid_a}")
+        assert r_b.status_code in (403, 404)
+
+    @pytest.mark.asyncio
+    async def test_path_traversal_session_id(self, authenticated_client):
+        """session_id avec traversal ('../../etc') -> 400/404/422 (jamais 200)."""
+        # Plusieurs routes (au moins une rejette explicitement)
+        # /api/sessions/{path} ne va pas matcher car aucune session existe ;
+        # mais on doit avoir 404 et NOT 500 stack trace.
+        for endpoint, method, kwargs in [
+            ("/api/mapping/auto", "post", {"json": {"session_id": "../../etc/passwd"}}),
+            ("/api/models/list?session_id=../../etc", "get", {}),
+        ]:
+            r = await getattr(authenticated_client, method)(endpoint, **kwargs)
+            # Pas de 200 et pas de 500 (= leak ou stack trace).
+            assert r.status_code in (400, 403, 404, 422), (
+                f"path traversal on {endpoint}: status={r.status_code}"
+            )

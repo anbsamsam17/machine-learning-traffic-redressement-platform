@@ -85,6 +85,17 @@ export function MapView({
 
     map.on("load", () => {
       setStyleLoaded(true);
+      // Expose the underlying map handle via a custom event so external
+      // hosts (e.g. /carte/visualiser/[id] for search → flyTo + popup) can
+      // drive the map without props/ref plumbing. Optional consumer — the
+      // event is harmless if no one listens.
+      try {
+        window.dispatchEvent(
+          new CustomEvent("carte-map-ready", { detail: { map } }),
+        );
+      } catch {
+        // Old browsers / SSR — ignore.
+      }
     });
 
     // Inject popup CSS once
@@ -257,7 +268,10 @@ export function MapView({
 
     const conditions: unknown[] = ["all"];
     if (filters?.minTvr && filters.minTvr > 0) {
-      conditions.push([">=", ["to-number", ["get", "TVr"], 0], filters.minTvr]);
+      // Output GeoJSON expose `JOr` (rename TVr->JOr cascade complet,
+      // cf carte.py changement 4). Coalesce avec `TVr` pour compat
+      // avec d'eventuels GeoJSON historiques.
+      conditions.push([">=", ["to-number", ["coalesce", ["get", "JOr"], ["get", "TVr"]], 0], filters.minTvr]);
     }
     if (filters?.excludeFc1) {
       conditions.push(["!=", ["to-number", ["get", "FC"], 0], 1]);

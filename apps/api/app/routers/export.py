@@ -24,13 +24,40 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 # Routes
 # ---------------------------------------------------------------------------
 
+def _resolve_export_kind(session, model_name: str) -> str:
+    """Best-effort resolution of the model kind for the export filename.
+
+    Reads, in priority :
+    1. ``model_kind`` echoed inside the session's ``norm_params`` /
+       ``training_result`` payloads.
+    2. ``model_name`` prefix (``model_HPM_*`` / ``model_HPS_*`` / ``model_PL_*``).
+    3. Default ``"TV"``.
+    """
+    for key in ("model_kind", "training_config"):
+        val = session.data.get(key)
+        if isinstance(val, dict):
+            k = str(val.get("model_kind") or "").upper()
+            if k in {"TV", "PL", "HPM", "HPS"}:
+                return k
+        if isinstance(val, str) and val.upper() in {"TV", "PL", "HPM", "HPS"}:
+            return val.upper()
+    fn_up = (model_name or "").upper()
+    for k in ("HPM", "HPS", "PL", "TV"):
+        if fn_up.startswith(f"MODEL_{k}_"):
+            return k
+    return "TV"
+
+
 @router.get("/model/{session_id}/{model_name}")
 async def export_model(
     session_id: str,
     model_name: str,
     current_user: UserRecord = Depends(get_current_user),
 ) -> Response:
-    """Export trained model as a ZIP archive (model.json + weights.h5 + norm_params.json)."""
+    """Export trained model as a ZIP archive (model.json + weights.h5 + norm_params.json).
+
+    Le nom du ZIP inclut le kind ("model_TV_xxx.zip", "model_HPM_xxx.zip", ...).
+    """
     session = require_owned_session(session_id, current_user)
 
     model_json_str = session.data.get("trained_model_json")
@@ -66,12 +93,22 @@ async def export_model(
             )
 
     zip_bytes = buf.getvalue()
-    logger.info("Model exported: session=%s name=%s size=%d bytes", session_id, model_name, len(zip_bytes))
+    # Inject le kind dans le nom du ZIP exporte (HPM / HPS / PL / TV).
+    kind = _resolve_export_kind(session, model_name)
+    fn_up = (model_name or "").upper()
+    already_prefixed = any(
+        fn_up.startswith(f"MODEL_{k}_") for k in ("TV", "PL", "HPM", "HPS")
+    )
+    export_basename = model_name if already_prefixed else f"model_{kind}_{model_name}"
+    logger.info(
+        "Model exported: session=%s name=%s kind=%s size=%d bytes",
+        session_id, model_name, kind, len(zip_bytes),
+    )
 
     return Response(
         content=zip_bytes,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{model_name}.zip"'},
+        headers={"Content-Disposition": f'attachment; filename="{export_basename}.zip"'},
     )
 
 

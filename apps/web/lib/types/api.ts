@@ -75,4 +75,11 @@ export interface AuthMeResponse {
   id?: string;
 }
 
-export type AppMode = "tv" | "pl" | "carte" | "compteurs" | null;
+export type AppMode = "tv" | "pl" | "hpm" | "hps" | "carte" | "compteurs" | "visualisation" | "discontinuites" | null;
+
+/**
+ * Backend ModelKind — uppercase variants sent in API payloads (e.g. /api/upload
+ * `mode` form field, /api/evaluation/run). The frontend store keeps lowercase
+ * variants; convert via `mode.toUpperCase()` when emitting to the backend.
+ */
+export type ModelKind = "TV" | "PL" | "HPM" | "HPS";

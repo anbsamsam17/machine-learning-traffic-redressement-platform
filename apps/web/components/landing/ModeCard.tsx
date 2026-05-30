@@ -59,6 +59,26 @@ const ACCENT: Record<
     cta: "text-emerald-300 group-hover:text-emerald-200",
     glow: "group-hover:shadow-[0_8px_30px_-12px_rgba(16,185,129,0.5)]",
   },
+  // HPM — Heure de Pointe Matin (lever du soleil, orange chaud).
+  rose: {
+    iconBg: "bg-rose-500/10",
+    iconText: "text-rose-300",
+    border: "hover:border-rose-400/40",
+    chip: "border-rose-400/15 text-rose-200/90",
+    badge: "bg-rose-500/15 text-rose-200 border-rose-400/25",
+    cta: "text-rose-300 group-hover:text-rose-200",
+    glow: "group-hover:shadow-[0_8px_30px_-12px_rgba(244,63,94,0.5)]",
+  },
+  // HPS — Heure de Pointe Soir (coucher du soleil, violet/magenta).
+  violet: {
+    iconBg: "bg-violet-500/10",
+    iconText: "text-violet-300",
+    border: "hover:border-violet-400/40",
+    chip: "border-violet-400/15 text-violet-200/90",
+    badge: "bg-violet-500/15 text-violet-200 border-violet-400/25",
+    cta: "text-violet-300 group-hover:text-violet-200",
+    glow: "group-hover:shadow-[0_8px_30px_-12px_rgba(139,92,246,0.5)]",
+  },
 };
 
 export function ModeCard({ mode, onSelect, index = 0 }: ModeCardProps) {

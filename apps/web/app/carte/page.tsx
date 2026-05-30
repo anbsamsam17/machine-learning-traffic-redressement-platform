@@ -1,90 +1,58 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Map,
+  AlertCircle,
   ArrowLeft,
-  Play,
-  Download,
-  Layers,
-  CheckCircle2,
-  XCircle,
-  SlidersHorizontal,
-  Filter,
-  Truck,
   Car,
-  Loader2,
-  FolderOpen,
-  X,
+  Download,
+  Filter,
+  Layers,
+  Map,
+  Sunrise,
+  Sunset,
+  Truck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AuroraBg } from "@/components/backgrounds/aurora-bg";
-import { GradientText } from "@/components/ui/gradient-text";
 import { GlowCard } from "@/components/ui/glow-card";
+import { GradientText } from "@/components/ui/gradient-text";
 import { NeonButton } from "@/components/ui/neon-button";
 import { StatCard } from "@/components/ui/stat-card";
-import { DropZone } from "@/components/upload/drop-zone";
 import { useAppStore } from "@/lib/store";
-import { fetchJSON, uploadFile } from "@/lib/api";
-import { apiUrl } from "@/lib/api-url";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface UploadResponse {
-  session_id: string;
-  filename: string;
-  rows: number;
-  columns: string[];
-  preview: Record<string, unknown>[];
-}
-
-interface CarteModelUploadResponse {
-  model_dir: string;
-  valid: boolean;
-  missing_files: string[];
-  training_config: Record<string, unknown> | null;
-}
-
-interface CarteStats {
-  total_segments: number;
-  filtered_segments: number;
-  mean_tvr: number | null;
-  mean_dpl: number | null;
-}
-
-interface CarteGenerateResponse {
-  session_id: string;
-  stats: CarteStats;
-  geojson_feature_count: number;
-}
-
-// ---------------------------------------------------------------------------
-// Column mapping definitions
-// ---------------------------------------------------------------------------
-
-interface ColumnDef {
-  key: string;
-  label: string;
-  description: string;
-  required: boolean;
-}
-
-const REQUIRED_COLUMNS: ColumnDef[] = [
-  { key: "TMJATV", label: "TMJA TV", description: "TMJA Tous Vehicules (pour modele TV)", required: true },
-  { key: "TMJAPL", label: "TMJA PL", description: "TMJA Poids Lourds", required: true },
-  { key: "car_average_distance_km", label: "Distance voitures", description: "Distance moyenne voitures (km)", required: true },
-  { key: "car_average_speed_kmh", label: "Vitesse voitures", description: "Vitesse moyenne voitures (km/h)", required: true },
-  { key: "truck_min_average_distance_km", label: "Distance camions", description: "Distance min moyenne camions (km)", required: true },
-  { key: "truck_average_speed_kmh", label: "Vitesse camions", description: "Vitesse moyenne camions (km/h)", required: true },
-  { key: "linkFC", label: "Functional Class", description: "Classification routiere (FC)", required: true },
-  { key: "TMJAVL", label: "TMJA VL", description: "TMJA Vehicules Legers", required: true },
-  { key: "agregId", label: "Identifiant troncon", description: "LINK_ID ou identifiant unique", required: false },
-  { key: "DIR_TRAVEL", label: "Direction", description: "Direction de circulation (F/T/B)", required: false },
-];
+import { apiClient, uploadFile } from "@/lib/api";
+import { FcdUploadSection } from "@/components/carte/FcdUploadSection";
+import { ModelUploadSection } from "@/components/carte/ModelUploadSection";
+import { PlSaturationPanel } from "@/components/carte/PlSaturationPanel";
+import { HourlySaturationPanel } from "@/components/carte/HourlySaturationPanel";
+import {
+  ArrondiToggleCard,
+  FiltersSection,
+} from "@/components/carte/FiltersSection";
+import { GenerationSection } from "@/components/carte/GenerationSection";
+import {
+  HPM_SAT_ALPHA_DEFAULTS,
+  HPM_SAT_BORNES_DEFAULTS,
+  HPS_SAT_ALPHA_DEFAULTS,
+  HPS_SAT_BORNES_DEFAULTS,
+  PL_SAT_ALPHA_DEFAULTS,
+  PL_SAT_BORNES_DEFAULTS,
+  PL_SAT_V2_DEFAULTS,
+} from "@/lib/carte/defaults";
+import type {
+  CapteursPlInfo,
+  CapteursPlUploadResponse,
+  CarteModelUploadResponse,
+  ColumnDef,
+  UploadResponse,
+} from "@/lib/carte/types";
+import {
+  REQUIRED_COLUMNS,
+  computeDynamicRequiredColumns,
+} from "@/lib/carte/column-mapping";
+import { useCarteGeneration } from "@/lib/hooks/use-carte-generation";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -105,10 +73,22 @@ export default function CartePage() {
   const [plValid, setPlValid] = useState<boolean | null>(null);
   const [tvMissing, setTvMissing] = useState<string[]>([]);
   const [plMissing, setPlMissing] = useState<string[]>([]);
+  const [tvModelInfo, setTvModelInfo] = useState<CarteModelUploadResponse | null>(null);
+  const [plModelInfo, setPlModelInfo] = useState<CarteModelUploadResponse | null>(null);
 
-  // Hidden folder input refs
-  const tvFolderInputRef = useRef<HTMLInputElement>(null);
-  const plFolderInputRef = useRef<HTMLInputElement>(null);
+  // Section 1bis — Optional HPM / HPS uploads (independent, optional)
+  const [hpmFolderName, setHpmFolderName] = useState<string | null>(null);
+  const [hpsFolderName, setHpsFolderName] = useState<string | null>(null);
+  const [hpmUploading, setHpmUploading] = useState(false);
+  const [hpsUploading, setHpsUploading] = useState(false);
+  const [modelHpmDir, setModelHpmDir] = useState("");
+  const [modelHpsDir, setModelHpsDir] = useState("");
+  const [hpmValid, setHpmValid] = useState<boolean | null>(null);
+  const [hpsValid, setHpsValid] = useState<boolean | null>(null);
+  const [hpmMissing, setHpmMissing] = useState<string[]>([]);
+  const [hpsMissing, setHpsMissing] = useState<string[]>([]);
+  const [hpmModelInfo, setHpmModelInfo] = useState<CarteModelUploadResponse | null>(null);
+  const [hpsModelInfo, setHpsModelInfo] = useState<CarteModelUploadResponse | null>(null);
 
   // Section 2 — FCD data
   const [fcdFile, setFcdFile] = useState<File | null>(null);
@@ -126,105 +106,126 @@ export default function CartePage() {
   const [err10002000, setErr10002000] = useState(18);
   const [err20004000, setErr20004000] = useState(18);
   const [err4000plus, setErr4000plus] = useState(14);
+  // v/h tranches IC heures de pointe (used only when HPM and/or HPS loaded).
+  // D2: 0-100=25%, 100-300=18%, 300-600=18%, >600=14%. PM and PS thresholds
+  // are kept independent so the user can tune HPM and HPS separately.
+  const [errPm0100, setErrPm0100] = useState(25);
+  const [errPm100300, setErrPm100300] = useState(18);
+  const [errPm300600, setErrPm300600] = useState(18);
+  const [errPm600plus, setErrPm600plus] = useState(14);
+  const [errPs0100, setErrPs0100] = useState(25);
+  const [errPs100300, setErrPs100300] = useState(18);
+  const [errPs300600, setErrPs300600] = useState(18);
+  const [errPs600plus, setErrPs600plus] = useState(14);
 
-  // Section 4 — Generation
-  const [generating, setGenerating] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [progressText, setProgressText] = useState("");
-  const [done, setDone] = useState(false);
-  const [stats, setStats] = useState<CarteStats | null>(null);
+  // Section 3bis — Saturation hierarchique PL v3
+  const [plSatEnabled, setPlSatEnabled] = useState(true);
+  // BORNES_FC_ABS
+  const [bornesFc1, setBornesFc1] = useState<number>(PL_SAT_BORNES_DEFAULTS.fc1);
+  const [bornesFc2, setBornesFc2] = useState<number>(PL_SAT_BORNES_DEFAULTS.fc2);
+  const [bornesFc3, setBornesFc3] = useState<number>(PL_SAT_BORNES_DEFAULTS.fc3);
+  const [bornesFc4, setBornesFc4] = useState<number>(PL_SAT_BORNES_DEFAULTS.fc4);
+  const [bornesFc5, setBornesFc5] = useState<number>(PL_SAT_BORNES_DEFAULTS.fc5);
+  // ALPHA_FC_MIN
+  const [alphaFc1, setAlphaFc1] = useState<number>(PL_SAT_ALPHA_DEFAULTS.fc1);
+  const [alphaFc2, setAlphaFc2] = useState<number>(PL_SAT_ALPHA_DEFAULTS.fc2);
+  const [alphaFc3, setAlphaFc3] = useState<number>(PL_SAT_ALPHA_DEFAULTS.fc3);
+  const [alphaFc4, setAlphaFc4] = useState<number>(PL_SAT_ALPHA_DEFAULTS.fc4);
+  const [alphaFc5, setAlphaFc5] = useState<number>(PL_SAT_ALPHA_DEFAULTS.fc5);
+  // Hyperparamètres v2
+  const [ratioMacroPen, setRatioMacroPen] = useState<number>(PL_SAT_V2_DEFAULTS.ratioMacroPen);
+  const [alphaPhysiqueMax, setAlphaPhysiqueMax] = useState<number>(PL_SAT_V2_DEFAULTS.alphaPhysiqueMax);
+  const [seuilVolFcdTv, setSeuilVolFcdTv] = useState<number>(PL_SAT_V2_DEFAULTS.seuilVolFcdTv);
 
-  // ---- Model folder upload ----
-  const handleModelFolderSelect = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>, type: "tv" | "pl") => {
-      const fileList = e.target.files;
-      if (!fileList || fileList.length === 0) return;
+  // === v3 zones critiques (override capteurs SIREDO PL) ===
+  const [zoneCritEnabled, setZoneCritEnabled] = useState(true);
+  const [capteursPlSessionId, setCapteursPlSessionId] = useState<string | null>(null);
+  const [capteursPlName, setCapteursPlName] = useState<string | null>(null);
+  const [capteursPlInfo, setCapteursPlInfo] = useState<CapteursPlInfo | null>(null);
+  const [capteursPlUploading, setCapteursPlUploading] = useState(false);
+  const [anneeCapteurs, setAnneeCapteurs] = useState(2025);
+  const [ratioCapteurCritique, setRatioCapteurCritique] = useState(15);
+  const [bufferZoneCritiqueM, setBufferZoneCritiqueM] = useState(1000);
+  const [alphaMinZoneCritique, setAlphaMinZoneCritique] = useState(30);
 
-      // Create session if needed
-      let sid = sessionId;
-      if (!sid) {
-        sid = `carte_${Date.now().toString(36)}`;
-        setSessionId(sid);
+  // Section 3ter — Saturation hierarchique HPM
+  const [hpmSatEnabled, setHpmSatEnabled] = useState(true);
+  const [borneHpmFc1, setBorneHpmFc1] = useState<number>(HPM_SAT_BORNES_DEFAULTS.fc1);
+  const [borneHpmFc2, setBorneHpmFc2] = useState<number>(HPM_SAT_BORNES_DEFAULTS.fc2);
+  const [borneHpmFc3, setBorneHpmFc3] = useState<number>(HPM_SAT_BORNES_DEFAULTS.fc3);
+  const [borneHpmFc4, setBorneHpmFc4] = useState<number>(HPM_SAT_BORNES_DEFAULTS.fc4);
+  const [borneHpmFc5, setBorneHpmFc5] = useState<number>(HPM_SAT_BORNES_DEFAULTS.fc5);
+  const [alphaHpmFc1, setAlphaHpmFc1] = useState<number>(HPM_SAT_ALPHA_DEFAULTS.fc1);
+  const [alphaHpmFc2, setAlphaHpmFc2] = useState<number>(HPM_SAT_ALPHA_DEFAULTS.fc2);
+  const [alphaHpmFc3, setAlphaHpmFc3] = useState<number>(HPM_SAT_ALPHA_DEFAULTS.fc3);
+  const [alphaHpmFc4, setAlphaHpmFc4] = useState<number>(HPM_SAT_ALPHA_DEFAULTS.fc4);
+  const [alphaHpmFc5, setAlphaHpmFc5] = useState<number>(HPM_SAT_ALPHA_DEFAULTS.fc5);
+
+  // Section 3quater — Saturation hierarchique HPS
+  const [hpsSatEnabled, setHpsSatEnabled] = useState(true);
+  const [borneHpsFc1, setBorneHpsFc1] = useState<number>(HPS_SAT_BORNES_DEFAULTS.fc1);
+  const [borneHpsFc2, setBorneHpsFc2] = useState<number>(HPS_SAT_BORNES_DEFAULTS.fc2);
+  const [borneHpsFc3, setBorneHpsFc3] = useState<number>(HPS_SAT_BORNES_DEFAULTS.fc3);
+  const [borneHpsFc4, setBorneHpsFc4] = useState<number>(HPS_SAT_BORNES_DEFAULTS.fc4);
+  const [borneHpsFc5, setBorneHpsFc5] = useState<number>(HPS_SAT_BORNES_DEFAULTS.fc5);
+  const [alphaHpsFc1, setAlphaHpsFc1] = useState<number>(HPS_SAT_ALPHA_DEFAULTS.fc1);
+  const [alphaHpsFc2, setAlphaHpsFc2] = useState<number>(HPS_SAT_ALPHA_DEFAULTS.fc2);
+  const [alphaHpsFc3, setAlphaHpsFc3] = useState<number>(HPS_SAT_ALPHA_DEFAULTS.fc3);
+  const [alphaHpsFc4, setAlphaHpsFc4] = useState<number>(HPS_SAT_ALPHA_DEFAULTS.fc4);
+  const [alphaHpsFc5, setAlphaHpsFc5] = useState<number>(HPS_SAT_ALPHA_DEFAULTS.fc5);
+
+  // Section 3quinquies — Arrondi progressif
+  const [arrondiEnabled, setArrondiEnabled] = useState(true);
+
+  // ---- v3 zones critiques : upload capteurs SIREDO PL ----
+  // Endpoint backend : POST /api/carte/upload-capteurs-pl (FormData session_id + file)
+  // Reponse : { session_id, n_capteurs, annees_disponibles, path }
+  // Si absent => fallback silencieux v2 (pas de zones critiques detectees).
+  const handleCapteursPlUpload = useCallback(
+    async (file: File) => {
+      if (!sessionId) {
+        toast.error("Charge d'abord les donnees FCD (Etape 1) pour avoir une session active.");
+        return;
       }
-
-      // Extract folder name
-      const firstPath = (fileList[0] as File & { webkitRelativePath?: string }).webkitRelativePath ?? fileList[0].name;
-      const rootFolder = firstPath.split("/")[0] || "dossier";
-
-      if (type === "tv") {
-        setTvFolderName(rootFolder);
-        setTvUploading(true);
-      } else {
-        setPlFolderName(rootFolder);
-        setPlUploading(true);
-      }
-
+      setCapteursPlUploading(true);
       try {
         const form = new FormData();
-        form.append("session_id", sid);
-        form.append("model_type", type);
+        form.append("session_id", sessionId);
+        form.append("file", file);
+        const data = await apiClient.postForm<CapteursPlUploadResponse>(
+          "/api/carte/upload-capteurs-pl",
+          form,
+          { timeoutMs: 5 * 60_000 },
+        );
 
-        for (let i = 0; i < fileList.length; i++) {
-          const file = fileList[i] as File & { webkitRelativePath?: string };
-          const relativePath = file.webkitRelativePath ?? file.name;
-          // Strip the root folder name
-          const parts = relativePath.split("/");
-          const strippedPath = parts.length > 1 ? parts.slice(1).join("/") : parts[0];
-          form.append("files", file, strippedPath);
-        }
-
-        const res = await fetch(apiUrl("/api/carte/upload-model-folder"), {
-          method: "POST",
-          body: form,
+        setCapteursPlSessionId(data.session_id);
+        setCapteursPlName(file.name);
+        setCapteursPlInfo({
+          n_capteurs: data.n_capteurs,
+          annees_disponibles: data.annees_disponibles ?? [],
         });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.detail ?? "Upload echoue");
+        // Auto-selectionner l'annee la plus recente si dispo
+        if (data.annees_disponibles && data.annees_disponibles.length > 0) {
+          const maxAnnee = Math.max(...data.annees_disponibles);
+          setAnneeCapteurs(maxAnnee);
         }
-        const data: CarteModelUploadResponse = await res.json();
-
-        if (type === "tv") {
-          setModelTvDir(data.model_dir);
-          setTvValid(data.valid);
-          setTvMissing(data.missing_files);
-        } else {
-          setModelPlDir(data.model_dir);
-          setPlValid(data.valid);
-          setPlMissing(data.missing_files);
-        }
-
-        if (data.valid) {
-          toast.success(`Modele ${type.toUpperCase()} valide et pret`);
-        } else {
-          toast.warning(`Modele ${type.toUpperCase()} incomplet : ${data.missing_files.join(", ")}`);
-        }
+        toast.success(
+          `${data.n_capteurs} capteurs SIREDO charges (annees : ${(data.annees_disponibles ?? []).join(", ")})`,
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Erreur inconnue";
-        toast.error(`Erreur upload modele ${type.toUpperCase()} : ${message}`);
-        if (type === "tv") { setTvValid(false); setTvMissing(["(erreur upload)"]); }
-        else { setPlValid(false); setPlMissing(["(erreur upload)"]); }
+        toast.error(`Upload capteurs SIREDO echoue : ${message}`);
       } finally {
-        if (type === "tv") setTvUploading(false);
-        else setPlUploading(false);
+        setCapteursPlUploading(false);
       }
     },
-    [sessionId]
+    [sessionId],
   );
 
-  const clearModelFolder = useCallback((type: "tv" | "pl") => {
-    if (type === "tv") {
-      setTvFolderName(null);
-      setTvValid(null);
-      setTvMissing([]);
-      setModelTvDir("");
-      if (tvFolderInputRef.current) tvFolderInputRef.current.value = "";
-    } else {
-      setPlFolderName(null);
-      setPlValid(null);
-      setPlMissing([]);
-      setModelPlDir("");
-      if (plFolderInputRef.current) plFolderInputRef.current.value = "";
-    }
+  const clearCapteursPl = useCallback(() => {
+    setCapteursPlSessionId(null);
+    setCapteursPlName(null);
+    setCapteursPlInfo(null);
   }, []);
 
   // ---- FCD file upload ----
@@ -232,12 +233,14 @@ export default function CartePage() {
     setFcdFile(file);
     setUploading(true);
     try {
-      const res = await uploadFile("/api/upload", file, { mode: "TV" }) as UploadResponse;
+      const res = (await uploadFile("/api/upload", file, { mode: "TV" })) as UploadResponse;
       setSessionId(res.session_id);
       setSourceColumns(res.columns.filter((c) => c !== "geometry" && c !== "__geometry_json"));
       setRowCount(res.rows);
 
-      // Auto-map columns where names match
+      // Auto-map columns where names match. The remaining (model-specific)
+      // targets will be filled by the auto-map effect once both models have
+      // been uploaded and dynamicRequiredColumns has been computed.
       const autoMapping: Record<string, string | null> = {};
       for (const col of REQUIRED_COLUMNS) {
         const match = res.columns.find((c) => c === col.key);
@@ -259,143 +262,281 @@ export default function CartePage() {
     setColumnMapping((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  // ---- Can generate? ----
-  const requiredMapped = REQUIRED_COLUMNS.filter((c) => c.required).every(
-    (c) => columnMapping[c.key] && columnMapping[c.key] !== ""
+  // ---- Dynamic required columns ----
+  // Build the mapping form from the union of input_cols declared by the TV
+  // and PL training_config files. Fall back to the legacy hardcoded list when
+  // EITHER training_config is missing (back-compat with old models). La
+  // logique pure est dans @/lib/carte/column-mapping.
+  const dynamicRequiredColumns = useMemo<ColumnDef[]>(
+    () =>
+      computeDynamicRequiredColumns({
+        tvCfg: tvModelInfo?.training_config ?? null,
+        plCfg: plModelInfo?.training_config ?? null,
+        hpmCfg: hpmModelInfo?.training_config ?? null,
+        hpsCfg: hpsModelInfo?.training_config ?? null,
+        hpmValid,
+        hpsValid,
+      }),
+    [tvModelInfo, plModelInfo, hpmModelInfo, hpsModelInfo, hpmValid, hpsValid],
   );
+
+  // Auto-populate the mapping with exact-name matches whenever the required
+  // target list or the source column list changes. Existing user choices are
+  // preserved (we only fill blanks).
+  useEffect(() => {
+    if (sourceColumns.length === 0) return;
+    setColumnMapping((prev) => {
+      const next: Record<string, string | null> = { ...prev };
+      let changed = false;
+      for (const col of dynamicRequiredColumns) {
+        if (next[col.key] !== undefined && next[col.key] !== null && next[col.key] !== "") continue;
+        const match = sourceColumns.find((c) => c === col.key);
+        if (match) {
+          next[col.key] = match;
+          changed = true;
+        } else if (next[col.key] === undefined) {
+          next[col.key] = null;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [dynamicRequiredColumns, sourceColumns]);
+
+  // ---- Progress / validation ----
+  const requiredTargets = useMemo(
+    () => dynamicRequiredColumns.filter((c) => c.required),
+    [dynamicRequiredColumns],
+  );
+  const mappedRequiredCount = requiredTargets.filter(
+    (c) => columnMapping[c.key] && columnMapping[c.key] !== "",
+  ).length;
+  const requiredMapped = requiredTargets.length > 0 && mappedRequiredCount === requiredTargets.length;
   const canGenerate = tvValid === true && plValid === true && sessionId !== null && requiredMapped;
 
-  // ---- Generation ----
-  const handleGenerate = useCallback(async () => {
-    if (!canGenerate || !sessionId) return;
-    setGenerating(true);
-    setDone(false);
-    setStats(null);
-    setProgress(10);
-    setProgressText("Chargement des modeles...");
+  // ---- PL saturation : reset + helpers ----
+  const resetPlSaturationDefaults = useCallback(() => {
+    setBornesFc1(PL_SAT_BORNES_DEFAULTS.fc1);
+    setBornesFc2(PL_SAT_BORNES_DEFAULTS.fc2);
+    setBornesFc3(PL_SAT_BORNES_DEFAULTS.fc3);
+    setBornesFc4(PL_SAT_BORNES_DEFAULTS.fc4);
+    setBornesFc5(PL_SAT_BORNES_DEFAULTS.fc5);
+    setAlphaFc1(PL_SAT_ALPHA_DEFAULTS.fc1);
+    setAlphaFc2(PL_SAT_ALPHA_DEFAULTS.fc2);
+    setAlphaFc3(PL_SAT_ALPHA_DEFAULTS.fc3);
+    setAlphaFc4(PL_SAT_ALPHA_DEFAULTS.fc4);
+    setAlphaFc5(PL_SAT_ALPHA_DEFAULTS.fc5);
+    // Hyperparamètres v2 hybride adaptative
+    setRatioMacroPen(PL_SAT_V2_DEFAULTS.ratioMacroPen);
+    setAlphaPhysiqueMax(PL_SAT_V2_DEFAULTS.alphaPhysiqueMax);
+    setSeuilVolFcdTv(PL_SAT_V2_DEFAULTS.seuilVolFcdTv);
+    // v3 zones critiques (ne reset PAS l'upload capteursPlSessionId — c'est
+    // une donnee user qui doit persister entre les resets)
+    setZoneCritEnabled(true);
+    setAnneeCapteurs(2025);
+    setRatioCapteurCritique(15);
+    setBufferZoneCritiqueM(1000);
+    setAlphaMinZoneCritique(30);
+    toast.success("Valeurs Lyon restaurees");
+  }, []);
 
-    try {
-      setProgress(30);
-      setProgressText("Application des modeles TV et PL...");
-
-      const res = await fetchJSON<CarteGenerateResponse>("/api/carte/generate", {
-        method: "POST",
-        body: JSON.stringify({
-          session_id: sessionId,
-          model_tv_dir: modelTvDir,
-          model_pl_dir: modelPlDir,
-          column_mapping: columnMapping,
-          filter_tvr_enabled: filterTvrEnabled,
-          filter_tvr_value: filterTvrValue,
-          filter_fc_enabled: filterFcEnabled,
-          error_thresholds: {
-            err_0_1000: err01000 / 100,
-            err_1000_2000: err10002000 / 100,
-            err_2000_4000: err20004000 / 100,
-            err_4000_plus: err4000plus / 100,
-          },
-        }),
-      });
-
-      setProgress(100);
-      setProgressText("Generation terminee !");
-      setStats(res.stats);
-      setDone(true);
-      const _tvrMoy = res.stats.mean_tvr != null ? `, TVr moyen: ${Math.round(res.stats.mean_tvr).toLocaleString("fr-FR")} veh/j` : "";
-      toast.success(`Carte generee — ${res.geojson_feature_count.toLocaleString("fr-FR")} troncons${_tvrMoy}`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Erreur inconnue";
-      toast.error(`Erreur generation : ${message}`);
-      setProgress(0);
-      setProgressText("");
-    } finally {
-      setGenerating(false);
-    }
+  // Detecte si l'utilisateur a modifie au moins une valeur par rapport au default
+  const plSatModified = useMemo(() => {
+    return (
+      bornesFc1 !== PL_SAT_BORNES_DEFAULTS.fc1 ||
+      bornesFc2 !== PL_SAT_BORNES_DEFAULTS.fc2 ||
+      bornesFc3 !== PL_SAT_BORNES_DEFAULTS.fc3 ||
+      bornesFc4 !== PL_SAT_BORNES_DEFAULTS.fc4 ||
+      bornesFc5 !== PL_SAT_BORNES_DEFAULTS.fc5 ||
+      alphaFc1 !== PL_SAT_ALPHA_DEFAULTS.fc1 ||
+      alphaFc2 !== PL_SAT_ALPHA_DEFAULTS.fc2 ||
+      alphaFc3 !== PL_SAT_ALPHA_DEFAULTS.fc3 ||
+      alphaFc4 !== PL_SAT_ALPHA_DEFAULTS.fc4 ||
+      alphaFc5 !== PL_SAT_ALPHA_DEFAULTS.fc5 ||
+      // Hyperparamètres v2
+      ratioMacroPen !== PL_SAT_V2_DEFAULTS.ratioMacroPen ||
+      alphaPhysiqueMax !== PL_SAT_V2_DEFAULTS.alphaPhysiqueMax ||
+      seuilVolFcdTv !== PL_SAT_V2_DEFAULTS.seuilVolFcdTv ||
+      // v3 zones critiques
+      zoneCritEnabled !== true ||
+      anneeCapteurs !== 2025 ||
+      ratioCapteurCritique !== 15 ||
+      bufferZoneCritiqueM !== 1000 ||
+      alphaMinZoneCritique !== 30
+    );
   }, [
-    canGenerate, sessionId, modelTvDir, modelPlDir, columnMapping,
-    filterTvrEnabled, filterTvrValue, filterFcEnabled,
-    err01000, err10002000, err20004000, err4000plus,
+    bornesFc1, bornesFc2, bornesFc3, bornesFc4, bornesFc5,
+    alphaFc1, alphaFc2, alphaFc3, alphaFc4, alphaFc5,
+    ratioMacroPen, alphaPhysiqueMax, seuilVolFcdTv,
+    zoneCritEnabled, anneeCapteurs, ratioCapteurCritique,
+    bufferZoneCritiqueM, alphaMinZoneCritique,
   ]);
 
+  // ---- HPM saturation : reset + modified detection ----
+  const resetHpmSaturationDefaults = useCallback(() => {
+    setBorneHpmFc1(HPM_SAT_BORNES_DEFAULTS.fc1);
+    setBorneHpmFc2(HPM_SAT_BORNES_DEFAULTS.fc2);
+    setBorneHpmFc3(HPM_SAT_BORNES_DEFAULTS.fc3);
+    setBorneHpmFc4(HPM_SAT_BORNES_DEFAULTS.fc4);
+    setBorneHpmFc5(HPM_SAT_BORNES_DEFAULTS.fc5);
+    setAlphaHpmFc1(HPM_SAT_ALPHA_DEFAULTS.fc1);
+    setAlphaHpmFc2(HPM_SAT_ALPHA_DEFAULTS.fc2);
+    setAlphaHpmFc3(HPM_SAT_ALPHA_DEFAULTS.fc3);
+    setAlphaHpmFc4(HPM_SAT_ALPHA_DEFAULTS.fc4);
+    setAlphaHpmFc5(HPM_SAT_ALPHA_DEFAULTS.fc5);
+    toast.success("Valeurs HPM Lyon restaurees");
+  }, []);
+
+  const hpmSatModified = useMemo(() => {
+    return (
+      borneHpmFc1 !== HPM_SAT_BORNES_DEFAULTS.fc1 ||
+      borneHpmFc2 !== HPM_SAT_BORNES_DEFAULTS.fc2 ||
+      borneHpmFc3 !== HPM_SAT_BORNES_DEFAULTS.fc3 ||
+      borneHpmFc4 !== HPM_SAT_BORNES_DEFAULTS.fc4 ||
+      borneHpmFc5 !== HPM_SAT_BORNES_DEFAULTS.fc5 ||
+      alphaHpmFc1 !== HPM_SAT_ALPHA_DEFAULTS.fc1 ||
+      alphaHpmFc2 !== HPM_SAT_ALPHA_DEFAULTS.fc2 ||
+      alphaHpmFc3 !== HPM_SAT_ALPHA_DEFAULTS.fc3 ||
+      alphaHpmFc4 !== HPM_SAT_ALPHA_DEFAULTS.fc4 ||
+      alphaHpmFc5 !== HPM_SAT_ALPHA_DEFAULTS.fc5
+    );
+  }, [
+    borneHpmFc1, borneHpmFc2, borneHpmFc3, borneHpmFc4, borneHpmFc5,
+    alphaHpmFc1, alphaHpmFc2, alphaHpmFc3, alphaHpmFc4, alphaHpmFc5,
+  ]);
+
+  // ---- HPS saturation : reset + modified detection ----
+  const resetHpsSaturationDefaults = useCallback(() => {
+    setBorneHpsFc1(HPS_SAT_BORNES_DEFAULTS.fc1);
+    setBorneHpsFc2(HPS_SAT_BORNES_DEFAULTS.fc2);
+    setBorneHpsFc3(HPS_SAT_BORNES_DEFAULTS.fc3);
+    setBorneHpsFc4(HPS_SAT_BORNES_DEFAULTS.fc4);
+    setBorneHpsFc5(HPS_SAT_BORNES_DEFAULTS.fc5);
+    setAlphaHpsFc1(HPS_SAT_ALPHA_DEFAULTS.fc1);
+    setAlphaHpsFc2(HPS_SAT_ALPHA_DEFAULTS.fc2);
+    setAlphaHpsFc3(HPS_SAT_ALPHA_DEFAULTS.fc3);
+    setAlphaHpsFc4(HPS_SAT_ALPHA_DEFAULTS.fc4);
+    setAlphaHpsFc5(HPS_SAT_ALPHA_DEFAULTS.fc5);
+    toast.success("Valeurs HPS Lyon restaurees");
+  }, []);
+
+  const hpsSatModified = useMemo(() => {
+    return (
+      borneHpsFc1 !== HPS_SAT_BORNES_DEFAULTS.fc1 ||
+      borneHpsFc2 !== HPS_SAT_BORNES_DEFAULTS.fc2 ||
+      borneHpsFc3 !== HPS_SAT_BORNES_DEFAULTS.fc3 ||
+      borneHpsFc4 !== HPS_SAT_BORNES_DEFAULTS.fc4 ||
+      borneHpsFc5 !== HPS_SAT_BORNES_DEFAULTS.fc5 ||
+      alphaHpsFc1 !== HPS_SAT_ALPHA_DEFAULTS.fc1 ||
+      alphaHpsFc2 !== HPS_SAT_ALPHA_DEFAULTS.fc2 ||
+      alphaHpsFc3 !== HPS_SAT_ALPHA_DEFAULTS.fc3 ||
+      alphaHpsFc4 !== HPS_SAT_ALPHA_DEFAULTS.fc4 ||
+      alphaHpsFc5 !== HPS_SAT_ALPHA_DEFAULTS.fc5
+    );
+  }, [
+    borneHpsFc1, borneHpsFc2, borneHpsFc3, borneHpsFc4, borneHpsFc5,
+    alphaHpsFc1, alphaHpsFc2, alphaHpsFc3, alphaHpsFc4, alphaHpsFc5,
+  ]);
+
+  // ---- Generation (hook isole — payload identique a l'inline d'origine) ----
+  const generationModels = useMemo(
+    () => ({ modelTvDir, modelPlDir, modelHpmDir, modelHpsDir }),
+    [modelTvDir, modelPlDir, modelHpmDir, modelHpsDir],
+  );
+  const generationFilters = useMemo(
+    () => ({
+      filterTvrEnabled,
+      filterTvrValue,
+      filterFcEnabled,
+      err01000,
+      err10002000,
+      err20004000,
+      err4000plus,
+      errPm0100,
+      errPm100300,
+      errPm300600,
+      errPm600plus,
+      errPs0100,
+      errPs100300,
+      errPs300600,
+      errPs600plus,
+      arrondiEnabled,
+    }),
+    [
+      filterTvrEnabled, filterTvrValue, filterFcEnabled,
+      err01000, err10002000, err20004000, err4000plus,
+      errPm0100, errPm100300, errPm300600, errPm600plus,
+      errPs0100, errPs100300, errPs300600, errPs600plus,
+      arrondiEnabled,
+    ],
+  );
+  const generationSaturations = useMemo(
+    () => ({
+      pl: {
+        enabled: plSatEnabled,
+        bornesFc1, bornesFc2, bornesFc3, bornesFc4, bornesFc5,
+        alphaFc1, alphaFc2, alphaFc3, alphaFc4, alphaFc5,
+        ratioMacroPen, alphaPhysiqueMax, seuilVolFcdTv,
+        zoneCritEnabled, capteursPlSessionId, anneeCapteurs,
+        ratioCapteurCritique, bufferZoneCritiqueM, alphaMinZoneCritique,
+      },
+      hpm: {
+        enabled: hpmSatEnabled,
+        borneFc1: borneHpmFc1, borneFc2: borneHpmFc2, borneFc3: borneHpmFc3,
+        borneFc4: borneHpmFc4, borneFc5: borneHpmFc5,
+        alphaFc1: alphaHpmFc1, alphaFc2: alphaHpmFc2, alphaFc3: alphaHpmFc3,
+        alphaFc4: alphaHpmFc4, alphaFc5: alphaHpmFc5,
+      },
+      hps: {
+        enabled: hpsSatEnabled,
+        borneFc1: borneHpsFc1, borneFc2: borneHpsFc2, borneFc3: borneHpsFc3,
+        borneFc4: borneHpsFc4, borneFc5: borneHpsFc5,
+        alphaFc1: alphaHpsFc1, alphaFc2: alphaHpsFc2, alphaFc3: alphaHpsFc3,
+        alphaFc4: alphaHpsFc4, alphaFc5: alphaHpsFc5,
+      },
+    }),
+    [
+      plSatEnabled,
+      bornesFc1, bornesFc2, bornesFc3, bornesFc4, bornesFc5,
+      alphaFc1, alphaFc2, alphaFc3, alphaFc4, alphaFc5,
+      ratioMacroPen, alphaPhysiqueMax, seuilVolFcdTv,
+      zoneCritEnabled, capteursPlSessionId, anneeCapteurs,
+      ratioCapteurCritique, bufferZoneCritiqueM, alphaMinZoneCritique,
+      hpmSatEnabled,
+      borneHpmFc1, borneHpmFc2, borneHpmFc3, borneHpmFc4, borneHpmFc5,
+      alphaHpmFc1, alphaHpmFc2, alphaHpmFc3, alphaHpmFc4, alphaHpmFc5,
+      hpsSatEnabled,
+      borneHpsFc1, borneHpsFc2, borneHpsFc3, borneHpsFc4, borneHpsFc5,
+      alphaHpsFc1, alphaHpsFc2, alphaHpsFc3, alphaHpsFc4, alphaHpsFc5,
+    ],
+  );
+
+  const {
+    generate: handleGenerate,
+    generating,
+    progress,
+    progressText,
+    done,
+    stats,
+    resetResults,
+  } = useCarteGeneration({
+    sessionId,
+    models: generationModels,
+    mapping: columnMapping,
+    filters: generationFilters,
+    saturations: generationSaturations,
+    canGenerate,
+  });
+
   // ---- Download ----
+  // Use apiClient.download so the Bearer token is attached when going
+  // cross-origin (window.open cannot set the Authorization header).
   const handleDownload = useCallback(() => {
     if (!sessionId) return;
-    window.open(apiUrl(`/api/carte/download/${sessionId}`), "_blank");
+    apiClient
+      .download(`/api/carte/download/${sessionId}`, `carte_debits_${sessionId.slice(0, 8)}.geojson`)
+      .catch((err: Error) => toast.error(`Telechargement echoue : ${err.message}`));
   }, [sessionId]);
-
-  // ---- Validity indicator ----
-  function ValidityBadge({ valid, missing }: { valid: boolean | null; missing: string[] }) {
-    if (valid === null) return null;
-    return valid ? (
-      <div className="flex items-center gap-1.5 text-emerald-400 text-xs mt-1.5">
-        <CheckCircle2 size={14} />
-        <span>Structure valide</span>
-      </div>
-    ) : (
-      <div className="flex items-center gap-1.5 text-red-400 text-xs mt-1.5">
-        <XCircle size={14} />
-        <span>Manquant : {missing.join(", ")}</span>
-      </div>
-    );
-  }
-
-  // ---- Folder browse button component ----
-  function FolderBrowseButton({
-    folderName,
-    isUploading,
-    onClear,
-    onClick,
-    label,
-    description,
-  }: {
-    folderName: string | null;
-    isUploading: boolean;
-    onClear: () => void;
-    onClick: () => void;
-    label: string;
-    description: string;
-  }) {
-    if (folderName) {
-      return (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="flex items-center gap-3 p-3.5 rounded-xl border border-indigo-500/20 bg-indigo-500/5"
-        >
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 flex-shrink-0">
-            <FolderOpen size={18} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-slate-200 truncate">{folderName}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClear}
-            className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
-          >
-            <X size={14} />
-          </button>
-        </motion.div>
-      );
-    }
-
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={isUploading}
-        className="w-full flex flex-col items-center justify-center gap-3 p-8 rounded-2xl border-2 border-dashed border-white/[0.08] hover:border-indigo-500/40 bg-slate-900/30 hover:bg-indigo-500/5 transition-all duration-300 cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500/20 transition-colors">
-          <FolderOpen size={22} />
-        </div>
-        <div className="text-center">
-          <p className="text-xs font-medium text-slate-200">{label}</p>
-          <p className="text-[10px] text-slate-400 mt-1">{description}</p>
-        </div>
-      </button>
-    );
-  }
 
   // =========================================================================
   // RENDER
@@ -431,226 +572,226 @@ export default function CartePage() {
         </div>
 
         {/* ============================================================= */}
-        {/* SECTION 1 — Selection des modeles (folder browse) */}
+        {/* SECTION 1 — Donnees FCD                                       */}
+        {/* ============================================================= */}
+        <FcdUploadSection
+          fcdFile={fcdFile}
+          uploading={uploading}
+          sessionId={sessionId}
+          rowCount={rowCount}
+          sourceColumns={sourceColumns}
+          onFcdUpload={handleFcdUpload}
+          onFcdClear={() => {
+            setFcdFile(null);
+            setSessionId(null);
+            setSourceColumns([]);
+            setRowCount(0);
+            setColumnMapping({});
+            resetResults();
+          }}
+          columnMapping={columnMapping}
+          updateMapping={updateMapping}
+          dynamicRequiredColumns={dynamicRequiredColumns}
+          mappedRequiredCount={mappedRequiredCount}
+          requiredTargetsCount={requiredTargets.length}
+          requiredMapped={requiredMapped}
+          tvModelInfo={tvModelInfo}
+          plModelInfo={plModelInfo}
+        />
+
+        {/* ============================================================= */}
+        {/* SECTION 2 — Selection des modeles                              */}
         {/* ============================================================= */}
         <GlowCard glowColor="accent">
           <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">1</div>
+            <div className="w-7 h-7 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">2</div>
             <h3 className="text-sm font-semibold text-white">Selection des modeles</h3>
           </div>
-          <p className="text-xs text-slate-400 mb-5">
+          <p className="text-xs text-slate-400 mb-3">
             Parcourez un dossier de modele pour chaque type. Le dossier doit contenir
             NNarchitecture.json, NNweights.weights.h5 (ou NNweights.h5) et NNnormCoefficients.json.
+            Les modeles <span className="text-pink-400">HPM</span> et{" "}
+            <span className="text-violet-400">HPS</span> sont optionnels et permettent
+            d&apos;enrichir la carte avec les debits de pointe matin / soir (v/h).
           </p>
-
-          {/* Hidden folder inputs */}
-          <input
-            ref={tvFolderInputRef}
-            type="file"
-            // @ts-ignore webkitdirectory is non-standard but widely supported
-            webkitdirectory=""
-            directory=""
-            multiple
-            className="hidden"
-            onChange={(e) => handleModelFolderSelect(e, "tv")}
-          />
-          <input
-            ref={plFolderInputRef}
-            type="file"
-            // @ts-ignore webkitdirectory is non-standard but widely supported
-            webkitdirectory=""
-            directory=""
-            multiple
-            className="hidden"
-            onChange={(e) => handleModelFolderSelect(e, "pl")}
-          />
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* TV */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Car size={16} className="text-accent" />
-                <span className="text-xs font-medium text-slate-200">Modele TV (Trafic Vehicules)</span>
-              </div>
-              <FolderBrowseButton
-                folderName={tvFolderName}
-                isUploading={tvUploading}
-                onClear={() => clearModelFolder("tv")}
-                onClick={() => tvFolderInputRef.current?.click()}
-                label="Parcourir le dossier du modele TV"
-                description="Selectionnez le dossier contenant le modele"
-              />
-              {tvUploading && (
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <Loader2 size={14} className="animate-spin" />
-                  <span>Upload et validation...</span>
-                </div>
-              )}
-              <ValidityBadge valid={tvValid} missing={tvMissing} />
+          {!sessionId && (
+            <div className="mb-5 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+              <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+              <span>Importez d&apos;abord le fichier FCD (Etape 1) avant les modeles.</span>
             </div>
+          )}
 
-            {/* PL */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Truck size={16} className="text-violet" />
-                <span className="text-xs font-medium text-slate-200">Modele PL (Poids Lourds)</span>
-              </div>
-              <FolderBrowseButton
-                folderName={plFolderName}
-                isUploading={plUploading}
-                onClear={() => clearModelFolder("pl")}
-                onClick={() => plFolderInputRef.current?.click()}
-                label="Parcourir le dossier du modele PL"
-                description="Selectionnez le dossier contenant le modele"
+          <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${!sessionId ? "opacity-50 pointer-events-none" : ""}`}>
+            <ModelUploadSection
+              kind="tv"
+              sessionId={sessionId}
+              folderName={tvFolderName}
+              isUploading={tvUploading}
+              valid={tvValid}
+              missing={tvMissing}
+              icon={<Car size={16} className="text-accent" />}
+              label="Modele TV (Trafic Vehicules)"
+              browseLabel="Parcourir le dossier du modele TV"
+              browseDescription="Selectionnez le dossier contenant le modele"
+              onUploadStart={(folder) => {
+                setTvFolderName(folder);
+                setTvUploading(true);
+              }}
+              onUploadSuccess={(data) => {
+                setModelTvDir(data.model_dir);
+                setTvValid(data.valid);
+                setTvMissing(data.missing_files);
+                setTvModelInfo(data);
+              }}
+              onUploadError={() => {
+                setTvValid(false);
+                setTvMissing(["(erreur upload)"]);
+                setTvModelInfo(null);
+              }}
+              onUploadFinally={() => setTvUploading(false)}
+              onClear={() => {
+                setTvFolderName(null);
+                setTvValid(null);
+                setTvMissing([]);
+                setModelTvDir("");
+                setTvModelInfo(null);
+              }}
+            />
+
+            <ModelUploadSection
+              kind="pl"
+              sessionId={sessionId}
+              folderName={plFolderName}
+              isUploading={plUploading}
+              valid={plValid}
+              missing={plMissing}
+              icon={<Truck size={16} className="text-violet" />}
+              label="Modele PL (Poids Lourds)"
+              browseLabel="Parcourir le dossier du modele PL"
+              browseDescription="Selectionnez le dossier contenant le modele"
+              onUploadStart={(folder) => {
+                setPlFolderName(folder);
+                setPlUploading(true);
+              }}
+              onUploadSuccess={(data) => {
+                setModelPlDir(data.model_dir);
+                setPlValid(data.valid);
+                setPlMissing(data.missing_files);
+                setPlModelInfo(data);
+              }}
+              onUploadError={() => {
+                setPlValid(false);
+                setPlMissing(["(erreur upload)"]);
+                setPlModelInfo(null);
+              }}
+              onUploadFinally={() => setPlUploading(false)}
+              onClear={() => {
+                setPlFolderName(null);
+                setPlValid(null);
+                setPlMissing([]);
+                setModelPlDir("");
+                setPlModelInfo(null);
+              }}
+            />
+          </div>
+
+          {/* --- Optional models : HPM / HPS --- */}
+          <div className="mt-8 pt-6 border-t border-white/[0.06]">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-semibold text-slate-200">Modeles heures de pointe (optionnels)</span>
+              <span className="text-[10px] text-slate-400 bg-surface-light px-1.5 py-0.5 rounded">
+                optionnel
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mb-4">
+              Charge un ou les deux modeles pour ajouter les debits de pointe (v/h) avec
+              intervalles de confiance. Chaque modele est independant et peut etre charge seul.
+            </p>
+
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${!sessionId ? "opacity-50 pointer-events-none" : ""}`}>
+              <ModelUploadSection
+                kind="hpm"
+                sessionId={sessionId}
+                folderName={hpmFolderName}
+                isUploading={hpmUploading}
+                valid={hpmValid}
+                missing={hpmMissing}
+                icon={<Sunrise size={16} className="text-pink-400" />}
+                label="Modele HPM (Heure de Pointe Matin)"
+                browseLabel="Parcourir le dossier du modele HPM"
+                browseDescription="Optionnel - selectionnez le dossier"
+                hint="Ajoute PM / PMmin / PMmax (v/h) a la carte"
+                showLoadedBadge
+                dimWhenEmpty
+                onUploadStart={(folder) => {
+                  setHpmFolderName(folder);
+                  setHpmUploading(true);
+                }}
+                onUploadSuccess={(data) => {
+                  setModelHpmDir(data.model_dir);
+                  setHpmValid(data.valid);
+                  setHpmMissing(data.missing_files);
+                  setHpmModelInfo(data);
+                }}
+                onUploadError={() => {
+                  setHpmValid(false);
+                  setHpmMissing(["(erreur upload)"]);
+                  setHpmModelInfo(null);
+                }}
+                onUploadFinally={() => setHpmUploading(false)}
+                onClear={() => {
+                  setHpmFolderName(null);
+                  setHpmValid(null);
+                  setHpmMissing([]);
+                  setModelHpmDir("");
+                  setHpmModelInfo(null);
+                }}
               />
-              {plUploading && (
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <Loader2 size={14} className="animate-spin" />
-                  <span>Upload et validation...</span>
-                </div>
-              )}
-              <ValidityBadge valid={plValid} missing={plMissing} />
+
+              <ModelUploadSection
+                kind="hps"
+                sessionId={sessionId}
+                folderName={hpsFolderName}
+                isUploading={hpsUploading}
+                valid={hpsValid}
+                missing={hpsMissing}
+                icon={<Sunset size={16} className="text-violet-400" />}
+                label="Modele HPS (Heure de Pointe Soir)"
+                browseLabel="Parcourir le dossier du modele HPS"
+                browseDescription="Optionnel - selectionnez le dossier"
+                hint="Ajoute PS / PSmin / PSmax (v/h) a la carte"
+                showLoadedBadge
+                dimWhenEmpty
+                onUploadStart={(folder) => {
+                  setHpsFolderName(folder);
+                  setHpsUploading(true);
+                }}
+                onUploadSuccess={(data) => {
+                  setModelHpsDir(data.model_dir);
+                  setHpsValid(data.valid);
+                  setHpsMissing(data.missing_files);
+                  setHpsModelInfo(data);
+                }}
+                onUploadError={() => {
+                  setHpsValid(false);
+                  setHpsMissing(["(erreur upload)"]);
+                  setHpsModelInfo(null);
+                }}
+                onUploadFinally={() => setHpsUploading(false)}
+                onClear={() => {
+                  setHpsFolderName(null);
+                  setHpsValid(null);
+                  setHpsMissing([]);
+                  setModelHpsDir("");
+                  setHpsModelInfo(null);
+                }}
+              />
             </div>
           </div>
         </GlowCard>
 
         {/* ============================================================= */}
-        {/* SECTION 2 — Donnees FCD */}
-        {/* ============================================================= */}
-        <GlowCard glowColor="cyan">
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-lg bg-cyan/20 flex items-center justify-center text-cyan text-xs font-bold">2</div>
-            <h3 className="text-sm font-semibold text-white">Donnees FCD</h3>
-          </div>
-
-          <DropZone
-            file={fcdFile}
-            onFile={handleFcdUpload}
-            onClear={() => {
-              setFcdFile(null);
-              setSessionId(null);
-              setSourceColumns([]);
-              setRowCount(0);
-              setColumnMapping({});
-              setDone(false);
-              setStats(null);
-            }}
-            accept={{
-              "application/json": [".geojson", ".json"],
-              "application/geo+json": [".geojson"],
-            }}
-            label="Deposez votre fichier GeoJSON FCD"
-            description=".geojson"
-          />
-
-          {uploading && (
-            <div className="flex items-center gap-2 mt-3 text-xs text-slate-400">
-              <Loader2 size={14} className="animate-spin" />
-              <span>Chargement et analyse du fichier...</span>
-            </div>
-          )}
-
-          {sessionId && rowCount > 0 && (
-            <div className="mt-3 text-xs text-emerald-400">
-              {rowCount} troncons routiers charges
-            </div>
-          )}
-
-          {/* Column Mapping */}
-          <AnimatePresence>
-            {sourceColumns.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mt-6 space-y-4"
-              >
-                <div className="flex items-center gap-2">
-                  <Layers size={16} className="text-cyan" />
-                  <span className="text-xs font-semibold text-white">
-                    Mapping des colonnes
-                  </span>
-                  <span className="text-[10px] text-slate-400 ml-2">
-                    ({REQUIRED_COLUMNS.filter((c) => c.required && columnMapping[c.key]).length}/{REQUIRED_COLUMNS.filter((c) => c.required).length} obligatoires mappees)
-                  </span>
-                </div>
-
-                {/* Progress bar */}
-                <div className="h-1 rounded-full bg-surface-light overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{
-                      width: `${(REQUIRED_COLUMNS.filter((c) => c.required && columnMapping[c.key]).length / REQUIRED_COLUMNS.filter((c) => c.required).length) * 100}%`,
-                    }}
-                    className="h-full rounded-full bg-gradient-to-r from-accent to-cyan"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {REQUIRED_COLUMNS.map((col) => (
-                    <div
-                      key={col.key}
-                      className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${
-                        columnMapping[col.key]
-                          ? "bg-accent/5 border border-accent/10"
-                          : col.required
-                            ? "bg-red-500/5 border border-red-500/20"
-                            : "bg-surface-light/50 border border-transparent"
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-mono text-slate-200 truncate">
-                            {col.key}
-                          </span>
-                          {!col.required && (
-                            <span className="text-[9px] text-slate-400 bg-surface-light px-1.5 py-0.5 rounded">
-                              optionnel
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                          {col.description}
-                        </p>
-                      </div>
-                      <span className="text-slate-500 text-xs flex-shrink-0">&larr;</span>
-                      <select
-                        value={columnMapping[col.key] ?? ""}
-                        onChange={(e) =>
-                          updateMapping(col.key, e.target.value || null)
-                        }
-                        className={`text-xs bg-surface border rounded-lg px-2 py-1.5 text-slate-200 outline-none focus:border-accent/40 cursor-pointer w-44 truncate ${
-                          !columnMapping[col.key] && col.required
-                            ? "border-red-500/40"
-                            : "border-border"
-                        }`}
-                      >
-                        <option value="">
-                          {col.required ? "-- Selectionner --" : "-- Ignorer --"}
-                        </option>
-                        {sourceColumns.map((sc) => (
-                          <option key={sc} value={sc}>
-                            {sc}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-
-                {requiredMapped && (
-                  <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
-                    <CheckCircle2 size={14} />
-                    <span>Toutes les colonnes obligatoires sont mappees</span>
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </GlowCard>
-
-        {/* ============================================================= */}
-        {/* SECTION 3 — Filtres et parametres */}
+        {/* SECTION 3 — Filtres et parametres                              */}
         {/* ============================================================= */}
         <GlowCard glowColor="violet">
           <div className="flex items-center gap-2 mb-5">
@@ -658,154 +799,173 @@ export default function CartePage() {
             <h3 className="text-sm font-semibold text-white">Filtres et parametres</h3>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Left — Filters */}
-            <div className="space-y-5">
-              <div className="flex items-center gap-2 mb-3">
-                <Filter size={14} className="text-violet" />
-                <span className="text-xs font-medium text-slate-200">Filtres sur les donnees</span>
-              </div>
+          <FiltersSection
+            filterTvrEnabled={filterTvrEnabled}
+            setFilterTvrEnabled={setFilterTvrEnabled}
+            filterTvrValue={filterTvrValue}
+            setFilterTvrValue={setFilterTvrValue}
+            filterFcEnabled={filterFcEnabled}
+            setFilterFcEnabled={setFilterFcEnabled}
+            err01000={err01000}
+            setErr01000={setErr01000}
+            err10002000={err10002000}
+            setErr10002000={setErr10002000}
+            err20004000={err20004000}
+            setErr20004000={setErr20004000}
+            err4000plus={err4000plus}
+            setErr4000plus={setErr4000plus}
+            hpmValid={hpmValid}
+            errPm0100={errPm0100}
+            setErrPm0100={setErrPm0100}
+            errPm100300={errPm100300}
+            setErrPm100300={setErrPm100300}
+            errPm300600={errPm300600}
+            setErrPm300600={setErrPm300600}
+            errPm600plus={errPm600plus}
+            setErrPm600plus={setErrPm600plus}
+            hpsValid={hpsValid}
+            errPs0100={errPs0100}
+            setErrPs0100={setErrPs0100}
+            errPs100300={errPs100300}
+            setErrPs100300={setErrPs100300}
+            errPs300600={errPs300600}
+            setErrPs300600={setErrPs300600}
+            errPs600plus={errPs600plus}
+            setErrPs600plus={setErrPs600plus}
+          />
 
-              {/* Filter TVr */}
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={filterTvrEnabled}
-                  onChange={(e) => setFilterTvrEnabled(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-border bg-surface accent-accent cursor-pointer"
-                />
-                <div className="flex-1">
-                  <span className="text-xs font-medium text-slate-200 group-hover:text-accent transition-colors">
-                    Filtrer les troncons par seuil TVr
-                  </span>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Exclure les troncons avec TVr en-dessous du seuil
-                  </p>
-                  {filterTvrEnabled && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="text-[10px] text-slate-400">Seuil :</span>
-                      <input
-                        type="number"
-                        value={filterTvrValue}
-                        onChange={(e) => setFilterTvrValue(Number(e.target.value))}
-                        min={0}
-                        max={1000}
-                        step={10}
-                        className="w-20 h-7 rounded-md border border-border bg-surface/80 px-2 text-xs text-slate-200 outline-none focus:border-accent/50"
-                      />
-                      <span className="text-[10px] text-slate-400">veh/j</span>
-                    </div>
-                  )}
-                </div>
-              </label>
+          <PlSaturationPanel
+            plSatEnabled={plSatEnabled}
+            onPlSatEnabledChange={setPlSatEnabled}
+            bornesFc1={bornesFc1}
+            bornesFc2={bornesFc2}
+            bornesFc3={bornesFc3}
+            bornesFc4={bornesFc4}
+            bornesFc5={bornesFc5}
+            onBornesFc1Change={setBornesFc1}
+            onBornesFc2Change={setBornesFc2}
+            onBornesFc3Change={setBornesFc3}
+            onBornesFc4Change={setBornesFc4}
+            onBornesFc5Change={setBornesFc5}
+            alphaFc1={alphaFc1}
+            alphaFc2={alphaFc2}
+            alphaFc3={alphaFc3}
+            alphaFc4={alphaFc4}
+            alphaFc5={alphaFc5}
+            onAlphaFc1Change={setAlphaFc1}
+            onAlphaFc2Change={setAlphaFc2}
+            onAlphaFc3Change={setAlphaFc3}
+            onAlphaFc4Change={setAlphaFc4}
+            onAlphaFc5Change={setAlphaFc5}
+            ratioMacroPen={ratioMacroPen}
+            alphaPhysiqueMax={alphaPhysiqueMax}
+            seuilVolFcdTv={seuilVolFcdTv}
+            onRatioMacroPenChange={setRatioMacroPen}
+            onAlphaPhysiqueMaxChange={setAlphaPhysiqueMax}
+            onSeuilVolFcdTvChange={setSeuilVolFcdTv}
+            zoneCritEnabled={zoneCritEnabled}
+            onZoneCritEnabledChange={setZoneCritEnabled}
+            capteursPlSessionId={capteursPlSessionId}
+            capteursPlName={capteursPlName}
+            capteursPlInfo={capteursPlInfo}
+            capteursPlUploading={capteursPlUploading}
+            onCapteursPlUpload={handleCapteursPlUpload}
+            onCapteursPlClear={clearCapteursPl}
+            anneeCapteurs={anneeCapteurs}
+            onAnneeCapteursChange={setAnneeCapteurs}
+            ratioCapteurCritique={ratioCapteurCritique}
+            onRatioCapteurCritiqueChange={setRatioCapteurCritique}
+            bufferZoneCritiqueM={bufferZoneCritiqueM}
+            onBufferZoneCritiqueMChange={setBufferZoneCritiqueM}
+            alphaMinZoneCritique={alphaMinZoneCritique}
+            onAlphaMinZoneCritiqueChange={setAlphaMinZoneCritique}
+            plSatModified={plSatModified}
+            onReset={resetPlSaturationDefaults}
+          />
 
-              {/* Filter FC */}
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={filterFcEnabled}
-                  onChange={(e) => setFilterFcEnabled(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-border bg-surface accent-accent cursor-pointer"
-                />
-                <div>
-                  <span className="text-xs font-medium text-slate-200 group-hover:text-accent transition-colors">
-                    Exclure les troncons FC = 1
-                  </span>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Les autoroutes principales (Functional Class 1) seront exclues
-                  </p>
-                </div>
-              </label>
-            </div>
+          <AnimatePresence>
+            <HourlySaturationPanel
+              mode="hpm"
+              visible={hpmValid === true}
+              enabled={hpmSatEnabled}
+              modified={hpmSatModified}
+              onEnabledChange={setHpmSatEnabled}
+              borneFc1={borneHpmFc1}
+              borneFc2={borneHpmFc2}
+              borneFc3={borneHpmFc3}
+              borneFc4={borneHpmFc4}
+              borneFc5={borneHpmFc5}
+              onBorneFc1Change={setBorneHpmFc1}
+              onBorneFc2Change={setBorneHpmFc2}
+              onBorneFc3Change={setBorneHpmFc3}
+              onBorneFc4Change={setBorneHpmFc4}
+              onBorneFc5Change={setBorneHpmFc5}
+              alphaFc1={alphaHpmFc1}
+              alphaFc2={alphaHpmFc2}
+              alphaFc3={alphaHpmFc3}
+              alphaFc4={alphaHpmFc4}
+              alphaFc5={alphaHpmFc5}
+              onAlphaFc1Change={setAlphaHpmFc1}
+              onAlphaFc2Change={setAlphaHpmFc2}
+              onAlphaFc3Change={setAlphaHpmFc3}
+              onAlphaFc4Change={setAlphaHpmFc4}
+              onAlphaFc5Change={setAlphaHpmFc5}
+              onReset={resetHpmSaturationDefaults}
+            />
+          </AnimatePresence>
 
-            {/* Right — Error thresholds */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-3">
-                <SlidersHorizontal size={14} className="text-violet" />
-                <span className="text-xs font-medium text-slate-200">Intervalles de confiance</span>
-              </div>
-              <p className="text-[10px] text-slate-400 -mt-2 mb-3">
-                Pourcentage d&apos;erreur selon les tranches de debit TVr
-              </p>
+          <AnimatePresence>
+            <HourlySaturationPanel
+              mode="hps"
+              visible={hpsValid === true}
+              enabled={hpsSatEnabled}
+              modified={hpsSatModified}
+              onEnabledChange={setHpsSatEnabled}
+              borneFc1={borneHpsFc1}
+              borneFc2={borneHpsFc2}
+              borneFc3={borneHpsFc3}
+              borneFc4={borneHpsFc4}
+              borneFc5={borneHpsFc5}
+              onBorneFc1Change={setBorneHpsFc1}
+              onBorneFc2Change={setBorneHpsFc2}
+              onBorneFc3Change={setBorneHpsFc3}
+              onBorneFc4Change={setBorneHpsFc4}
+              onBorneFc5Change={setBorneHpsFc5}
+              alphaFc1={alphaHpsFc1}
+              alphaFc2={alphaHpsFc2}
+              alphaFc3={alphaHpsFc3}
+              alphaFc4={alphaHpsFc4}
+              alphaFc5={alphaHpsFc5}
+              onAlphaFc1Change={setAlphaHpsFc1}
+              onAlphaFc2Change={setAlphaHpsFc2}
+              onAlphaFc3Change={setAlphaHpsFc3}
+              onAlphaFc4Change={setAlphaHpsFc4}
+              onAlphaFc5Change={setAlphaHpsFc5}
+              onReset={resetHpsSaturationDefaults}
+            />
+          </AnimatePresence>
 
-              {[
-                { label: "Debits < 1 000 veh/j", value: err01000, setter: setErr01000 },
-                { label: "Debits 1 000 - 2 000 veh/j", value: err10002000, setter: setErr10002000 },
-                { label: "Debits 2 000 - 4 000 veh/j", value: err20004000, setter: setErr20004000 },
-                { label: "Debits > 4 000 veh/j", value: err4000plus, setter: setErr4000plus },
-              ].map((item) => (
-                <div key={item.label} className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-slate-200">{item.label}</span>
-                    <span className="text-xs font-mono text-accent font-semibold">{item.value}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={5}
-                    max={50}
-                    step={1}
-                    value={item.value}
-                    onChange={(e) => item.setter(Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full appearance-none bg-surface-light cursor-pointer accent-accent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-accent/50 [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(99,102,241,0.4)]"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
+          <ArrondiToggleCard
+            arrondiEnabled={arrondiEnabled}
+            setArrondiEnabled={setArrondiEnabled}
+          />
         </GlowCard>
 
         {/* ============================================================= */}
-        {/* SECTION 4 — Generation */}
+        {/* SECTION 4 — Generation                                         */}
         {/* ============================================================= */}
-        <GlowCard>
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">4</div>
-            <h3 className="text-sm font-semibold text-white">Generation</h3>
-          </div>
-
-          {/* Progress */}
-          {(generating || done) && (
-            <div className="mb-5 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">{progressText}</span>
-                <span className="text-xs font-mono text-accent">{progress}%</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-surface-light overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.5 }}
-                  className={`h-full rounded-full ${
-                    done
-                      ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
-                      : "bg-gradient-to-r from-accent to-cyan"
-                  }`}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Generate button */}
-          <div className="flex justify-center">
-            <NeonButton
-              onClick={handleGenerate}
-              disabled={!canGenerate || generating}
-              icon={generating ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-              className={generating ? "animate-pulse" : ""}
-            >
-              {generating ? "Generation en cours..." : "Generer la carte des debits"}
-            </NeonButton>
-          </div>
-
-          {!canGenerate && !generating && !done && (
-            <p className="text-center text-[10px] text-slate-400 mt-3">
-              {tvValid !== true && "Modele TV non valide. "}
-              {plValid !== true && "Modele PL non valide. "}
-              {!sessionId && "Aucun fichier FCD charge. "}
-              {!requiredMapped && "Mapping des colonnes incomplet."}
-            </p>
-          )}
-        </GlowCard>
+        <GenerationSection
+          canGenerate={canGenerate}
+          generating={generating}
+          done={done}
+          progress={progress}
+          progressText={progressText}
+          onGenerate={handleGenerate}
+          tvValid={tvValid}
+          plValid={plValid}
+          sessionId={sessionId}
+          requiredMapped={requiredMapped}
+        />
 
         {/* ============================================================= */}
         {/* RESULTS */}
@@ -838,7 +998,7 @@ export default function CartePage() {
                       icon={<Filter size={16} />}
                     />
                     <StatCard
-                      label="TVr moyen"
+                      label="JOr moyen"
                       value={stats.mean_tvr != null ? `${Math.round(stats.mean_tvr).toLocaleString("fr-FR")} veh/j` : "-"}
                       icon={<Car size={16} />}
                     />
@@ -849,13 +1009,22 @@ export default function CartePage() {
                     />
                   </div>
 
-                  <NeonButton
-                    variant="secondary"
-                    icon={<Download size={16} />}
-                    onClick={handleDownload}
-                  >
-                    Telecharger le GeoJSON
-                  </NeonButton>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <NeonButton
+                      icon={<Map size={16} />}
+                      onClick={() => sessionId && router.push(`/carte/visualiser/${sessionId}`)}
+                      disabled={!sessionId}
+                    >
+                      Visualiser sur la carte
+                    </NeonButton>
+                    <NeonButton
+                      variant="secondary"
+                      icon={<Download size={16} />}
+                      onClick={handleDownload}
+                    >
+                      Telecharger le GeoJSON
+                    </NeonButton>
+                  </div>
                 </div>
               </GlowCard>
             </motion.div>

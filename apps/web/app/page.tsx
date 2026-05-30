@@ -31,8 +31,12 @@ import { useEffect, useMemo } from "react";
 import {
   Car,
   Truck,
+  Sunrise,
+  Sunset,
   Map as MapIcon,
   Activity,
+  MapPinned,
+  AlertCircle,
   type LucideIcon,
 } from "lucide-react";
 import { useAppStore, type AppMode } from "@/lib/store";
@@ -64,8 +68,14 @@ const MODE_VISUAL: Record<
 > = {
   tv: { accent: "indigo", icon: Car as LucideIcon },
   pl: { accent: "amber", icon: Truck as LucideIcon },
+  // HPM — lever du soleil, palette rose chaude.
+  hpm: { accent: "rose", icon: Sunrise as LucideIcon },
+  // HPS — coucher du soleil, palette violet/magenta.
+  hps: { accent: "violet", icon: Sunset as LucideIcon },
   carte: { accent: "cyan", icon: MapIcon as LucideIcon },
   compteurs: { accent: "emerald", icon: Activity as LucideIcon },
+  visualisation: { accent: "cyan", icon: MapPinned as LucideIcon },
+  discontinuites: { accent: "amber", icon: AlertCircle as LucideIcon },
 };
 
 const KIND_MAP: Record<string, "training" | "map" | "compteurs" | "report"> = {
@@ -121,8 +131,12 @@ function buildContent(): LandingContent {
 const MODE_PATH: Record<LandingMode, string> = {
   tv: "/donnees",
   pl: "/donnees",
+  hpm: "/donnees",
+  hps: "/donnees",
   carte: "/carte",
   compteurs: "/compteurs",
+  visualisation: "/visualisation",
+  discontinuites: "/discontinuites",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

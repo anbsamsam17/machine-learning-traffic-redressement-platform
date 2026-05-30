@@ -93,6 +93,16 @@ export const PAGE_MESSAGES: Record<string, PageMessage> = {
     message: "Extrais le fichier compteurs au format standardise.",
     subtitle: "Schema 9 colonnes, compatible QGIS et ArcGIS.",
   },
+  "/visualisation": {
+    mood: "based",
+    message: "Charge ton GeoJSON enrichi pour explorer la carte des debits.",
+    subtitle: "JOr, DPL, PM, PS avec intervalles de confiance — popup au clic.",
+  },
+  "/discontinuites": {
+    mood: "based",
+    message: "Charge tes segments + FCD pour detecter les ruptures de flux.",
+    subtitle: "8 causes typees, 3 topologies, NodePanel drill-down par segment.",
+  },
 };
 
 /**

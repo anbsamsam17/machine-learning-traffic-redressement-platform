@@ -60,21 +60,40 @@ const EXTRA_INPUT_COLS_TV = [
 ];
 
 // ─── Constants PL ───────────────────────────────────────────────────────────
+// Défauts alignés avec E3_09_all3_plus_after (Batch_MDL_PL_Compact4 winner) —
+// 94,00 % tol (658/700 capteurs), R² 0,9722, MAE 0,1657, GEH<5 99,86 %
+// sur BCFCDREF_AllYears_PL_enriched (700 lignes valides Grand Lyon, seed 1752).
+// Les 9 features : `TMJOFCDPL`, `functional_class`, 4 distances trucks +
+// 3 features dérivées calculées par `scripts/enrich_fcdrefglobal.py` :
+//   - `fcd_log` = log1p(TMJOFCDPL)                         (+3,18 pp tol marginal)
+//   - `tv_pl_ratio` = TMJOFCDTV / (TMJOFCDPL + 0,1)        (+6,07 pp tol marginal)
+//   - `dist_to_lyon_center` = Haversine vers Bellecour km  (+6,41 pp tol marginal)
+// Soit +10,82 pp tol vs la baseline Compact3 (5 features), cf.
+// documentation interne `calibration_modele_PL` §3.4.
+// Normalisation : toutes les 9 features z-scorées SAUF `functional_class`
+// (catégoriel int 1-5, raw). Pas de feature `year_mapped` dans le winner PL.
 const DEFAULT_INPUT_COLS_PL = [
   "TMJOFCDPL",
-  "avg_distance_m",
-  "avg_speed_kmh",
-  "truck_avg_min_distance_m",
-  "truck_avg_speed_kmh",
   "functional_class",
-];
-const EXTRA_INPUT_COLS_PL = [
-  "TMJOFCDTV",
-  "avg_distance_before_m",
-  "avg_distance_after_m",
   "truck_avg_distance_m",
+  "truck_avg_min_distance_m",
   "truck_avg_distance_before_m",
   "truck_avg_distance_after_m",
+  "fcd_log",
+  "tv_pl_ratio",
+  "dist_to_lyon_center",
+];
+// Features alternatives — distances VL non utilisées dans le winner PL,
+// vitesses, year_mapped (testés sans gain ou non testés Compact4).
+const EXTRA_INPUT_COLS_PL = [
+  "TMJOFCDTV",
+  "avg_distance_m",
+  "avg_distance_before_m",
+  "avg_distance_after_m",
+  "avg_min_distance_m",
+  "avg_speed_kmh",
+  "truck_avg_speed_kmh",
+  "year_mapped",
 ];
 
 // ─── Shared constants ───────────────────────────────────────────────────────
@@ -97,6 +116,7 @@ type DropoutSchedule = (typeof DROPOUT_SCHEDULE_OPTIONS)[number];
 type NormLayer = (typeof NORM_LAYER_OPTIONS)[number];
 const PREDEFINED_ARCHS = [
   "[8, 6, 4, 3]",
+  "[8, 6, 4, 3, 2]",
   "[8, 6, 4]",
   "[10, 6, 5, 4]",
   "[12, 8, 6, 4, 3]",
@@ -108,6 +128,8 @@ const PREDEFINED_ARCHS = [
 
 const ARCH_MAP: Record<string, number[]> = {
   "[8, 6, 4, 3]": [8.0, 6.0, 4.0, 3.0],
+  // PL Compact4 winner architecture (5 couches deep, dernière tête à 2N).
+  "[8, 6, 4, 3, 2]": [8.0, 6.0, 4.0, 3.0, 2.0],
   "[8, 6, 4]": [8.0, 6.0, 4.0],
   "[10, 6, 5, 4]": [10.0, 6.0, 5.0, 4.0],
   "[12, 8, 6, 4, 3]": [12.0, 8.0, 6.0, 4.0, 3.0],
@@ -124,7 +146,7 @@ const SECONDS_PER_COMBINATION = 35;
 // ─── Types ──────────────────────────────────────────────────────────────────
 export interface TrainingConfig {
   mode: "grid";
-  model_type: "TV" | "PL";
+  model_type: "TV" | "PL" | "HPM" | "HPS";
   input_cols: string[];
   output_cols: string[];
   on_off_norm: boolean[];
@@ -740,11 +762,36 @@ function ToggleRow({
 // Main Form — 4 accordion sections + sticky resume panel
 // ═══════════════════════════════════════════════════════════════════════════
 export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps) {
-  const isTv = mode !== "pl";
+  // Per-mode flags. HPM/HPS share the TV architecture (model structurally
+  // identical) but with different target/feature naming (TxPen_HPM,
+  // FCD_HPM_TV, etc.). isTv stays true for HPM/HPS so existing TV defaults
+  // (architecture, batch_size 128, dropouts, year feature) carry over.
+  const isPL = mode === "pl";
+  const isHPM = mode === "hpm";
+  const isHPS = mode === "hps";
+  const isTv = !isPL;
+  // Discriminator for the backend payload — sent as model_type.
+  const modelType: "TV" | "PL" | "HPM" | "HPS" = isPL
+    ? "PL"
+    : isHPM
+      ? "HPM"
+      : isHPS
+        ? "HPS"
+        : "TV";
 
   // ── Colonnes d'entree/sortie ─────────────────────────────────────────────
-  const defaultCols = isTv ? DEFAULT_INPUT_COLS_TV : DEFAULT_INPUT_COLS_PL;
-  const fallbackExtras = isTv ? EXTRA_INPUT_COLS_TV : EXTRA_INPUT_COLS_PL;
+  // HPM/HPS — features hourly. Substituer FCD_HPM_TV / FCD_HPS_TV au
+  // TMJOFCDTV par defaut TV (les autres colonnes restent identiques car
+  // distances/classes fonctionnelles sont des proprietes du segment, donc
+  // valides sur n'importe quelle fenetre horaire).
+  const defaultCols = isPL
+    ? DEFAULT_INPUT_COLS_PL
+    : isHPM
+      ? ["FCD_HPM_TV", ...DEFAULT_INPUT_COLS_TV.filter((c) => c !== "TMJOFCDTV")]
+      : isHPS
+        ? ["FCD_HPS_TV", ...DEFAULT_INPUT_COLS_TV.filter((c) => c !== "TMJOFCDTV")]
+        : DEFAULT_INPUT_COLS_TV;
+  const fallbackExtras = isPL ? EXTRA_INPUT_COLS_PL : EXTRA_INPUT_COLS_TV;
 
   const [inputCols, setInputCols] = useState<string[]>([...defaultCols]);
   // D4_8643_bs128_ep1500 default: every raw feature is z-scored EXCEPT
@@ -757,11 +804,22 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
         defaultCols.map((c) => [c, c !== "functional_class"])
       )
   );
-  const OUTPUT_OPTIONS = isTv
-    ? ["TxPen", "TMJOBCTV"]
-    : ["TxPenPL", "TMJOBCPL"];
+  // HPM/HPS — cibles dediees, jamais TxPen/TMJOBCTV nus.
+  const OUTPUT_OPTIONS = isPL
+    ? ["TxPenPL", "TMJOBCPL"]
+    : isHPM
+      ? ["TxPen_HPM", "TMJOBCTV_HPM"]
+      : isHPS
+        ? ["TxPen_HPS", "TMJOBCTV_HPS"]
+        : ["TxPen", "TMJOBCTV"];
   const [outputCols, setOutputCols] = useState<string[]>(
-    isTv ? ["TxPen"] : ["TxPenPL"]
+    isPL
+      ? ["TxPenPL"]
+      : isHPM
+        ? ["TxPen_HPM"]
+        : isHPS
+          ? ["TxPen_HPS"]
+          : ["TxPen"]
   );
 
   const allCandidates = availableColumns && availableColumns.length > 0
@@ -805,12 +863,13 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   }, []);
 
   // ── Feature annee ─────────────────────────────────────────────────────────
-  // D4_8643_bs128_ep1500 uses year_mapped as the 7th input feature with raw
-  // (non-normalized) values mapped via {2019:1, 2020:2, …, 2025:7}. Default
-  // ON so the form mirrors the production configuration; the column is appended
-  // to input_cols at submit time with on_off_norm[year_mapped] = yearNormalization
-  // (false → raw year).
-  const [useYearFeature, setUseYearFeature] = useState(true);
+  // TV (D4_8643_bs128_ep1500) uses year_mapped as the 7th input feature with
+  // raw (non-normalized) values mapped via {2019:1, 2020:2, …, 2025:7}.
+  // PL (E3_09_all3_plus_after Compact4) does NOT use year_mapped — the 9
+  // winning features are TMJOFCDPL + functional_class + 4 truck distances + 3
+  // derived features (fcd_log, tv_pl_ratio, dist_to_lyon_center). Year info
+  // was not tested in Compact4 → leave OFF by default for PL.
+  const [useYearFeature, setUseYearFeature] = useState(isTv);
   const [yearColumnName, setYearColumnName] = useState("Annee");
   const [yearNormalization, setYearNormalization] = useState(false);
   const [yearMapping, setYearMapping] = useState<
@@ -847,13 +906,18 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   const [testSize, setTestSize] = useState(0.0);
 
   // ── Architecture ─────────────────────────────────────────────────────────
-  // Neurons factors [8.0, 6.0, 4.0, 3.0] = the "[8, 6, 4, 3]" preset (4 hidden
-  // layers of 8N / 6N / 4N / 3N neurons where N is the feature count).
-  // Validated as the winning architecture on Batch Compact9.
-  const [selectedArchs, setSelectedArchs] = useState<string[]>(["[8, 6, 4, 3]"]);
+  // TV — Neurons factors [8.0, 6.0, 4.0, 3.0] = preset "[8, 6, 4, 3]" (4 hidden
+  // layers, 8N / 6N / 4N / 3N neurons). Validated sur Batch Compact9, bs=128.
+  // PL — Neurons factors [8.0, 6.0, 4.0, 3.0, 2.0] = preset "[8, 6, 4, 3, 2]"
+  // (5 couches, dernière à 2N). Validated sur Batch Compact4, bs=64.
+  const [selectedArchs, setSelectedArchs] = useState<string[]>(
+    isTv ? ["[8, 6, 4, 3]"] : ["[8, 6, 4, 3, 2]"]
+  );
   const [useBatchNorm, setUseBatchNorm] = useState(false);
   const [dropouts, setDropouts] = useState<string[]>(["0.015"]);
-  const [batchSizes, setBatchSizes] = useState<string[]>(["128"]);
+  const [batchSizes, setBatchSizes] = useState<string[]>(
+    isTv ? ["128"] : ["64"]
+  );
 
   // ── Avance (seed, ponderation) ───────────────────────────────────────────
   // Seed 1750 = reference seed for D4_8643_bs128_ep1500. Strong multi-seed
@@ -987,8 +1051,16 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     const finalLrs = lrs.length > 0 ? lrs : [0.01];
     const finalEps = eps.length > 0 ? eps : [1500];
     const finalDrps = drps.length > 0 ? drps : [0.015];
-    const finalBss = bss.length > 0 ? bss : [128];
-    const finalArchs = archs.length > 0 ? archs : [[8.0, 6.0, 4.0, 3.0]];
+    // Fallbacks PL ↔ TV : bs=64 + arch deep [8,6,4,3,2] côté PL Compact4,
+    // bs=128 + arch [8,6,4,3] côté TV Compact9.
+    const finalBss =
+      bss.length > 0 ? bss : isTv ? [128] : [64];
+    const finalArchs =
+      archs.length > 0
+        ? archs
+        : isTv
+          ? [[8.0, 6.0, 4.0, 3.0]]
+          : [[8.0, 6.0, 4.0, 3.0, 2.0]];
 
     const usedDefaults =
       lrs.length === 0 ||
@@ -1005,7 +1077,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
     const config: TrainingConfig = {
       mode: "grid",
-      model_type: isTv ? "TV" : "PL",
+      model_type: modelType,
       input_cols: finalInputCols,
       output_cols: outputCols,
       on_off_norm: finalOnOff,
@@ -1083,6 +1155,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
     recentYearWeight,
     seed,
     isTv,
+    modelType,
     onSubmit,
     optimizer,
     weightDecay,
@@ -1319,6 +1392,61 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
           defaultOpen
           badge={`${inputCols.length}`}
         >
+          {/* PL : panneau d'aide sur les 3 features dérivées Compact4 */}
+          {!isTv && (
+            <div className="rounded-md border border-cyan-400/30 bg-cyan-500/5 p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-cyan-300 uppercase tracking-wide">
+                Features dérivées — winner Compact4 (94,00 % tol)
+              </p>
+              <p className="text-[11px] text-text-muted leading-relaxed">
+                Les 3 colonnes suivantes ne sont pas natives FCD HERE ; elles
+                sont calculées en amont par{" "}
+                <code className="font-mono text-[10px] bg-bg-subtle px-1 rounded">
+                  scripts/enrich_fcdrefglobal.py
+                </code>{" "}
+                avant l&apos;upload. Si elles manquent dans votre fichier,
+                ré-enrichissez ou retirez-les de la sélection.
+              </p>
+              <ul className="text-[11px] text-text-muted space-y-1 list-none">
+                <li>
+                  <span className="font-mono font-semibold text-cyan-300">
+                    fcd_log
+                  </span>{" "}
+                  ={" "}
+                  <span className="font-mono">log(1 + TMJOFCDPL)</span> —
+                  compresse la longue-traîne du trafic PL.{" "}
+                  <span className="text-text-subtle">
+                    Ablation : +3,18 pp tol marginal.
+                  </span>
+                </li>
+                <li>
+                  <span className="font-mono font-semibold text-cyan-300">
+                    tv_pl_ratio
+                  </span>{" "}
+                  ={" "}
+                  <span className="font-mono">
+                    TMJOFCDTV / (TMJOFCDPL + 0,1)
+                  </span>{" "}
+                  — composition VL/PL de l&apos;axe (ratio bas = axe lourd).{" "}
+                  <span className="text-text-subtle">
+                    Ablation : +6,07 pp tol marginal.
+                  </span>
+                </li>
+                <li>
+                  <span className="font-mono font-semibold text-cyan-300">
+                    dist_to_lyon_center
+                  </span>{" "}
+                  = Haversine (km) du centroïde au centre Bellecour (45,7578° N
+                  / 4,8320° E) — capte la décroissance radiale du trafic PL.{" "}
+                  <span className="text-text-subtle">
+                    Ablation : +6,41 pp tol marginal. À recalculer pour autre
+                    territoire.
+                  </span>
+                </li>
+              </ul>
+            </div>
+          )}
+
           {/* INPUT_COLS chips */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -1335,16 +1463,36 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
               </span>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {inputCols.map((col) => (
-                <Chip
-                  key={col}
-                  label={col}
-                  active
-                  onClick={() => toggleInputCol(col)}
-                  removable
-                  onRemove={() => removeInputCol(col)}
-                />
-              ))}
+              {inputCols.map((col) => {
+                // Resolve a per-feature tooltip from coaching-content.ts
+                // (`feature_<col>`). Render a small FieldInfo ⓘ next to the
+                // chip when defined — keeps Chip itself untouched (single
+                // <button>) and reuses the existing tooltip primitive used
+                // throughout the form.
+                const tipKey = `feature_${col}` as keyof typeof fieldTooltips;
+                const tip = fieldTooltips[tipKey];
+                return (
+                  <span
+                    key={col}
+                    className="inline-flex items-center gap-0.5"
+                  >
+                    <Chip
+                      label={col}
+                      active
+                      onClick={() => toggleInputCol(col)}
+                      removable
+                      onRemove={() => removeInputCol(col)}
+                    />
+                    {tip && (
+                      <FieldInfo
+                        purpose={tip.purpose}
+                        recommendation={tip.recommendation}
+                        label={col}
+                      />
+                    )}
+                  </span>
+                );
+              })}
               <div className="relative" ref={extraDropdownRef}>
                 <button
                   type="button"
@@ -1528,7 +1676,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             onChange={setMinInputCount}
             min={mandatoryCols.length}
             max={inputCols.length || 10}
-            help={`Minimum = ${mandatoryCols.length} (colonnes obligatoires). Defaut D4_8643_bs128_ep1500 : 0 (pas de grille de sous-ensembles).`}
+            help={`Minimum = ${mandatoryCols.length} (colonnes obligatoires). Défaut ${isTv ? "D4_8643_bs128_ep1500" : "E3_09_all3_plus_after"} : 0 (pas de grille de sous-ensembles).`}
             tooltipKey="min_input_count"
           />
 
@@ -1942,7 +2090,7 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
             </p>
             <p className="text-sm text-text">
               Grille pour le modele{" "}
-              <span className="text-accent font-mono">{isTv ? "TV" : "PL"}</span>
+              <span className="text-accent font-mono">{modelType}</span>
             </p>
           </div>
 

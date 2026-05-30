@@ -37,7 +37,7 @@ import { useUploadFile } from "@/lib/hooks";
 
 export interface UploadMappingFlowProps {
   /** Pipeline mode — passed to /api/upload */
-  mode: "TV" | "PL" | "carte" | "compteurs";
+  mode: "TV" | "PL" | "HPM" | "HPS" | "carte" | "compteurs";
   /** All target columns the mapping UI will display */
   targetColumns: string[];
   /** Subset of targetColumns flagged as critical (highlighted) */

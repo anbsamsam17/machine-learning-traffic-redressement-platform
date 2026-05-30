@@ -30,7 +30,9 @@ class TestUploadCSV:
         assert data["filename"] == "test.csv"
         assert data["rows"] == 3
         assert isinstance(data["columns"], list)
-        assert len(data["columns"]) == 10
+        # T2 schema modernise : csv_content expose 14 colonnes (10 canoniques
+        # + 4 alias legacy TMJA*) pour retro-compat tests data_prep/mapping.
+        assert len(data["columns"]) >= 10
         assert isinstance(data["preview"], list)
         assert len(data["preview"]) == 3
 

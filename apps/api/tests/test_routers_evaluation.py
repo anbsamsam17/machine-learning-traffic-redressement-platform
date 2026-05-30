@@ -93,9 +93,13 @@ class TestReport:
 
 class TestDownloadModel:
     @pytest.mark.asyncio
-    async def test_invalid_model_dir_returns_404(self, authenticated_client, tmp_path):
+    async def test_invalid_model_dir_returns_4xx(self, authenticated_client, tmp_path):
+        """T2: A5 plugue validate_path qui peut renvoyer 400 (path traversal /
+        path hors session root) ou 404 (model_dir manquant). Les deux sont
+        valides ; l'important est que ce ne soit pas 200 ou 500."""
         r = await authenticated_client.get(
             "/api/evaluation/download-model",
             params={"model_name": "nope", "model_dir": str(tmp_path / "missing")},
         )
-        assert r.status_code == 404
+        # 400 (path hors session root) ou 404 (missing) — pas de leak.
+        assert r.status_code in (400, 403, 404)

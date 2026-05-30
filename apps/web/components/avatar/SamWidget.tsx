@@ -4,6 +4,8 @@ import * as React from "react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
 import { cn } from "@/lib/utils";
 import { useSamStore } from "@/lib/sam/store";
 import { SAM_MOOD_TOKENS, samMoodImage } from "@/lib/sam/moods";
@@ -62,6 +64,35 @@ export function SamWidget() {
 
   const bubbleId = React.useId();
   const tokens = SAM_MOOD_TOKENS[mood];
+
+  // GSAP crossfade between mood PNGs. The <Image> `src` is swapped by React
+  // on mood change; we just fade-out then fade-in the wrapper so the swap is
+  // not visually brutal. Respects prefers-reduced-motion (no animation, image
+  // stays fully visible).
+  const imageWrapperRef = React.useRef<HTMLDivElement | null>(null);
+  const prevMoodRef = React.useRef<string | null>(null);
+  useGSAP(
+    () => {
+      const el = imageWrapperRef.current;
+      if (!el) return;
+      // First render: just record the mood, no animation.
+      if (prevMoodRef.current === null) {
+        prevMoodRef.current = mood;
+        return;
+      }
+      if (prevMoodRef.current === mood) return;
+      prevMoodRef.current = mood;
+      if (prefersReducedMotion) return;
+
+      gsap.killTweensOf(el);
+      gsap.fromTo(
+        el,
+        { opacity: 0.2, scale: 0.95 },
+        { opacity: 1, scale: 1, duration: 0.35, ease: "power2.out" },
+      );
+    },
+    { dependencies: [mood, prefersReducedMotion] },
+  );
 
   // Show bubble whenever a message arrives, auto-hide for non-persistent moods.
   // CRITICAL: bubble is suppressed entirely while any samNotify toast is on
@@ -156,14 +187,16 @@ export function SamWidget() {
               "cursor-pointer"
             )}
           >
-            <Image
-              src={samMoodImage(mood)}
-              alt=""
-              fill
-              sizes="128px"
-              className="object-contain"
-              priority={false}
-            />
+            <div ref={imageWrapperRef} className="relative size-full">
+              <Image
+                src={samMoodImage(mood)}
+                alt=""
+                fill
+                sizes="128px"
+                className="object-contain"
+                priority={false}
+              />
+            </div>
           </button>
         ) : (
           <div
@@ -171,14 +204,16 @@ export function SamWidget() {
             aria-label={`Sam (humeur courante: ${mood})`}
             className="block size-full"
           >
-            <Image
-              src={samMoodImage(mood)}
-              alt=""
-              fill
-              sizes="128px"
-              className="object-contain"
-              priority={false}
-            />
+            <div ref={imageWrapperRef} className="relative size-full">
+              <Image
+                src={samMoodImage(mood)}
+                alt=""
+                fill
+                sizes="128px"
+                className="object-contain"
+                priority={false}
+              />
+            </div>
           </div>
         )}
       </motion.div>

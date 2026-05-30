@@ -276,6 +276,21 @@ select option {
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+ * MapLibre GL — height fix.
+ * maplibre-gl.css forces `position: relative` on `.maplibregl-map`, which
+ * overrides the Tailwind `absolute inset-0` on our container ref and makes
+ * the map collapse to height: 0. Force a 100% fill so the map fills its
+ * (already-sized) parent. The parent of `containerRef` in MapView.tsx
+ * carries `relative w-full h-full` and is itself placed in a sized flex
+ * container, so `width/height: 100%` here is enough to give the canvas
+ * a measurable box.
+ * ──────────────────────────────────────────────────────────────────── */
+.maplibregl-map {
+  width: 100%;
+  height: 100%;
+}
+
 /* Native progress reset (used by some upload areas) */
 progress {
   appearance: none;

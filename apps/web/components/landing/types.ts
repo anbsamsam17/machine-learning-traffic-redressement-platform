@@ -21,7 +21,7 @@ export interface LandingModeContent {
   /** Up to ~3 metrics rendered as monospaced chips. */
   keyMetrics: string[];
   /** Accent palette key — drives icon color and hover border. */
-  accent: "indigo" | "amber" | "cyan" | "emerald";
+  accent: "indigo" | "amber" | "cyan" | "emerald" | "rose" | "violet";
   icon: LucideIcon;
   cta: string;
 }

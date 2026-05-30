@@ -16,6 +16,10 @@ from httpx import ASGITransport, AsyncClient
 # to "development" so /docs stays reachable for the existing health tests.
 os.environ.setdefault("JWT_SECRET", secrets.token_hex(32))
 os.environ.setdefault("ENVIRONMENT", "development")
+# Also disable rate limiting in tests — even though pytest auto-detects
+# itself, the slowapi state may already be shared between concurrent tests
+# (auth/register triggers 5/hour limit otherwise). Set BEFORE app import.
+os.environ.setdefault("DISABLE_RATE_LIMIT", "1")
 
 # Ensure the app package is importable
 api_root = Path(__file__).resolve().parent.parent
@@ -65,20 +69,36 @@ async def authenticated_client(client):
 
 @pytest.fixture
 def csv_content() -> str:
-    """Minimal valid CSV with columns needed for mapping + training."""
+    """Minimal valid CSV with columns needed for mapping + training.
+
+    Schema modernise (T2): noms canoniques HERE/JOr (TMJOFCDTV / TMJOFCDPL /
+    TMJOBCTV / Permanent/Temporaire) au lieu de l'ancien (TMJAFCDTV / Per/Tou).
+
+    Les noms legacy (TMJAFCDTV, TMJABCTV, Per/Tou) sont conserves en doubles
+    colonnes pour la retro-compat avec les tests qui les referencent
+    explicitement (data_prep, mapping). Les nouveaux tests doivent privilegier
+    les noms canoniques.
+    """
     return (
-        "Type,Identifiant,TMJAFCDTV,TMJAFCDPL,TMJABCTV,TMJABCPL,"
+        # Header : noms canoniques + alias legacy pour retro-compat tests
+        "Type,Identifiant,"
+        "TMJOFCDTV,TMJOFCDPL,TMJOBCTV,TMJOBCPL,"
+        "TMJAFCDTV,TMJAFCDPL,TMJABCTV,TMJABCPL,"
         "car_average_speed_kmh,car_average_distance_km,"
         "truck_average_speed_kmh,truck_min_average_distance_km\n"
-        "Per,001,100,10,5000,500,60,30,55,3\n"
-        "Tou,002,200,20,8000,800,65,35,58,4\n"
-        "Per,003,150,15,6000,600,62,32,56,3.5\n"
+        # Permanent, alias legacy Per - meme valeurs sur les deux nommages
+        "Permanent,001,100,10,5000,500,100,10,5000,500,60,30,55,3\n"
+        "Temporaire,002,200,20,8000,800,200,20,8000,800,65,35,58,4\n"
+        "Permanent,003,150,15,6000,600,150,15,6000,600,62,32,56,3.5\n"
     )
 
 
 @pytest.fixture
 def geojson_content() -> str:
-    """Minimal valid GeoJSON FeatureCollection."""
+    """Minimal valid GeoJSON FeatureCollection.
+
+    Schema modernise (T2) avec retrocompat legacy (cf csv_content).
+    """
     return json.dumps({
         "type": "FeatureCollection",
         "features": [
@@ -86,8 +106,14 @@ def geojson_content() -> str:
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [2.35, 48.86]},
                 "properties": {
-                    "Type": "Per",
+                    "Type": "Permanent",
                     "Identifiant": "001",
+                    # Noms canoniques HERE/JOr
+                    "TMJOFCDTV": 100,
+                    "TMJOFCDPL": 10,
+                    "TMJOBCTV": 5000,
+                    "TMJOBCPL": 500,
+                    # Alias legacy (retro-compat tests)
                     "TMJAFCDTV": 100,
                     "TMJAFCDPL": 10,
                     "TMJABCTV": 5000,
@@ -102,8 +128,12 @@ def geojson_content() -> str:
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [2.36, 48.87]},
                 "properties": {
-                    "Type": "Tou",
+                    "Type": "Temporaire",
                     "Identifiant": "002",
+                    "TMJOFCDTV": 200,
+                    "TMJOFCDPL": 20,
+                    "TMJOBCTV": 8000,
+                    "TMJOBCPL": 800,
                     "TMJAFCDTV": 200,
                     "TMJAFCDPL": 20,
                     "TMJABCTV": 8000,

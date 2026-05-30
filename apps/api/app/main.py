@@ -73,7 +73,15 @@ def _seed_default_user() -> None:
     data across restarts, so without seeding the dev account everyone
     gets a 401 on first login post-deploy. This is a no-op if the user
     already exists.
+
+    P0-5: skipped entirely in production — a hard-coded credential pair
+    shipped in source is a critical vulnerability. Dev/staging keeps
+    the seed for the smooth onboarding flow.
     """
+    settings = get_settings()
+    if settings.is_production:
+        logger.info("Seed user skipped (production mode)")
+        return
     try:
         from .auth import user_store
 
@@ -247,6 +255,7 @@ app.include_router(auth_router)
 from .routers import (  # noqa: E402
     carte,
     compteurs,
+    discontinuites,
     evaluation,
     export,
     mapping,
@@ -254,6 +263,7 @@ from .routers import (  # noqa: E402
     sessions,
     training,
     upload,
+    visualisation,
 )
 
 _protected = [Depends(get_current_user)]
@@ -266,6 +276,8 @@ app.include_router(export.router, dependencies=_protected)
 app.include_router(carte.router, dependencies=_protected)
 app.include_router(compteurs.router, dependencies=_protected)
 app.include_router(models.router, dependencies=_protected)
+app.include_router(visualisation.router, dependencies=_protected)
+app.include_router(discontinuites.router, dependencies=_protected)
 # sessions router uses its own optional auth dependency (returns 404 on no
 # auth instead of 401) so the frontend can call it on first page load.
 app.include_router(sessions.router)

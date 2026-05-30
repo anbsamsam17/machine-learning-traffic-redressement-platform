@@ -22,9 +22,10 @@ from difflib import get_close_matches
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..auth import UserRecord, get_current_user, require_owned_session
 from ..session import session_manager
 
 logger = logging.getLogger(__name__)
@@ -40,10 +41,10 @@ TARGET_COLUMNS: list[str] = [
     "Identifiant", "Annee", "Adresse", "Type Compteur",
     # Comptage capteur (BC = Boucle Comptage) (4)
     "TMJOBCTV", "TMJOBCPL", "TMJOBCTV_HPM", "TMJOBCTV_HPS",
-    # FCD HERE (2)
-    "TMJOFCDTV", "TMJOFCDPL",
-    # Taux de penetration (2)
-    "TxPen", "TxPenPL",
+    # FCD HERE (4) — TV/PL journalier + HPM/HPS horaires
+    "TMJOFCDTV", "TMJOFCDPL", "FCD_HPM_TV", "FCD_HPS_TV",
+    # Taux de penetration (4) — TV/PL journalier + HPM/HPS horaires
+    "TxPen", "TxPenPL", "TxPen_HPM", "TxPen_HPS",
     # Mapping & qualite (2)
     "segment_id_match", "mapmatch_status",
     # Reseau HERE (1)
@@ -56,8 +57,8 @@ TARGET_COLUMNS: list[str] = [
     # Distances PL (4)
     "truck_avg_distance_m", "truck_avg_distance_before_m",
     "truck_avg_distance_after_m", "truck_avg_min_distance_m",
-    # Geometrie (1)
-    "geometry",
+    # Geometrie (3) : geometry + HD (heading FCDREFGLOBAL) + DIR_TRAVEL (direction)
+    "geometry", "HD", "DIR_TRAVEL",
 ]
 
 
@@ -65,8 +66,8 @@ TARGET_COLUMNS: list[str] = [
 TARGET_GROUPS: dict[str, list[str]] = {
     "Identification": ["Identifiant", "Annee", "Adresse", "Type Compteur"],
     "Comptage capteur": ["TMJOBCTV", "TMJOBCPL", "TMJOBCTV_HPM", "TMJOBCTV_HPS"],
-    "FCD HERE": ["TMJOFCDTV", "TMJOFCDPL"],
-    "Taux de penetration": ["TxPen", "TxPenPL"],
+    "FCD HERE": ["TMJOFCDTV", "TMJOFCDPL", "FCD_HPM_TV", "FCD_HPS_TV"],
+    "Taux de penetration": ["TxPen", "TxPenPL", "TxPen_HPM", "TxPen_HPS"],
     "Mapping & qualite": ["segment_id_match", "mapmatch_status"],
     "Reseau HERE": ["functional_class"],
     "Vitesses FCD": ["avg_speed_kmh", "truck_avg_speed_kmh"],
@@ -78,7 +79,7 @@ TARGET_GROUPS: dict[str, list[str]] = {
         "truck_avg_distance_m", "truck_avg_distance_before_m",
         "truck_avg_distance_after_m", "truck_avg_min_distance_m",
     ],
-    "Geometrie": ["geometry"],
+    "Geometrie": ["geometry", "HD", "DIR_TRAVEL"],
 }
 
 
@@ -94,16 +95,42 @@ SYNONYMS: dict[str, list[str]] = {
     # Comptage (TMJO = TMJ Ouvre, BC = Boucle Comptage)
     "TMJOBCTV": ["TMJABCTV", "tmjabctv", "TMJOBCTV", "TMJABCTOTAL"],
     "TMJOBCPL": ["TMJABCPL", "tmjabcpl", "TMJOBCPL"],
-    "TMJOBCTV_HPM": ["TMJABCTV_HPM", "tmjabctv_hpm"],
-    "TMJOBCTV_HPS": ["TMJABCTV_HPS", "tmjabctv_hps"],
+    "TMJOBCTV_HPM": [
+        "TMJABCTV_HPM", "tmjabctv_hpm", "tmjobctv_hpm",
+        "BCTV_HPM", "BCTV_h08", "BC_HPM_TV",
+    ],
+    "TMJOBCTV_HPS": [
+        "TMJABCTV_HPS", "tmjabctv_hps", "tmjobctv_hps",
+        "BCTV_HPS", "BCTV_h17", "BC_HPS_TV",
+    ],
 
     # FCD HERE (TMJO = TMJ Ouvre, FCD = Floating Car Data)
     "TMJOFCDTV": ["TMJAFCDTV", "TMJFCDTV", "TMJATV", "tmjafcdtv", "tmjatv"],
     "TMJOFCDPL": ["TMJAFCDPL", "TMJFCDPL", "TMJAPL", "tmjafcdpl", "tmjapl"],
+    # FCD HERE horaires (HPM = 8h-9h, HPS = 17h-18h)
+    "FCD_HPM_TV": [
+        "FCDTV_h08", "FCDTV_HPM", "FCDTV_hpm",
+        "fcdtv_h08", "fcd_hpm_tv", "FCD_HPM",
+        "FCDHPMTV", "TMJOFCDTV_HPM", "tmjofcdtv_hpm",
+    ],
+    "FCD_HPS_TV": [
+        "FCDTV_h17", "FCDTV_HPS", "FCDTV_hps",
+        "fcdtv_h17", "fcd_hps_tv", "FCD_HPS",
+        "FCDHPSTV", "TMJOFCDTV_HPS", "tmjofcdtv_hps",
+    ],
 
     # Taux de penetration
     "TxPen": ["TxPen_brut", "TxPenTVRef", "TxPenRef", "TXPENTV", "TXPENTVREF", "txpen"],
     "TxPenPL": ["TxPenPLRef", "TXPENPL", "TXPENPLREF", "txpenpl"],
+    # Taux de penetration horaires (HPM = 8h-9h, HPS = 17h-18h)
+    "TxPen_HPM": [
+        "txpen_hpm", "TXPEN_HPM", "TxPenHPM", "TxPen_HPM_brut",
+        "TxPenHPMRef", "TXPENHPM",
+    ],
+    "TxPen_HPS": [
+        "txpen_hps", "TXPEN_HPS", "TxPenHPS", "TxPen_HPS_brut",
+        "TxPenHPSRef", "TXPENHPS",
+    ],
 
     # Mapping HERE
     "segment_id_match": ["LINK_ID", "link_id", "segmentId", "segmentid", "ref_in_id", "REF_IN_ID"],
@@ -131,6 +158,12 @@ SYNONYMS: dict[str, list[str]] = {
 
     # Geometrie
     "geometry": ["__geometry_json", "geom", "the_geom", "shape", "SHAPE"],
+    # Heading (FCDREFGLOBAL : entier degres 0..359) — fallback geometrique
+    # cote carte si HD absent (cf carte.py changement 3).
+    "HD": ["HD", "heading", "Heading", "Hd", "hd"],
+    # Direction de circulation (FCDREFGLOBAL) : "B" = bidirectionnel.
+    # Mappe DD (bool) cote carte.
+    "DIR_TRAVEL": ["DIR_TRAVEL", "dir_travel", "direction", "Direction"],
 }
 
 
@@ -313,11 +346,13 @@ def _build_learning_df(
 # ---------------------------------------------------------------------------
 
 @router.post("/auto", response_model=AutoMapResponse)
-async def auto_map(body: AutoMapRequest) -> AutoMapResponse:
+async def auto_map(
+    body: AutoMapRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> AutoMapResponse:
     """Run fuzzy auto-mapping of source columns to the 26 target columns."""
-    session = session_manager.get_session(body.session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    # P0-2: enforce ownership.
+    session = require_owned_session(body.session_id, current_user)
 
     raw_df: pd.DataFrame | None = session.data.get("raw_df")
     if raw_df is None:
@@ -348,16 +383,17 @@ async def auto_map(body: AutoMapRequest) -> AutoMapResponse:
 
 
 @router.put("/validate", response_model=ValidateResponse)
-async def validate_mapping(body: ValidateRequest) -> ValidateResponse:
+async def validate_mapping(
+    body: ValidateRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> ValidateResponse:
     """Accept the user-confirmed mapping and build the learning DataFrame."""
     logger.info(
         "validate_mapping: start session=%s territory=%s extras=%d",
         body.session_id, body.territory, len(body.extra_cols),
     )
-    session = session_manager.get_session(body.session_id)
-    if session is None:
-        logger.warning("validate_mapping: session not found %s", body.session_id)
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+    # P0-2: enforce ownership before reading any session data.
+    session = require_owned_session(body.session_id, current_user)
 
     raw_df: pd.DataFrame | None = session.data.get("raw_df")
     if raw_df is None:

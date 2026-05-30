@@ -9,12 +9,13 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 
 from pydantic import BaseModel
 
+from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
-from ..security import validate_path
+from ..security import session_root, validate_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -27,6 +28,11 @@ class ModelInfo(BaseModel):
     has_architecture: bool
     has_norm: bool
     training_config: dict[str, Any] | None = None
+    # Resolved model kind ("TV", "PL", "HPM", "HPS"). Best-effort: read from
+    # training_config.model_kind first, then folder-name prefix
+    # (``model_HPM_*`` / ``model_HPS_*``), then output_cols heuristic.
+    # Defaults to ``"TV"`` so legacy clients keep seeing a value.
+    kind: str = "TV"
 
 
 class ModelsListResponse(BaseModel):
@@ -59,6 +65,47 @@ def _is_model_dir(p: Path) -> bool:
     return False
 
 
+_VALID_KINDS = {"TV", "PL", "HPM", "HPS"}
+
+
+def _resolve_model_kind(folder_name: str, training_config: dict[str, Any] | None) -> str:
+    """Resolve the model kind for a serialised artifact.
+
+    Priority :
+    1. ``training_config.model_kind`` (written explicitly by training.py).
+    2. Folder name prefix : ``model_HPM_*`` / ``model_HPS_*`` / ``model_PL_*``
+       / ``model_TV_*``.
+    3. ``training_config.output_cols[0]`` heuristic (``hpm`` / ``hps`` /
+       ``pl`` substring).
+    4. Default ``"TV"``.
+    """
+    # 1. explicit field
+    if training_config:
+        k = str(training_config.get("model_kind") or "").upper()
+        if k in _VALID_KINDS:
+            return k
+
+    # 2. folder prefix (always upper-case-checked)
+    fn_up = folder_name.upper()
+    for kind in ("HPM", "HPS", "PL", "TV"):
+        if fn_up.startswith(f"MODEL_{kind}_"):
+            return kind
+
+    # 3. output_cols heuristic
+    if training_config:
+        out_cols = training_config.get("output_cols") or []
+        if out_cols:
+            target = str(out_cols[0]).lower()
+            if "hpm" in target:
+                return "HPM"
+            if "hps" in target:
+                return "HPS"
+            if "pl" in target:
+                return "PL"
+
+    return "TV"
+
+
 def _make_model_info(p: Path) -> ModelInfo:
     has_keras = (p / "model.keras").exists()
     has_arch = (p / "NNarchitecture.json").exists()
@@ -73,6 +120,8 @@ def _make_model_info(p: Path) -> ModelInfo:
         except Exception:
             pass
 
+    kind = _resolve_model_kind(p.name, training_config)
+
     return ModelInfo(
         name=p.name,
         path=str(p),
@@ -81,6 +130,7 @@ def _make_model_info(p: Path) -> ModelInfo:
         has_architecture=has_arch or has_keras,
         has_norm=norm_file,
         training_config=training_config,
+        kind=kind,
     )
 
 
@@ -130,10 +180,15 @@ def _scan_models_in_dir(base: Path, max_depth: int = 6) -> list[ModelInfo]:
     return models
 
 
-def _get_session_models_dir(session_id: str) -> Path:
-    """Return the models directory for a session inside WORKSPACE_ROOT."""
-    settings = get_settings()
-    return Path(settings.WORKSPACE_ROOT) / session_id / "models"
+def _get_session_models_dir(user_id: str, session_id: str) -> Path:
+    """Return the models directory for a session inside WORKSPACE_ROOT.
+
+    P0-4: uses `session_root(user_id, session_id)` which regex-validates the
+    ids (alphanumeric + dash + underscore only) so a crafted ``session_id``
+    like ``../../etc`` cannot escape the workspace. Layout:
+    ``WORKSPACE_ROOT/{user_id}/{session_id}/models/``.
+    """
+    return session_root(user_id, session_id) / "models"
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +200,14 @@ async def list_models(
     root: str = Query(None, description="Racine du scan recursif (chemin absolu)"),
     dir: str = Query(None, description="Alias historique pour 'root'"),
     session_id: str = Query(None, description="Session ID — cherche dans le workspace serveur"),
+    kind: str = Query(
+        None,
+        description=(
+            "Filtre par type de modele ('TV', 'PL', 'HPM', 'HPS'). "
+            "Quand omis : retourne tous les modeles."
+        ),
+    ),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> ModelsListResponse:
     """List all model sub-directories under a root, recursively.
 
@@ -153,21 +216,51 @@ async def list_models(
 
     Resolution order:
     1. ``root`` (preferred) or ``dir`` (legacy alias) — explicit absolute path
-    2. ``session_id`` — uses ``WORKSPACE_ROOT/{session_id}/models/``
+       (P0-4: must be inside the caller's per-session workspace; cross-user
+       paths are refused with 403).
+    2. ``session_id`` — uses ``WORKSPACE_ROOT/{user_id}/{session_id}/models/``
+
+    The ``kind`` filter is applied AFTER scanning: each returned ModelInfo
+    carries its resolved kind (``model_kind`` in training_config + folder
+    prefix + output_cols heuristic, in that order).
     """
     scan_root = root or dir
     if scan_root:
-        validate_path(scan_root)
-        base = Path(scan_root)
+        if not session_id:
+            # P0-4: without a session_id we cannot scope the path to a
+            # specific tenant tree. Refuse rather than fall back to the
+            # global workspace (would let any user list any other user's
+            # models by passing ``root=WORKSPACE_ROOT/<victim>/...``).
+            raise HTTPException(
+                status_code=400,
+                detail="'session_id' est requis lorsque 'root' (ou 'dir') est fourni.",
+            )
+        # P0-3: enforce ownership of the session whose tree we are about to scan.
+        require_owned_session(session_id, current_user)
+        # P0-4: scan_root MUST stay inside the caller's per-session tree.
+        allowed = _get_session_models_dir(current_user.user_id, session_id)
+        base = validate_path(scan_root, allowed_root=allowed)
     elif session_id:
-        base = _get_session_models_dir(session_id)
+        # P0-3: enforce ownership before exposing any directory listing.
+        require_owned_session(session_id, current_user)
+        base = _get_session_models_dir(current_user.user_id, session_id)
     else:
         raise HTTPException(
             status_code=400, detail="Fournissez 'root' (ou 'dir') ou 'session_id'."
         )
 
     models = _scan_models_in_dir(base)
-    logger.info("Listed %d models under %s", len(models), base)
+
+    if kind:
+        kind_up = kind.upper()
+        if kind_up not in _VALID_KINDS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'kind' invalide: {kind!r}. Attendu: TV / PL / HPM / HPS.",
+            )
+        models = [m for m in models if m.kind == kind_up]
+
+    logger.info("Listed %d models under %s (kind filter=%s)", len(models), base, kind or "ALL")
     return ModelsListResponse(models=models)
 
 
@@ -175,18 +268,22 @@ async def list_models(
 async def upload_models_zip(
     file: UploadFile = File(..., description="Fichier ZIP contenant un ou plusieurs dossiers de modeles"),
     session_id: str = Form(..., description="Session ID"),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> ModelUploadResponse:
     """Upload a ZIP file containing one or more model directories.
 
     Each model directory must contain at minimum NNarchitecture.json and
     NNweights.weights.h5 (or NNweights.h5).
 
-    The ZIP is extracted into WORKSPACE_ROOT/{session_id}/models/.
+    The ZIP is extracted into WORKSPACE_ROOT/{user_id}/{session_id}/models/.
     """
+    # P0-3: enforce ownership of the target session.
+    require_owned_session(session_id, current_user)
+
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Le fichier doit etre un .zip")
 
-    dest_dir = _get_session_models_dir(session_id)
+    dest_dir = _get_session_models_dir(current_user.user_id, session_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     # Read uploaded file into memory and validate it is a valid zip
@@ -241,15 +338,20 @@ async def upload_models_zip(
 async def upload_models_folder(
     files: list[UploadFile] = File(..., description="Fichiers du dossier de modeles (via webkitdirectory)"),
     session_id: str = Form(..., description="Session ID"),
+    current_user: UserRecord = Depends(get_current_user),
 ) -> ModelUploadResponse:
     """Upload multiple files from a folder selection (webkitdirectory).
 
     Each file's ``filename`` field contains its relative path within the selected
     folder (e.g. ``elu_lr0.01_ep500/NNarchitecture.json``).  The endpoint
-    reconstructs the directory tree under WORKSPACE_ROOT/{session_id}/models/
-    and returns the list of valid models found.
+    reconstructs the directory tree under
+    WORKSPACE_ROOT/{user_id}/{session_id}/models/ and returns the list of valid
+    models found.
     """
-    dest_dir = _get_session_models_dir(session_id)
+    # P0-3: enforce ownership of the target session.
+    require_owned_session(session_id, current_user)
+
+    dest_dir = _get_session_models_dir(current_user.user_id, session_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     for upload_file in files:
@@ -302,6 +404,23 @@ async def upload_models_folder(
 
     if not models:
         logger.warning("No valid models found in uploaded folder at %s", dest_dir)
+
+    # Soft-validate kind coherence : si le dossier commence par
+    # ``model_HPM_`` mais training_config.model_kind dit "TV", on log un
+    # warning (non bloquant — le payload renvoie quand meme les modeles
+    # avec leur kind resolu).
+    for m in models:
+        folder_kind = "TV"
+        fn_up = Path(m.path).name.upper()
+        for k in ("HPM", "HPS", "PL", "TV"):
+            if fn_up.startswith(f"MODEL_{k}_"):
+                folder_kind = k
+                break
+        if m.kind != folder_kind:
+            logger.warning(
+                "Model %s kind mismatch: folder=%s vs training_config=%s",
+                m.name, folder_kind, m.kind,
+            )
 
     logger.info("Folder upload complete: %d model(s) found for session %s", len(models), session_id)
 

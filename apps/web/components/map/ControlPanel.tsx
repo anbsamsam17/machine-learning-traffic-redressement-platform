@@ -68,7 +68,7 @@ export function ControlPanel({
           </div>
           {meanTvr != null && (
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-400">TVr moyen</span>
+              <span className="text-slate-400">JOr moyen</span>
               <span
                 className="text-slate-100 font-semibold tabular-nums"
                 style={{ fontFamily: 'ui-monospace, "JetBrains Mono", monospace' }}
@@ -99,7 +99,7 @@ export function ControlPanel({
             className="text-[11px] text-slate-200 flex items-center gap-1.5"
           >
             <Filter size={12} className="text-violet-400" />
-            Seuil TVr minimum
+            Seuil JOr minimum
           </label>
           <span
             className="text-[11px] text-indigo-300 font-semibold tabular-nums"
@@ -118,10 +118,10 @@ export function ControlPanel({
           onChange={(e) => set("minTvrFilter", Number(e.target.value))}
           disabled={!hasData}
           className="w-full h-1.5 rounded-full appearance-none bg-[rgba(255,255,255,0.08)] cursor-pointer accent-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-500"
-          aria-label="Seuil TVr minimum"
+          aria-label="Seuil JOr minimum"
         />
         <p className="text-[10px] text-slate-500">
-          Masque les tronçons dont le débit TVr est inférieur au seuil.
+          Masque les tronçons dont le débit JOr est inférieur au seuil.
         </p>
       </div>
 

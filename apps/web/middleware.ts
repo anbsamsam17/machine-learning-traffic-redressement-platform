@@ -22,6 +22,8 @@ function isPublicPath(pathname: string): boolean {
   if (pathname.startsWith("/bg/")) return true;
   // Temporary: dev-only test fixtures served from public/test/
   if (pathname.startsWith("/test/")) return true;
+  // Lyon preview GeoJSON samples for /visualisation and /discontinuites preview mode
+  if (pathname.startsWith("/preview/")) return true;
   if (pathname === "/favicon.ico") return true;
   return false;
 }

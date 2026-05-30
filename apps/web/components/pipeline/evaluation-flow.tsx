@@ -152,7 +152,7 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
         const data = await uploadFileMut.mutateAsync({
           file: f,
           path: "/api/upload",
-          extra: { mode: mode === "pl" ? "PL" : "TV" },
+          extra: { mode: mode === "pl" ? "PL" : mode === "hpm" ? "HPM" : mode === "hps" ? "HPS" : "TV" },
         });
         setSessionId(data.session_id);
         setFileColumns(data.columns ?? []);
@@ -286,7 +286,7 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
         const r = await uploadFileMut.mutateAsync({
           file: validationFile,
           path: "/api/upload",
-          extra: { mode: mode === "pl" ? "PL" : "TV" },
+          extra: { mode: mode === "pl" ? "PL" : mode === "hpm" ? "HPM" : mode === "hps" ? "HPS" : "TV" },
         });
         sid = r.session_id;
         setSessionId(sid);
@@ -387,7 +387,7 @@ export function EvaluationFlow({ mode: flowMode }: EvaluationFlowProps) {
       <div className="space-y-1.5">
         <h2 className="text-2xl font-semibold text-text">{copy.title}</h2>
         <p className="text-sm text-text-muted">
-          {copy.intro(mode === "pl" ? "PL" : "TV")}
+          {copy.intro(mode === "pl" ? "PL" : mode === "hpm" ? "HPM" : mode === "hps" ? "HPS" : "TV")}
         </p>
       </div>
 

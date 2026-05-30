@@ -47,15 +47,43 @@ export const landingContent = {
       cta: "Lancer l'analyse PL",
     },
     {
+      id: "hpm",
+      shortTitle: "HPM",
+      title: "Machine Learning : Redressement debit Heure de Pointe Matin",
+      tagline: "Reseau neuronal calibre sur la fenetre horaire 8h-9h (v/h).",
+      description:
+        "Pipeline dedie a l'heure de pointe matin : entree FCD horaire 8h-9h, cible TxPen_HPM, sortie HPM_FCDr (debit redresse en vehicules par heure). Architecture identique a la chaine TV mais cible et features specifiques a la fenetre 8h-9h. Rapports d'erreur par classe de debit livres en fin de run.",
+      keyMetrics: [
+        "Fenetre 8h-9h",
+        "Cible TxPen_HPM",
+        "Sortie HPM_FCDr (v/h)",
+      ],
+      cta: "Lancer l'analyse HPM",
+    },
+    {
+      id: "hps",
+      shortTitle: "HPS",
+      title: "Machine Learning : Redressement debit Heure de Pointe Soir",
+      tagline: "Reseau neuronal calibre sur la fenetre horaire 17h-18h (v/h).",
+      description:
+        "Pipeline dedie a l'heure de pointe soir : entree FCD horaire 17h-18h, cible TxPen_HPS, sortie HPS_FCDr (debit redresse en vehicules par heure). Architecture identique a la chaine TV mais cible et features specifiques a la fenetre 17h-18h. Rapports d'erreur par classe de debit livres en fin de run.",
+      keyMetrics: [
+        "Fenetre 17h-18h",
+        "Cible TxPen_HPS",
+        "Sortie HPS_FCDr (v/h)",
+      ],
+      cta: "Lancer l'analyse HPS",
+    },
+    {
       id: "carte",
       shortTitle: "Carte",
       title: "Carte de Debits",
       tagline: "Application des modeles TV et PL sur le reseau FCD complet.",
       description:
-        "Charge un modele entraine, applique les predictions segment par segment et genere un GeoJSON enrichi (TVr, DPL, intervalles de confiance). Viewer maplibre integre avec filtres dynamiques et palette graduee.",
+        "Charge un modele entraine, applique les predictions segment par segment et genere un GeoJSON enrichi (JOr, DPL, intervalles de confiance). Viewer maplibre integre avec filtres dynamiques et palette graduee.",
       keyMetrics: [
         "Palette graduee 7 paliers",
-        "Filtres TVr / FC",
+        "Filtres JOr / FC",
         "Viewer maplibre integre",
       ],
       cta: "Ouvrir la carte",
@@ -73,6 +101,34 @@ export const landingContent = {
         "Compatible QGIS",
       ],
       cta: "Generer le fichier",
+    },
+    {
+      id: "visualisation",
+      shortTitle: "Visualisation",
+      title: "Carte + Capteurs",
+      tagline: "Visualisez carte de debits et points de comptage sur la meme vue.",
+      description:
+        "Chargez un GeoJSON de predictions (sortie module Carte) et un fichier capteurs (CSV/xlsx) pour une vue interactive complete : segments colories, capteurs TV/PL, popups detailles, lien Street View et filtres dynamiques.",
+      keyMetrics: [
+        "Lignes + Points",
+        "Popups detailles",
+        "Street View",
+      ],
+      cta: "Ouvrir",
+    },
+    {
+      id: "discontinuites",
+      shortTitle: "Discontinuites",
+      title: "Analyse des discontinuites JOr",
+      tagline: "Detecte les sauts de debit entre arcs adjacents et explique les causes.",
+      description:
+        "Charge un GeoJSON enrichi (JOr/DPL par segment), execute le pipeline de detection cote serveur (5 etapes, 30 s - 2 min selon volume) puis affiche une carte interactive des noeuds discontinus avec cause principale, topologie, drivers rankes et table par segment.",
+      keyMetrics: [
+        "8 causes typees",
+        "3 topologies",
+        "Popups drill-down",
+      ],
+      cta: "Lancer l'analyse",
     },
   ],
 

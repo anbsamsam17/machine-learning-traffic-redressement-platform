@@ -26,13 +26,37 @@ import { cn } from "@/lib/utils";
 import { SamAvatar } from "@/components/avatar/SamAvatar";
 import {
   samConfigRecommendations,
+  samConfigRecommendationsPL,
+  samConfigRecommendationsHPM,
+  samConfigRecommendationsHPS,
   SAM_COACHING_VERSION,
 } from "@/lib/sam/coaching-content";
+import type { AppMode } from "@/lib/store";
 
 const PREFERENCE = "(prefers-reduced-motion: no-preference)";
-const STORAGE_KEY = `sam-coaching-config-dismissed-${SAM_COACHING_VERSION}`;
 
-export function SamCoachingPanel() {
+interface SamCoachingPanelProps {
+  /**
+   * Mode du pipeline — détermine quelle table de recommandations afficher
+   * (TV = D4_8643 Compact9, PL = E3_09_all3_plus_after Compact4).
+   * Si non fourni, défaut TV (rétro-compatibilité avec la version
+   * précédente du composant).
+   */
+  mode?: AppMode;
+}
+
+export function SamCoachingPanel({ mode = "tv" }: SamCoachingPanelProps = {}) {
+  // Per-mode storage key : un user qui ferme le panneau PL peut toujours voir
+  // celui du TV/HPM/HPS, et vice-versa. Chaque mode garde son flag dismiss.
+  const modeKey =
+    mode === "pl"
+      ? "pl"
+      : mode === "hpm"
+        ? "hpm"
+        : mode === "hps"
+          ? "hps"
+          : "tv";
+  const STORAGE_KEY = `sam-coaching-config-dismissed-${SAM_COACHING_VERSION}-${modeKey}`;
   // Avoid flash-of-content for users who already dismissed: start hidden until
   // we've read localStorage on mount.
   const [hydrated, setHydrated] = useState(false);
@@ -40,18 +64,19 @@ export function SamCoachingPanel() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  // Hydration: read the dismissed flag and reveal.
+  // Hydration: read the dismissed flag and reveal. Re-runs when STORAGE_KEY
+  // changes (mode TV ↔ PL) so a user who dismissed the TV panel still sees
+  // the PL panel on /config when mode === "pl".
   useEffect(() => {
+    let isDismissed = false;
     try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored === "1") {
-        setDismissed(true);
-      }
+      isDismissed = window.localStorage.getItem(STORAGE_KEY) === "1";
     } catch {
       // localStorage may be unavailable (private mode, SSR mismatch) — ignore.
     }
+    setDismissed(isDismissed);
     setHydrated(true);
-  }, []);
+  }, [STORAGE_KEY]);
 
   // Mount animation: fade in + soft scale bump. Respects reduced-motion.
   useEffect(() => {
@@ -96,7 +121,13 @@ export function SamCoachingPanel() {
   if (!hydrated || dismissed) return null;
 
   const { mainRecommendations, pitfalls, strategy, advancedRecommendations } =
-    samConfigRecommendations;
+    mode === "pl"
+      ? samConfigRecommendationsPL
+      : mode === "hpm"
+        ? samConfigRecommendationsHPM
+        : mode === "hps"
+          ? samConfigRecommendationsHPS
+          : samConfigRecommendations;
 
   return (
     <div

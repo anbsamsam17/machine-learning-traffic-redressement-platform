@@ -1,4 +1,4 @@
-"""Model type configurations for TV and PL pipelines.
+"""Model type configurations for TV, PL, HPM and HPS pipelines.
 
 Encapsulates every type-specific constant so the rest of the pipeline
 is fully parametric on ``ModelTypeConfig``.
@@ -13,13 +13,18 @@ from typing import Literal
 # (used by normalize() and persisted in the artifact training_config).
 ScalerType = Literal["standard", "robust"]
 
+# Public literal alias enumerating every supported model kind. Downstream
+# code can statically narrow by ``kind`` (e.g. dispatch HPM/HPS through the
+# TV pipeline since they are mono-output TxPen-like targets).
+ModelKind = Literal["TV", "PL", "HPM", "HPS"]
+
 
 @dataclass(frozen=True)
 class ModelTypeConfig:
-    """Immutable descriptor for a model type (TV or PL)."""
+    """Immutable descriptor for a model type (TV / PL / HPM / HPS)."""
 
     # --- identity ---
-    name: str                       # "TV" or "PL"
+    name: str                       # "TV", "PL", "HPM" or "HPS"
 
     # --- columns ---
     input_cols: list[str]
@@ -155,6 +160,38 @@ class ModelTypeConfig:
     # otherwise the flag is silently disabled with a warning.
     default_use_curriculum: bool = False
 
+    # --- HPM / HPS extension (additive; safe defaults for TV / PL) ----------
+    # All fields below were introduced when HPM (Heure de Pointe Matin) and
+    # HPS (Heure de Pointe Soir) were added as additional model kinds. They
+    # are filled with sensible defaults for the historical TV / PL configs so
+    # that no behavioural change occurs for legacy callers.
+
+    # Canonical model kind. Defaults to ``name`` cast at construction (set
+    # explicitly for HPM / HPS configs). Use this rather than ``name`` when
+    # narrowing types via :data:`ModelKind`.
+    kind: ModelKind | None = None
+
+    # Human-readable label suitable for UI display. When None, callers
+    # should fall back to ``name``.
+    label: str | None = None
+
+    # Direct FCD column for this kind (alias of ``target_numerator_fcd``
+    # exposed under a uniform name across TV/PL/HPM/HPS). Optional — None
+    # means "use target_numerator_fcd".
+    fcd_col: str | None = None
+
+    # Direct sensor/counter column for this kind (alias of
+    # ``target_denominator_bc`` / ``eval_reference_col``). Optional.
+    counter_col: str | None = None
+
+    # Unit label for the predicted output column (``v/j`` for TV/PL daily,
+    # ``v/h`` for HPM/HPS hourly).
+    unit_label: str = "v/j"
+
+    # Hour window (start_hour_inclusive, end_hour_exclusive) for peak-hour
+    # kinds. None for non-peak kinds (TV/PL daily). HPM = (8, 9), HPS = (17, 18).
+    hour_window: tuple[int, int] | None = None
+
 
 # ── TV configuration ────────────────────────────────────────────────────────
 
@@ -216,24 +253,44 @@ TV_CONFIG = ModelTypeConfig(
     mandatory_input_cols=["TMJOFCDTV", "TMJOFCDPL"],
     min_input_count=3,
     default_high_flow_threshold=1000.0,
+
+    # HPM/HPS-extension metadata (kept here for uniformity across kinds).
+    kind="TV",
+    label="Tous Véhicules",
+    fcd_col="TMJOFCDTV",
+    counter_col="TMJOBCTV",
+    unit_label="v/j",
+    hour_window=None,
 )
 
 
 # ── PL configuration ────────────────────────────────────────────────────────
+# Aligned with E3_09_all3_plus_after (Batch_MDL_PL_Compact4 winner) — tol 94,00 %
+# / 658/700 capteurs, R² 0,9722, MAE 0,1657, GEH<5 99,86 % sur 700 lignes Grand
+# Lyon (BCFCDREF_AllYears_PL_enriched, seed 1752). Voir
+# documentation interne calibration_modele_PL §3.4. Les 3 features derivees
+# (fcd_log, tv_pl_ratio, dist_to_lyon_center) sont calculees par
+# scripts/enrich_fcdrefglobal.py et doivent etre presentes dans le DataFrame
+# d'entree avant le training (sinon le router rejette le combo en silence).
 
 PL_CONFIG = ModelTypeConfig(
     name="PL",
 
     input_cols=[
         "TMJOFCDPL",
-        "avg_distance_m",
-        "avg_speed_kmh",
-        "truck_avg_min_distance_m",
-        "truck_avg_speed_kmh",
         "functional_class",
+        "truck_avg_distance_m",
+        "truck_avg_min_distance_m",
+        "truck_avg_distance_before_m",
+        "truck_avg_distance_after_m",
+        "fcd_log",
+        "tv_pl_ratio",
+        "dist_to_lyon_center",
     ],
     output_cols=["TxPenPL"],
-    on_off_norm=[True, True, True, True, True, False],
+    # functional_class est categoriel int 1-5 -> norm OFF ; les 8 autres
+    # features sont continues z-scorees (mask [True, False, True*7]).
+    on_off_norm=[True, False, True, True, True, True, True, True, True],
 
     column_aliases={
         "TMJAPL":    "TMJOFCDPL",
@@ -244,6 +301,7 @@ PL_CONFIG = ModelTypeConfig(
         "truck_average_speed_kmh": "truck_avg_speed_kmh",
         "car_average_distance_km":       "avg_distance_m",
         "truck_min_average_distance_km": "truck_avg_min_distance_m",
+        "truck_average_distance_km":     "truck_avg_distance_m",
         "linkFC": "functional_class",
         "FC":     "functional_class",
     },
@@ -260,4 +318,171 @@ PL_CONFIG = ModelTypeConfig(
     mandatory_input_cols=["TMJOFCDPL"],
     min_input_count=2,
     default_high_flow_threshold=500.0,
+    # Recipe figee Compact4 : 5 couches deep, bs=64, ep=1500, lr=0.01, drp=0.015.
+    default_min_nb_epochs=[1500],
+    default_max_epochs=1500,
+    default_batch_size=64,
+    default_dropout=0.015,
+    default_test_size=0.0,
+
+    # HPM/HPS-extension metadata (kept here for uniformity across kinds).
+    kind="PL",
+    label="Poids Lourds",
+    fcd_col="TMJOFCDPL",
+    counter_col="TMJOBCPL",
+    unit_label="v/j",
+    hour_window=None,
 )
+
+
+# ── HPM configuration (Heure de Pointe Matin — 8h00-8h59) ───────────────────
+# Single-hour TV-flavoured target. Reuses the TV feature stack since the
+# upstream HERE network features (avg_speed_kmh, distances, functional_class)
+# don't have an hourly variant in BCFCDREF_2025_HPM_HPS.geojson. Only the
+# FCD/counter/target columns swap to their hourly siblings.
+
+HPM_CONFIG = ModelTypeConfig(
+    name="HPM",
+
+    input_cols=[
+        "FCD_HPM_TV",
+        "TMJOFCDPL",
+        "avg_distance_m",
+        "avg_speed_kmh",
+        "truck_avg_min_distance_m",
+        "truck_avg_speed_kmh",
+        "functional_class",
+    ],
+    output_cols=["TxPen_HPM"],
+    on_off_norm=[True, True, True, True, True, True, False],
+
+    column_aliases={
+        # Hourly FCD aliases — accept legacy / shorthand names.
+        "FCDTV_h08":      "FCD_HPM_TV",
+        "FCDTV_HPM":      "FCD_HPM_TV",
+        "FCD_HPM":        "FCD_HPM_TV",
+        # TV daily aliases still useful for the shared inputs.
+        "TMJAPL":         "TMJOFCDPL",
+        "TMJAFCDPL":      "TMJOFCDPL",
+        "TMJFCDPL":       "TMJOFCDPL",
+        # Hourly counter aliases.
+        "BCTV_HPM":       "TMJOBCTV_HPM",
+        "TMJOBCTV_h08":   "TMJOBCTV_HPM",
+        # Speeds / distances (shared with TV).
+        "car_average_speed_kmh":         "avg_speed_kmh",
+        "truck_average_speed_kmh":       "truck_avg_speed_kmh",
+        "car_average_distance_km":       "avg_distance_m",
+        "truck_min_average_distance_km": "truck_avg_min_distance_m",
+        "truck_average_distance_km":     "truck_avg_distance_m",
+        "linkFC": "functional_class",
+        "FC":     "functional_class",
+    },
+
+    target_col="TxPen_HPM",
+    target_numerator_fcd="FCD_HPM_TV",
+    target_denominator_bc="TMJOBCTV_HPM",
+    target_alias="TxPen_HPM",
+
+    # Predicted column at evaluation time: HPM_FCDr (NEVER TVr — critical to
+    # avoid downstream confusion with the daily TV pipeline).
+    eval_predicted_col="HPM_FCDr",
+    eval_reference_col="TMJOBCTV_HPM",
+    eval_numerator_fcd="FCD_HPM_TV",
+
+    mandatory_input_cols=["FCD_HPM_TV"],
+    min_input_count=2,
+    default_high_flow_threshold=80.0,  # ~ TV/12, peak-hour scale (v/h)
+
+    # HPM/HPS-extension metadata.
+    kind="HPM",
+    label="Heure de Pointe Matin",
+    fcd_col="FCD_HPM_TV",
+    counter_col="TMJOBCTV_HPM",
+    unit_label="v/h",
+    hour_window=(8, 9),  # h08-h09 (8h00-8h59)
+)
+
+
+# ── HPS configuration (Heure de Pointe Soir — 17h00-17h59) ──────────────────
+
+HPS_CONFIG = ModelTypeConfig(
+    name="HPS",
+
+    input_cols=[
+        "FCD_HPS_TV",
+        "TMJOFCDPL",
+        "avg_distance_m",
+        "avg_speed_kmh",
+        "truck_avg_min_distance_m",
+        "truck_avg_speed_kmh",
+        "functional_class",
+    ],
+    output_cols=["TxPen_HPS"],
+    on_off_norm=[True, True, True, True, True, True, False],
+
+    column_aliases={
+        # Hourly FCD aliases — accept legacy / shorthand names.
+        "FCDTV_h17":      "FCD_HPS_TV",
+        "FCDTV_HPS":      "FCD_HPS_TV",
+        "FCD_HPS":        "FCD_HPS_TV",
+        # TV daily aliases still useful for the shared inputs.
+        "TMJAPL":         "TMJOFCDPL",
+        "TMJAFCDPL":      "TMJOFCDPL",
+        "TMJFCDPL":       "TMJOFCDPL",
+        # Hourly counter aliases.
+        "BCTV_HPS":       "TMJOBCTV_HPS",
+        "TMJOBCTV_h17":   "TMJOBCTV_HPS",
+        # Speeds / distances (shared with TV).
+        "car_average_speed_kmh":         "avg_speed_kmh",
+        "truck_average_speed_kmh":       "truck_avg_speed_kmh",
+        "car_average_distance_km":       "avg_distance_m",
+        "truck_min_average_distance_km": "truck_avg_min_distance_m",
+        "truck_average_distance_km":     "truck_avg_distance_m",
+        "linkFC": "functional_class",
+        "FC":     "functional_class",
+    },
+
+    target_col="TxPen_HPS",
+    target_numerator_fcd="FCD_HPS_TV",
+    target_denominator_bc="TMJOBCTV_HPS",
+    target_alias="TxPen_HPS",
+
+    # Predicted column at evaluation time: HPS_FCDr (NEVER TVr — critical to
+    # avoid downstream confusion with the daily TV pipeline).
+    eval_predicted_col="HPS_FCDr",
+    eval_reference_col="TMJOBCTV_HPS",
+    eval_numerator_fcd="FCD_HPS_TV",
+
+    mandatory_input_cols=["FCD_HPS_TV"],
+    min_input_count=2,
+    default_high_flow_threshold=80.0,
+
+    # HPM/HPS-extension metadata.
+    kind="HPS",
+    label="Heure de Pointe Soir",
+    fcd_col="FCD_HPS_TV",
+    counter_col="TMJOBCTV_HPS",
+    unit_label="v/h",
+    hour_window=(17, 18),  # h17-h18 (17h00-17h59)
+)
+
+
+# ── Public registry ─────────────────────────────────────────────────────────
+
+"""Config par mode ML.
+
+Les modes HPM/HPS modélisent la pointe horaire (1h) du trafic VL :
+- HPM = 8h00-8h59 (FCDTV_h08)
+- HPS = 17h00-17h59 (FCDTV_h17)
+
+Pas de variante PL pour HPM/HPS (couverture insuffisante des flottes PL en
+pointe). Les configs partagent la stack de features de TV (vitesses /
+distances HERE) car celles-ci ne disposent pas de variante horaire dans
+``BCFCDREF_2025_HPM_HPS.geojson``.
+"""
+CONFIGS: dict[ModelKind, ModelTypeConfig] = {
+    "TV":  TV_CONFIG,
+    "PL":  PL_CONFIG,
+    "HPM": HPM_CONFIG,
+    "HPS": HPS_CONFIG,
+}

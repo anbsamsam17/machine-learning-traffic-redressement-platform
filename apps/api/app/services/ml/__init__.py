@@ -3,7 +3,8 @@
 Public API
 ----------
 Types & configs:
-    ModelTypeConfig, TV_CONFIG, PL_CONFIG
+    ModelTypeConfig, ModelKind, CONFIGS,
+    TV_CONFIG, PL_CONFIG, HPM_CONFIG, HPS_CONFIG
 
 Normalisation:
     normalize, denormalize, simple_norm
@@ -39,7 +40,15 @@ so the non-TF parts can be used without TF installed.
 from __future__ import annotations
 
 # --- Always available (no TF dependency) ---
-from .types import ModelTypeConfig, TV_CONFIG, PL_CONFIG
+from .types import (
+    CONFIGS,
+    HPM_CONFIG,
+    HPS_CONFIG,
+    ModelKind,
+    ModelTypeConfig,
+    PL_CONFIG,
+    TV_CONFIG,
+)
 
 from .normalize import normalize, denormalize, simple_norm
 
@@ -89,8 +98,12 @@ def __getattr__(name: str):
 __all__ = [
     # Types
     "ModelTypeConfig",
+    "ModelKind",
+    "CONFIGS",
     "TV_CONFIG",
     "PL_CONFIG",
+    "HPM_CONFIG",
+    "HPS_CONFIG",
     # Normalize
     "normalize",
     "denormalize",
