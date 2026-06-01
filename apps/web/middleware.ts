@@ -20,6 +20,11 @@ function isPublicPath(pathname: string): boolean {
   // Public static assets (Sam avatar moods + background images)
   if (pathname.startsWith("/sam/")) return true;
   if (pathname.startsWith("/bg/")) return true;
+  // Video backgrounds (landing TrafficVideoBg + login LoginNightVideoBg).
+  // CRITICAL : sans cette whitelist, le middleware redirige les .mp4 et
+  // posters .jpg vers /login (HTTP 307) pour les utilisateurs non
+  // authentifies, et la video du login lui-meme ne charge donc jamais.
+  if (pathname.startsWith("/video/")) return true;
   // Temporary: dev-only test fixtures served from public/test/
   if (pathname.startsWith("/test/")) return true;
   // Lyon preview GeoJSON samples for /visualisation and /discontinuites preview mode
