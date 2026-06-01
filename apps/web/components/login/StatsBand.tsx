@@ -6,19 +6,19 @@ type Stat = {
 
 const STATS: Stat[] = [
   {
-    value: "4",
-    label: "modes",
-    caption: "TV · PL · Carte · Compteurs",
+    value: "8",
+    label: "modules",
+    caption: "TV · PL · HPM · HPS · Carte · Compteurs · Vue · Discontinuites",
   },
   {
-    value: "95%",
-    label: "précision moyenne",
-    caption: "GEH < 5 sur validation",
+    value: "99.86%",
+    label: "GEH < 5 (PL)",
+    caption: "700 capteurs Grand Lyon · R2 0.97 · MAE 0.17",
   },
   {
-    value: "12K+",
-    label: "segments",
-    caption: "traités par jour",
+    value: "11",
+    label: "axes grid search",
+    caption: "Sample weights x4 · multi-seed TF determinism",
   },
 ];
 

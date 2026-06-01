@@ -1,9 +1,11 @@
 /**
  * Hero — title + subtitle + tagline.
- * The /login page sits over a rich animated cityscape, so plain `text-zinc-*`
- * colors disappear into the bright background. We pair brighter text colors
- * with `login-title-shadow` / `login-text-shadow` (defined in globals.css)
- * to recover WCAG AA contrast without losing the sober Linear/Vercel feel.
+ * The /login page sits over the LoginNightVideoBg (top-down night
+ * intersection + drift particles), so plain `text-zinc-*` colors fade
+ * into the brighter passages of the video. We pair brighter text
+ * colors with `login-title-shadow` / `login-text-shadow` (defined in
+ * globals.css) to recover WCAG AA contrast without losing the sober
+ * Linear/Vercel feel.
  */
 export function HeroSection() {
   return (
@@ -23,19 +25,20 @@ export function HeroSection() {
       >
         Machine Learning
         <span className="mx-2 text-zinc-400">&middot;</span>
-        Analyse des capteurs
+        Capteurs SIREDO
         <span className="mx-2 text-zinc-400">&middot;</span>
-        Analyse Donn&eacute;es FCD
+        FCD HERE
         <span className="mx-2 text-zinc-400">&middot;</span>
-        Mod&eacute;lisation Trafic
+        Cartographie
       </p>
 
       <p
         data-enter="tagline"
         className="login-text-shadow text-sm text-zinc-200"
       >
-        Plateforme interne d&apos;analyse et de redressement des donn&eacute;es
-        de trafic routier
+        FastAPI et TensorFlow/Keras au backend, Next.js 16 et MapLibre GL JS
+        au frontend. Une stack full-stack pour redresser et analyser les
+        debits de trafic routier.
       </p>
     </div>
   );

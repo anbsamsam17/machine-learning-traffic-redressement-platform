@@ -1,7 +1,13 @@
 "use client";
 
 /**
- * LoginBg — animated full-bleed background for /login.
+ * @deprecated Remplace par LoginNightVideoBg (refonte 2026-06).
+ * Conserve comme fallback historique tant que le video bundle n'est
+ * pas encore optimise (transcode H.264 CRF 28 + WebM + poster).
+ * A retirer dans une PR ulterieure une fois la nouvelle base validee
+ * en prod sur >= 1 sprint.
+ *
+ * LoginBg — animated full-bleed background for /login (legacy).
  *
  * Layers (z-stacked, deepest first):
  *   1. <next/image> fill priority — cartoon-style futuristic cityscape (/bg/login.jpg).

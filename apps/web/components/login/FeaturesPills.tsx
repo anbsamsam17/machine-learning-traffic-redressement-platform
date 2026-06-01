@@ -12,25 +12,25 @@ const FEATURES: Feature[] = [
   {
     icon: Brain,
     title: "Machine Learning",
-    desc: "Réseaux de neurones TV & PL",
+    desc: "TensorFlow/Keras, grid search 11 axes, reproductibilite bit-a-bit.",
     accent: "text-indigo-300",
   },
   {
     icon: Radio,
-    title: "Analyse capteurs",
-    desc: "Boucles électromagnétiques & vidéo",
+    title: "Capteurs SIREDO",
+    desc: "Boucles et permanents Siredo. Sample weights x4, stratification TMJA.",
     accent: "text-cyan-300",
   },
   {
     icon: Route,
-    title: "Données FCD",
-    desc: "Floating Car Data croisées avec les données mesurées",
+    title: "Donnees FCD",
+    desc: "Traces HERE croisees avec compteurs terrain, classes fonctionnelles FC1-FC5.",
     accent: "text-amber-300",
   },
   {
     icon: Activity,
-    title: "Modélisation",
-    desc: "Redressement & évaluation",
+    title: "Modelisation",
+    desc: "Saturation hierarchique v3, arrondi progressif, GEH<5 sur bootstrap CI95.",
     accent: "text-emerald-300",
   },
 ];

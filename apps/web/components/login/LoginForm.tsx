@@ -23,8 +23,22 @@ import {
  *   no remount — avoids losing form state mid-submit)
  * - MagneticButton handles the "Se connecter" submit
  * - ShimmerText for the gold "Connexion" heading
+ *
+ * When `glassVideoMode` is true (refonte 2026-06 — sits over the
+ * LoginNightVideoBg video) the wrapper uses the rgba(9,9,11,0.55) +
+ * blur(24px) saturate(150%) surface mandated by the prototype, plus a
+ * subtle CYAN box-shadow halo so the card glows like a cinema overlay
+ * instead of inheriting the legacy indigo accent.
  */
-export function LoginForm() {
+interface LoginFormProps {
+  /**
+   * Apply the cinematic glass surface (cyan halo) tuned for the night
+   * video background. Defaults to false to preserve legacy callers.
+   */
+  glassVideoMode?: boolean;
+}
+
+export function LoginForm({ glassVideoMode = false }: LoginFormProps = {}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -60,6 +74,14 @@ export function LoginForm() {
     }
   }
 
+  // Glass-video mode : the LoginNightVideoBg video sits behind the form.
+  // We escalate the rest-state ring to a cyan halo matching the prototype
+  // and let GlowCardPremium drive the rgba(9,9,11,0.55) + blur(24px)
+  // glass surface via its translucent-video variant.
+  const restShadow = glassVideoMode
+    ? "shadow-[0_1px_0_rgba(255,255,255,0.08)_inset,0_0_0_1px_rgba(99,102,241,0.12),0_28px_80px_-20px_rgba(0,0,0,0.7),0_0_60px_-10px_rgba(34,211,238,0.18)]"
+    : "shadow-[0_0_0_1px_rgba(255,255,255,0.04)]";
+
   return (
     <div
       className={cn(
@@ -67,13 +89,14 @@ export function LoginForm() {
         "rounded-lg",
         focused
           ? "shadow-[0_0_0_1px_rgba(6,182,212,0.55),0_0_24px_rgba(6,182,212,0.25)]"
-          : "shadow-[0_0_0_1px_rgba(255,255,255,0.04)]"
+          : restShadow
       )}
     >
       <GlowCardPremium
         tone="accent"
         intensity={0.5}
         interactive={false}
+        variant={glassVideoMode ? "translucent-video" : "default"}
         data-enter="form"
         className="relative w-full"
       >

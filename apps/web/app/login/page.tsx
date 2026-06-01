@@ -3,11 +3,9 @@ import { HeroSection } from "@/components/login/HeroSection";
 import { FeaturesPills } from "@/components/login/FeaturesPills";
 import { StatsBand } from "@/components/login/StatsBand";
 import { LoginForm } from "@/components/login/LoginForm";
-import { LoginBg } from "@/components/login/animations/LoginBg";
+import { LoginNightVideoBg } from "@/components/login/animations/LoginNightVideoBg";
 import { SignalLights } from "@/components/login/animations/SignalLights";
-import { NetworkGraph } from "@/components/login/animations/NetworkGraph";
 import { PageEnter } from "@/components/login/animations/PageEnter";
-import { ParticleField } from "@/components/ui";
 
 export const metadata = {
   title: "Connexion — MDL Trafic",
@@ -18,39 +16,12 @@ export const metadata = {
 export default function LoginPage() {
   return (
     // Root layout already provides <main id="main-content">. Use <div> here.
+    // Refonte 2026-06 : background is now the cinematic LoginNightVideoBg
+    // (top-down night intersection + 24 drift particles). The previous
+    // ParticleField + atmospheric blobs + NetworkGraph layers were retired
+    // to avoid stacking competing motion over the new video scene.
     <div className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      {/* Animated FCD background — full-bleed, low opacity, decorative only */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-0"
-      >
-        <LoginBg />
-      </div>
-
-      {/* Subtle radial atmospherics — no glow on UI, just air */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
-      >
-        <div className="absolute -top-40 -left-40 h-[480px] w-[480px] rounded-full bg-indigo-900/[0.08] blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 h-[480px] w-[480px] rounded-full bg-cyan-900/[0.06] blur-3xl" />
-      </div>
-
-      {/* UX5 ParticleField — subtle 1/0 binary cloud above LoginBg.
-          Density tuned low (44 max nodes) to stay decorative. Disabled
-          under prefers-reduced-motion (handled inside ParticleField). */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-0 opacity-50"
-      >
-        <ParticleField
-          tone="cyan"
-          density={0.00005}
-          maxParticles={44}
-          linkDistance={130}
-          showBits
-        />
-      </div>
+      <LoginNightVideoBg />
 
       <PageEnter>
         <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-8 lg:px-10 lg:py-10">
@@ -74,22 +45,13 @@ export default function LoginPage() {
             <section className="flex flex-col gap-8 lg:col-span-3 lg:gap-10">
               <HeroSection />
               <FeaturesPills />
-              <div className="relative">
-                <StatsBand />
-                {/* Decorative neural graph, anchored bottom-right of stats */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute -bottom-6 right-0 hidden opacity-60 lg:block"
-                >
-                  <NetworkGraph />
-                </div>
-              </div>
+              <StatsBand />
             </section>
 
             {/* RIGHT — 2/5 ≈ 40%, sticky-centered on desktop. */}
             <section className="flex flex-col items-center justify-center gap-6 lg:col-span-2 lg:sticky lg:top-10 lg:self-start">
               <div className="w-full max-w-md">
-                <LoginForm />
+                <LoginForm glassVideoMode />
               </div>
             </section>
           </div>
