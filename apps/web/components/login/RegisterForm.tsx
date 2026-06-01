@@ -80,8 +80,8 @@ export function RegisterForm() {
         <div className="mb-6">
           <ShimmerText
             as="h2"
-            variant="gold"
-            duration={4.5}
+            variant="neon-white"
+            duration={5.5}
             className="text-xl font-semibold"
           >
             Inscription

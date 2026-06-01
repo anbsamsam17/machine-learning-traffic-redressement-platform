@@ -202,17 +202,12 @@ export default function HomePage() {
         id="landing"
         className="relative z-10 mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-10 pb-24"
       >
-        {/* Hero */}
+        {/* Hero — no CTA: the ModesGrid below provides clear entry points. */}
         <HeroPremium
           eyebrow={content.eyebrow}
           title={content.title}
           subtitle={content.subtitle}
           tagline={content.tagline}
-          cta={content.cta ?? "Demarrer"}
-          onCta={() => {
-            // Default CTA jumps to TV pipeline if unset by content module.
-            handleModeSelect("tv");
-          }}
         />
 
         {/* Quick stats band — masquee tant qu'aucune source agregee fiable n'existe.

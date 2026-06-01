@@ -515,7 +515,7 @@ export default function EvaluationPage() {
         <div className="space-y-2">
           <ShimmerText
             as="h1"
-            variant={isBestRun ? "gold" : "cyan"}
+            variant="neon-white"
             className="text-2xl sm:text-3xl"
           >
             Evaluation
@@ -986,7 +986,7 @@ export default function EvaluationPage() {
                     <BarChart3 size={18} className="text-amber-400" />
                     <ShimmerText
                       as="h3"
-                      variant="gold"
+                      variant="neon-white"
                       className="text-sm font-semibold"
                     >
                       Best run - {selectedModel}

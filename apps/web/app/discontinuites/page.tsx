@@ -54,7 +54,6 @@ import { BasemapSwitcher } from "@/components/map/BasemapSwitcher";
 import { apiClient, ApiError } from "@/lib/api";
 import { getApiBase } from "@/lib/api-url";
 import { getToken } from "@/lib/auth";
-import { samNotify } from "@/lib/sam-fallback";
 import { cn } from "@/lib/utils";
 import { useMapInstance } from "@/lib/hooks/use-map-instance";
 import {
@@ -328,21 +327,10 @@ export default function DiscontinuitesPage() {
   const [totalNodes, setTotalNodes] = useState(0);
   const [visibleNodes, setVisibleNodes] = useState(0);
 
-  // --- Sam welcome -------------------------------------------------------
-  const samWelcomeShownRef = useRef(false);
-  useEffect(() => {
-    if (
-      phase === "upload" &&
-      hydrated &&
-      !samWelcomeShownRef.current
-    ) {
-      samWelcomeShownRef.current = true;
-      samNotify.welcome(
-        "Ce sont des discontinuites typiques sur Lyon. Upload ton GeoJSON enrichi pour detecter celles de TON reseau.",
-        { autoCloseMs: 9000 },
-      );
-    }
-  }, [phase, hydrated]);
+  // --- Sam welcome handled globally by <SamWidget /> + page-messages ----
+  // (Removed local samNotify.welcome to avoid two Sam layers stacking.
+  // The contextual bubble for /discontinuites lives in
+  // `lib/sam/page-messages.ts` and is pushed by <SamPageBinder />.)
 
   // --- Entrance animations ----------------------------------------------
   useGSAP(
@@ -1215,7 +1203,7 @@ export default function DiscontinuitesPage() {
               >
                 <div className="px-3 py-1.5 rounded-full flex items-center gap-2">
                   <Eye size={12} aria-hidden className="text-[#FFB000]" />
-                  <ShimmerText variant="gold" className="text-xs">
+                  <ShimmerText variant="neon-white" className="text-xs">
                     {phase === "analyzing"
                       ? "Apercu Lyon — analyse en cours, patiente quelques secondes"
                       : "Apercu Lyon — depose tes donnees pour passer en mode reel"}

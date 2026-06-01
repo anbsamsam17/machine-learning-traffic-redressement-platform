@@ -71,7 +71,7 @@ export function HeroPremium({
             "leading-[1.05] max-w-4xl"
           )}
         >
-          <ShimmerText as="span" variant="gold" duration={4.5}>
+          <ShimmerText as="span" variant="neon-white" duration={5.5}>
             {title}
           </ShimmerText>
         </h1>

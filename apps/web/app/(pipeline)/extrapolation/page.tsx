@@ -90,7 +90,7 @@ export default function ExtrapolationPage() {
       {/* Header */}
       <RevealOnScroll variant="fade" stagger={0.05}>
         <div className="space-y-2">
-          <ShimmerText as="h1" variant="cyan" className="text-2xl sm:text-3xl">
+          <ShimmerText as="h1" variant="neon-white" className="text-2xl sm:text-3xl">
             Extrapolation
           </ShimmerText>
           <p className="text-sm text-text-muted">

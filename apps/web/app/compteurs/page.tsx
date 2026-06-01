@@ -946,7 +946,7 @@ export default function CompteursPage() {
                       capter l'oeil et signaler le succes coherent. */}
                   <ShimmerText
                     as="h3"
-                    variant="cyan"
+                    variant="neon-white"
                     className="text-base font-semibold"
                   >
                     {result.geojson_feature_count.toLocaleString("fr-FR")} capteurs extraits

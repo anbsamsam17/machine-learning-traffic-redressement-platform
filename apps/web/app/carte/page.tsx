@@ -994,7 +994,7 @@ export default function CartePage() {
 
                   <ShimmerText
                     as="h3"
-                    variant="cyan"
+                    variant="neon-white"
                     className="text-base font-semibold"
                   >
                     Carte generee avec succes

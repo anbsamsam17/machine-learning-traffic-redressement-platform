@@ -548,7 +548,7 @@ export default function TrainingPage() {
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div className="space-y-2">
             {status === "completed" ? (
-              <ShimmerText as="h1" variant="gold" className="text-2xl sm:text-3xl">
+              <ShimmerText as="h1" variant="neon-white" className="text-2xl sm:text-3xl">
                 Modele entraine -{" "}
                 {mode === "pl"
                   ? "PL"
@@ -561,7 +561,7 @@ export default function TrainingPage() {
             ) : (
               <ShimmerText
                 as="h1"
-                variant={status === "running" ? "cyan" : "white"}
+                variant="neon-white"
                 className="text-2xl sm:text-3xl"
               >
                 Entrainement{" "}

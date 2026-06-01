@@ -480,7 +480,7 @@ export default function DonneesPage() {
       {/* Header — ShimmerText H1 + meta line */}
       <RevealOnScroll variant="fade" stagger={0.05}>
         <div className="space-y-2">
-          <ShimmerText as="h1" variant="cyan" className="text-2xl sm:text-3xl">
+          <ShimmerText as="h1" variant="neon-white" className="text-2xl sm:text-3xl">
             {meta.kind === "HPM" || meta.kind === "HPS"
               ? `Donnees - Pipeline ${meta.kind} (${meta.kind === "HPM" ? "8h-9h" : "17h-18h"})`
               : "Donnees"}

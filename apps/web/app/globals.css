@@ -205,6 +205,13 @@ select option {
     animation: none !important;
     background-position: 50% 0 !important;
   }
+  /* neon-white : skip sweep mais garde le halo subtil + couleur blanche
+     (sinon le titre devient invisible car background-clip:text + transparent). */
+  .shimmer-text-neon {
+    background-image: none !important;
+    color: #fafafa !important;
+    -webkit-text-fill-color: #fafafa !important;
+  }
 }
 
 /* Sonner overrides — sober */

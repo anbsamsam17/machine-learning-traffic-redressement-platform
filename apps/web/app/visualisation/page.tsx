@@ -79,7 +79,6 @@ import { installSensorLayers } from "@/lib/map/setup";
 import { apiClient, ApiError } from "@/lib/api";
 import { getApiBase } from "@/lib/api-url";
 import { getToken } from "@/lib/auth";
-import { samNotify } from "@/lib/sam-fallback";
 import { cn } from "@/lib/utils";
 import { useMapInstance } from "@/lib/hooks/use-map-instance";
 import {
@@ -289,17 +288,10 @@ export default function VisualisationPage() {
   // pas (modeles HPM/HPS non charges dans la pipeline carte).
   const [kpis, setKpis] = useState<VisualisationKpis>(EMPTY_KPIS);
 
-  // --- Sam welcome (only when truly empty) -------------------------------
-  const samWelcomeShownRef = useRef(false);
-  useEffect(() => {
-    if (!active && !geoUploadResp && !samWelcomeShownRef.current) {
-      samWelcomeShownRef.current = true;
-      samNotify.welcome(
-        "Voila a quoi ressemblera ta carte. Charge ton reseau GeoJSON + capteurs et clique sur Voir mes donnees.",
-        { autoCloseMs: 9000 },
-      );
-    }
-  }, [active, geoUploadResp]);
+  // --- Sam welcome handled globally by <SamWidget /> + page-messages ----
+  // (Removed local samNotify.welcome to avoid two Sam layers stacking.
+  // The contextual bubble for /visualisation lives in
+  // `lib/sam/page-messages.ts` and is pushed by <SamPageBinder />.)
 
   // --- Mount entrance animations -----------------------------------------
   // Bandeau slide-in from left + map fade-in. useGSAP auto-cleanup on unmount.
@@ -1244,7 +1236,7 @@ export default function VisualisationPage() {
               <NeonBorder tone="amber" speed={3.4} rotate={false} className="rounded-full">
                 <div className="px-3 py-1.5 rounded-full flex items-center gap-2">
                   <Eye size={12} aria-hidden className="text-[#FFB000]" />
-                  <ShimmerText variant="gold" className="text-xs">
+                  <ShimmerText variant="neon-white" className="text-xs">
                     Apercu Lyon — depose tes donnees pour passer en mode reel
                   </ShimmerText>
                 </div>
