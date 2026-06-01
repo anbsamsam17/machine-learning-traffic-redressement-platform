@@ -145,40 +145,35 @@ export function LoginNightVideoBg({ className }: LoginNightVideoBgProps) {
 
       function startParticle(p: ParticleState) {
         const distance = 1130; // -50 -> 1080+50
-        const duration = distance / p.speedYPerSec;
 
         p.el.setAttribute("cx", p.cx.toFixed(2));
         p.el.setAttribute("cy", p.cy.toFixed(2));
         p.el.setAttribute("opacity", p.opacity.toFixed(3));
 
-        p.yTween = gsap.to(p.el, {
-          attr: { cy: VB_H + 50 },
-          duration,
-          ease: "none",
-          repeat: -1,
-          delay: rand(0, 8),
-          onRepeat: () => {
-            // Re-randomize on each wrap for organic motion
-            const newCx = rand(0, VB_W);
-            const newCy = -50;
-            const newOpac = rand(0.15, 0.35);
-            const newSpeed = rand(38, 72);
-            p.cx = newCx;
-            p.cy = newCy;
-            p.opacity = newOpac;
-            p.speedYPerSec = newSpeed;
-
-            p.el.setAttribute("cx", newCx.toFixed(2));
-            p.el.setAttribute("cy", newCy.toFixed(2));
-            p.el.setAttribute("opacity", newOpac.toFixed(3));
-
-            if (p.yTween) {
-              p.yTween.duration(distance / newSpeed);
-              p.yTween.invalidate();
-            }
-            restartXSway(p);
+        // Animation simple `fromTo` non-repetable. Le recyclage se fait via
+        // onComplete -> randomize + relance startParticle. Cela evite la
+        // recursion observee avec repeat:-1 + onRepeat + invalidate() qui
+        // declenchait Maximum call stack size exceeded apres quelques
+        // wraps (l'invalidate force GSAP a recalculer pendant que la
+        // callback est encore sur la pile, ce qui re-trigger onRepeat).
+        p.yTween = gsap.fromTo(
+          p.el,
+          { attr: { cy: p.cy } },
+          {
+            attr: { cy: VB_H + 50 },
+            duration: distance / p.speedYPerSec,
+            ease: "none",
+            delay: rand(0, 8),
+            onComplete: () => {
+              // Re-randomize for organic motion, puis relance proprement
+              p.cx = rand(0, VB_W);
+              p.cy = -50;
+              p.opacity = rand(0.15, 0.35);
+              p.speedYPerSec = rand(38, 72);
+              startParticle(p);
+            },
           },
-        });
+        );
 
         restartXSway(p);
       }
