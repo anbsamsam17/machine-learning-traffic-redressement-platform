@@ -18,7 +18,7 @@ const FEATURES: Feature[] = [
   {
     icon: Brain,
     title: "Machine Learning",
-    desc: "Quantile NN q={0.2,0.5,0.8}, grid 15 axes, reproductibilite bit-a-bit Keras.",
+    desc: "TensorFlow/Keras, batchs grid 15 axes affines iterativement, quantile NN reproductible.",
     accent: "text-cyan-300",
   },
   {

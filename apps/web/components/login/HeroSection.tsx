@@ -37,8 +37,9 @@ export function HeroSection() {
         className="login-text-shadow text-sm text-zinc-200"
       >
         FastAPI et TensorFlow/Keras au backend, Next.js 16 et MapLibre GL JS
-        au frontend. Ingestion multi-format, ML reproductible, rapports
-        stratifies et visualisation neon en production.
+        au frontend. Ingestion multi-format, batchs ML iteratifs avec
+        amelioration progressive du parametrage, rapports stratifies et
+        visualisation neon en production.
       </p>
     </div>
   );
