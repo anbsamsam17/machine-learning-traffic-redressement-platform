@@ -249,6 +249,8 @@ export function LoginNightVideoBg({ className }: LoginNightVideoBgProps) {
         muted
         playsInline
         preload="auto"
+        poster="/video/login-night-bg-poster.jpg"
+        style={{ backgroundColor: "#0a0a14" }}
         src="/video/login-night-bg.mp4"
       />
 

@@ -475,6 +475,8 @@ export function TrafficVideoBg({ className }: TrafficVideoBgProps) {
         muted
         playsInline
         preload="auto"
+        poster="/video/traffic-bg-poster.jpg"
+        style={{ backgroundColor: "#2a2a2c" }}
         src="/video/traffic-bg.mp4"
       />
       {/* Future production sources (decommentez quand WebM + poster genere) :
