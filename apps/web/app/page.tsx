@@ -205,14 +205,25 @@ export default function HomePage() {
         {content.quickStats.length > 0 && <QuickStats stats={content.quickStats} />}
 
         {/* Pour info — annonce le bouton "Resume par Sam" present sur chaque card.
-            Italique discret, leger halo lavande pour rester dans le ton du
-            ShimmerText neon-white sans crier. */}
+            Italique discret, couleur zinc-200 + double text-shadow (style
+            sous-titre video) pour rester lisible hors-card quelle que soit
+            la luminosite de la frame video derriere. */}
         <p
-          className="mt-6 italic text-sm text-text-muted leading-relaxed"
+          className="mt-6 italic text-sm leading-relaxed text-zinc-200"
           role="note"
+          style={{
+            textShadow:
+              "0 1px 8px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.55)",
+          }}
         >
           Pour info : clique sur le bouton{" "}
-          <span className="not-italic font-medium text-cyan-300">
+          <span
+            className="not-italic font-semibold text-cyan-300"
+            style={{
+              textShadow:
+                "0 0 12px rgba(34,211,238,0.45), 0 1px 8px rgba(0,0,0,0.85)",
+            }}
+          >
             Resume par Sam
           </span>{" "}
           present sur chaque module pour que Sam te detaille le contenu dans
@@ -231,13 +242,20 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Footer */}
-        <footer className="mt-16 pt-6 border-t border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <p className="text-[11px] text-text-subtle">{content.footer.legal}</p>
+        {/* Footer — hors-card sur la video : couleurs renforcees + text-shadow
+            pour rester lisible sur n'importe quelle frame. */}
+        <footer className="mt-16 pt-6 border-t border-white/[0.08] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <p
+            className="text-[11px] text-zinc-300"
+            style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}
+          >
+            {content.footer.legal}
+          </p>
           {content.footer.helpLabel && content.footer.helpHref && (
             <a
               href={content.footer.helpHref}
-              className="text-[11px] text-text-muted hover:text-text transition-colors"
+              className="text-[11px] text-zinc-200 hover:text-white transition-colors"
+              style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}
             >
               {content.footer.helpLabel} →
             </a>

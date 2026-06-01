@@ -16,20 +16,29 @@ interface ModesGridPremiumProps {
 export function ModesGridPremium({ modes, onSelect }: ModesGridPremiumProps) {
   return (
     <section aria-labelledby="modes-heading" className="relative mt-2">
+      {/* Header hors-card : couleurs renforcees + text-shadow style sous-titre
+          video pour rester lisible sur n'importe quelle frame du background. */}
       <header className="flex items-end justify-between mb-6">
         <div>
           <h2
             id="modes-heading"
-            className="text-base font-semibold text-zinc-100 tracking-tight"
+            className="text-base font-semibold text-zinc-50 tracking-tight"
+            style={{ textShadow: "0 1px 10px rgba(0,0,0,0.9), 0 0 20px rgba(0,0,0,0.55)" }}
           >
             Modules
           </h2>
-          <p className="text-xs text-text-muted mt-1">
+          <p
+            className="text-xs text-zinc-200 mt-1"
+            style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}
+          >
             Selectionnez un module pour demarrer un pipeline ou ouvrir un
             atelier.
           </p>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text-subtle">
+        <span
+          className="font-mono text-[10px] uppercase tracking-widest text-zinc-300"
+          style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}
+        >
           {modes.length} disponibles
         </span>
       </header>
