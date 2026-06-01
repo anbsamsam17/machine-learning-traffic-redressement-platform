@@ -13,7 +13,11 @@ export type {
 } from "./MagneticButton";
 
 export { GlowCard as GlowCardPremium } from "./GlowCard";
-export type { GlowCardProps, GlowCardTone } from "./GlowCard";
+export type {
+  GlowCardProps,
+  GlowCardTone,
+  GlowCardVariant,
+} from "./GlowCard";
 
 export { ShimmerText } from "./ShimmerText";
 export type { ShimmerTextProps, ShimmerVariant } from "./ShimmerText";

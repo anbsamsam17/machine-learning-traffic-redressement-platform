@@ -100,6 +100,10 @@ export function ModeCardPremium({ mode, onSelect }: ModeCardPremiumProps) {
     <GlowCardPremium
       tone={tone}
       intensity={0.55}
+      // Variant alignee avec le proto traffic-video : fond rgba(9,9,11,0.55)
+      // + backdrop-blur(24px) saturate(150%) qui laisse transparaitre la
+      // video de fond sans masquer la scene tout en conservant un texte AAA.
+      variant="translucent-video"
       className="h-full"
       role="button"
       tabIndex={0}

@@ -51,8 +51,8 @@ import type {
   LandingMode,
   LandingModeContent,
 } from "@/components/landing/types";
-import { AnimatedBg } from "@/components/landing/animated-bg";
-import { ParticleField, RevealOnScroll } from "@/components/ui";
+import { TrafficVideoBg } from "@/components/landing/animations/TrafficVideoBg";
+import { RevealOnScroll } from "@/components/ui";
 import { landingContent as R } from "@/lib/content/landing";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,24 +176,12 @@ export default function HomePage() {
   return (
     <>
       {/* Animated background (full-viewport, behind everything).
-          Two layers: the existing branded AnimatedBg (highways +
-          sensor graph) + a ParticleField on top with showBits for
-          a subtle 1/0 binary motif that matches the data-engineering
-          theme. Both are aria-hidden, pointer-events-none, and
-          disabled under prefers-reduced-motion. */}
-      <AnimatedBg />
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 z-0 opacity-60"
-      >
-        <ParticleField
-          tone="accent"
-          density={0.00005}
-          maxParticles={42}
-          linkDistance={130}
-          showBits
-        />
-      </div>
+          TrafficVideoBg combine une video loop (traffic-bg.mp4) + un
+          overlay SVG (2 noeuds smart + 12 packets cyan/indigo en arcs
+          Bezier + 12 transmissions pointillees ephemeres) anime via GSAP.
+          Strict pointer-events-none / -z-10 / aria-hidden, et desactive
+          les animations sous prefers-reduced-motion (la video reste). */}
+      <TrafficVideoBg />
 
       {/* Avoid nested <main> — the root layout already wraps children in
           <main id="main-content">. We use a <div> here with a region label
