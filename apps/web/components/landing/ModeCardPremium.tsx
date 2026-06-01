@@ -9,16 +9,27 @@
  * delegated to the parent.
  */
 
-import { ArrowUpRight, type LucideIcon } from "lucide-react";
+import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { ArrowUpRight, Info, type LucideIcon } from "lucide-react";
 import { GlowCardPremium } from "@/components/ui";
 import type { GlowCardTone } from "@/components/ui/GlowCard";
 import { cn } from "@/lib/utils";
+import { useSamStore } from "@/lib/sam/store";
+import {
+  SAM_EXPLAIN_AUTO_RESET_MS,
+  composeSamExplainMessage,
+} from "@/lib/sam/explain-module";
 import type { LandingModeContent } from "./types";
 
 interface ModeCardPremiumProps {
   mode: LandingModeContent;
   onSelect: (key: LandingModeContent["key"]) => void;
 }
+
+/** Tooltip + aria-label (sortie humanizer_msg). */
+const SAM_EXPLAIN_TOOLTIP = "Resume du module par Sam dans la bulle";
+/** Label visible au hover (sortie humanizer_msg). */
+const SAM_EXPLAIN_LABEL = "Resume par Sam";
 
 /**
  * Map our 6-accent palette down to the 4-tone GlowCard system.
@@ -69,6 +80,22 @@ export function ModeCardPremium({ mode, onSelect }: ModeCardPremiumProps) {
   const tone = ACCENT_TO_TONE[mode.accent];
   const Icon: LucideIcon = mode.icon;
 
+  /**
+   * Trigger Sam explain : compose le message depuis le contenu du module
+   * et pousse un mood "analysing" (aura cyan pulse — naturellement visible
+   * sur le SamWidget global en bas-droite, pas besoin de mod externe).
+   * `stopPropagation` indispensable pour ne pas declencher onSelect (la
+   * card entiere est un button qui navigue vers le module).
+   */
+  function handleSamExplain(e: ReactMouseEvent | ReactKeyboardEvent) {
+    e.stopPropagation();
+    const message = composeSamExplainMessage(mode);
+    useSamStore.getState().setMood("analysing", {
+      message,
+      autoResetMs: SAM_EXPLAIN_AUTO_RESET_MS,
+    });
+  }
+
   return (
     <GlowCardPremium
       tone={tone}
@@ -87,7 +114,7 @@ export function ModeCardPremium({ mode, onSelect }: ModeCardPremiumProps) {
       }}
     >
       <div className="flex flex-col h-full cursor-pointer">
-        {/* Top row: icon + short title badge */}
+        {/* Top row: icon + short title badge + Sam explain trigger */}
         <div className="flex items-start justify-between gap-3 mb-4">
           <div
             className={cn(
@@ -101,14 +128,52 @@ export function ModeCardPremium({ mode, onSelect }: ModeCardPremiumProps) {
               strokeWidth={1.75}
             />
           </div>
-          <span
-            className={cn(
-              "font-mono text-[10px] tracking-widest uppercase px-2 py-0.5 rounded-md border bg-white/[0.02]",
-              CHIP_BORDER[mode.accent]
-            )}
-          >
-            {mode.shortTitle}
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Sam explain trigger — discreet at rest, reveals label on
+                card-hover. stopPropagation evite la navigation parasite
+                vers /donnees ou /carte. */}
+            <button
+              type="button"
+              onClick={handleSamExplain}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleSamExplain(e);
+                }
+              }}
+              aria-label={SAM_EXPLAIN_TOOLTIP}
+              title={SAM_EXPLAIN_TOOLTIP}
+              data-sam-explain={mode.key}
+              className={cn(
+                "group/sam inline-flex items-center gap-1.5 rounded-md",
+                "px-1.5 py-1 border border-white/[0.06] bg-white/[0.02]",
+                "text-text-subtle hover:text-cyan-200",
+                "hover:border-cyan-400/40 hover:bg-cyan-500/[0.08]",
+                "opacity-60 hover:opacity-100",
+                "transition-all duration-200 ease-out",
+                "hover:scale-[1.04]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 focus-visible:opacity-100",
+                "cursor-pointer"
+              )}
+            >
+              <Info
+                className="h-3.5 w-3.5 shrink-0"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+              <span className="hidden md:inline text-[10px] font-mono tracking-wide uppercase whitespace-nowrap max-w-0 group-hover/sam:max-w-[120px] focus-visible:max-w-[120px] overflow-hidden transition-[max-width] duration-200 ease-out">
+                {SAM_EXPLAIN_LABEL}
+              </span>
+            </button>
+            <span
+              className={cn(
+                "font-mono text-[10px] tracking-widest uppercase px-2 py-0.5 rounded-md border bg-white/[0.02]",
+                CHIP_BORDER[mode.accent]
+              )}
+            >
+              {mode.shortTitle}
+            </span>
+          </div>
         </div>
 
         {/* Title + tagline */}

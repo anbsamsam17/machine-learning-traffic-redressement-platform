@@ -216,6 +216,21 @@ export default function HomePage() {
             rien jusqu'a ce qu'un endpoint reel soit disponible. */}
         {content.quickStats.length > 0 && <QuickStats stats={content.quickStats} />}
 
+        {/* Pour info — annonce le bouton "Resume par Sam" present sur chaque card.
+            Italique discret, leger halo lavande pour rester dans le ton du
+            ShimmerText neon-white sans crier. */}
+        <p
+          className="mt-6 italic text-sm text-text-muted leading-relaxed"
+          role="note"
+        >
+          Pour info : clique sur le bouton{" "}
+          <span className="not-italic font-medium text-cyan-300">
+            Resume par Sam
+          </span>{" "}
+          present sur chaque module pour que Sam te detaille le contenu dans
+          sa bulle.
+        </p>
+
         {/* Modes grid + activity sidebar */}
         <section className="mt-4 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
           <ModesGridPremium modes={content.modes} onSelect={handleModeSelect} />

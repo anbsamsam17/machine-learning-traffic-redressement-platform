@@ -3,6 +3,7 @@
 import * as React from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSamStore } from "@/lib/sam/store";
 import { SAM_MOOD_TOKENS } from "@/lib/sam/moods";
@@ -42,6 +43,11 @@ export function SamWidget() {
 
   const bubbleId = React.useId();
   const tokens = SAM_MOOD_TOKENS[mood];
+
+  // Long messages (> 200 chars) elargissent la bulle a 420px et conservent
+  // les sauts de ligne. Sert au trigger "Resume par Sam" depuis les cards
+  // landing : les descriptifs modules font 400+ chars et sont multi-ligne.
+  const isLongMessage = Boolean(message && message.length > 200);
 
   // Typewriter pour la bubble : message long => frappe progressive.
   const typed = useTypewriter(message ?? "", {
@@ -103,13 +109,44 @@ export function SamWidget() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.95 }}
             transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22 }}
+            data-long-message={isLongMessage || undefined}
             className={cn(
-              "pointer-events-auto max-w-[280px] rounded-lg px-3 py-2",
+              "pointer-events-auto relative rounded-lg px-3 py-2",
+              // Padding-right augmente pour reserver la place de la croix
+              // close en absolute top-right (sinon le texte passe sous).
+              "pr-7",
+              isLongMessage ? "max-w-[420px]" : "max-w-[280px]",
               "bg-zinc-900/95 backdrop-blur-md border shadow-lg shadow-black/40",
               tokens.border,
             )}
           >
-            <p className="text-xs leading-snug text-zinc-100">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowBubble(false);
+              }}
+              aria-label="Fermer le message de Sam"
+              className={cn(
+                "absolute top-1.5 right-1.5 inline-flex items-center justify-center",
+                "size-5 rounded-full",
+                "text-zinc-400 hover:text-zinc-100",
+                "bg-transparent hover:bg-white/10",
+                "transition-colors cursor-pointer",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+              )}
+            >
+              <X className="size-3" strokeWidth={2.25} aria-hidden />
+            </button>
+            <p
+              className={cn(
+                "text-xs leading-snug text-zinc-100",
+                // Preserve line breaks (composeSamExplainMessage uses \n
+                // between tagline/description/key-metrics). Whitespace
+                // n'est pas reduit, ce qui rend les puces "- ..." lisibles.
+                isLongMessage && "whitespace-pre-line"
+              )}
+            >
               <span className={cn("font-semibold", tokens.title)}>Sam :</span>{" "}
               {typed}
             </p>
