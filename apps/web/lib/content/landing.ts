@@ -21,56 +21,60 @@ export const landingContent = {
     {
       id: "tv",
       shortTitle: "TV",
-      title: "Machine Learning : Redressement FCD Tous Vehicules",
-      tagline: "Reseau neuronal calibre sur FCD HERE et compteurs locaux.",
+      title: "Redressement FCD Tous Vehicules",
+      tagline:
+        "Reseau de neurones calibre sur traces FCD HERE et compteurs terrain.",
       description:
-        "Pipeline complet : import des releves, mapping des features, grid search adaptatif sur l'architecture et les hyperparametres, evaluation GEH et export du modele .keras. Rapports d'erreur par classe TMJA livres en fin de run.",
+        "Pipeline TensorFlow/Keras qui apprend le taux de penetration TxPen a partir de 7 features HERE : debits FCD VL/PL, distances moyennes, vitesses, classe fonctionnelle one-hot. Grid search combinatoire sur l'architecture, l'optimiseur (Adam, AdamW), le schedule de dropout, la couche de normalisation (BatchNorm, LayerNorm) et la loss (Huber 0.25, MSE, MAE, pinball quantile). Hard example mining et curriculum learning activables par config. EarlyStopping sur val_loss, ReduceLROnPlateau, multi-seed avec op determinism TF pour la reproductibilite bit-a-bit.",
       keyMetrics: [
-        "GEH < 5",
-        "Huber / MSE / MAE",
-        "Grid search adaptatif",
+        "GEH < 5 + bootstrap CI95 sur tol_in_pct, p80, R2",
+        "Grid feature-subset + 11 axes hyperparams",
+        "Sample weights x4 + quantile head q={0.2,0.5,0.8}",
       ],
       cta: "Lancer l'analyse TV",
     },
     {
       id: "pl",
       shortTitle: "PL",
-      title: "Machine Learning : Redressement FCD Poids Lourds",
-      tagline: "Reseau neuronal calibre sur FCD HERE et compteurs permanents PL.",
+      title: "Redressement FCD Poids Lourds",
+      tagline:
+        "Variante PL calibree sur capteurs permanents Siredo, sample weights renforces.",
       description:
-        "Pipeline complet dedie aux poids lourds : import des releves, mapping des features, grid search adaptatif sur l'architecture et les hyperparametres, sample weights renforces sur les capteurs permanents (x4 par defaut), evaluation GEH et export du modele .keras. Rapports d'erreur par classe TMJA PL livres en fin de run.",
+        "Pipeline derive de la chaine TV pour la cible TxPenPL, avec 9 features dont 3 derivees en amont : fcd_log, tv_pl_ratio, dist_to_lyon_center. La recipe Compact4 figee apres grid search tourne sur 5 couches denses, batch 64, 1500 epochs, dropout 0.015. Sample weights x4 sur les capteurs permanents Siredo et boost x2 sur l'annee la plus recente (auto-detection MAX year_mapped). Stratification GEH par classe TMJA, metriques bootstrappees CI95, rapport HTML PL dedie avec carte folium.",
       keyMetrics: [
-        "GEH < 5",
-        "Sample weights x4 capteurs permanents",
-        "Grid search adaptatif",
+        "R2 0.97, MAE 0.17, GEH < 5 a 99.86% (700 capteurs Grand Lyon)",
+        "Sample weights x4 capteurs permanents + x2 annee recente",
+        "Features derivees fcd_log, tv_pl_ratio, dist_to_lyon_center",
       ],
       cta: "Lancer l'analyse PL",
     },
     {
       id: "hpm",
       shortTitle: "HPM",
-      title: "Machine Learning : Redressement debit Heure de Pointe Matin",
-      tagline: "Reseau neuronal calibre sur la fenetre horaire 8h-9h (v/h).",
+      title: "Redressement debit Heure de Pointe Matin",
+      tagline:
+        "Reseau de neurones cible sur la fenetre 8h-9h, sortie en v/h.",
       description:
-        "Pipeline dedie a l'heure de pointe matin : entree FCD horaire 8h-9h, cible TxPen_HPM, sortie HPM_FCDr (debit redresse en vehicules par heure). Architecture identique a la chaine TV mais cible et features specifiques a la fenetre 8h-9h. Rapports d'erreur par classe de debit livres en fin de run.",
+        "Specialisation horaire de la chaine TV sur la fenetre h08 (8h00-8h59, convention CEREMA Grand Lyon). La cible TxPen_HPM se derive de FCD_HPM_TV sur TMJOBCTV_HPM, la sortie HPM_FCDr donne le debit redresse en vehicules/heure. Architecture, callbacks et grid identiques au pipeline TV, features et target retravaillees pour la pointe matin. Evaluation GEH/MAE/R2 stratifiee par debit horaire et generateur de rapport peak dedie.",
       keyMetrics: [
-        "Fenetre 8h-9h",
-        "Cible TxPen_HPM",
-        "Sortie HPM_FCDr (v/h)",
+        "Fenetre h08-h09 (CEREMA Grand Lyon)",
+        "Cible TxPen_HPM, sortie HPM_FCDr en v/h",
+        "GEH horaire stratifie + rapport HTML peak dedie",
       ],
       cta: "Lancer l'analyse HPM",
     },
     {
       id: "hps",
       shortTitle: "HPS",
-      title: "Machine Learning : Redressement debit Heure de Pointe Soir",
-      tagline: "Reseau neuronal calibre sur la fenetre horaire 17h-18h (v/h).",
+      title: "Redressement debit Heure de Pointe Soir",
+      tagline:
+        "Reseau de neurones cible sur la fenetre 17h-18h, sortie en v/h.",
       description:
-        "Pipeline dedie a l'heure de pointe soir : entree FCD horaire 17h-18h, cible TxPen_HPS, sortie HPS_FCDr (debit redresse en vehicules par heure). Architecture identique a la chaine TV mais cible et features specifiques a la fenetre 17h-18h. Rapports d'erreur par classe de debit livres en fin de run.",
+        "Pendant soir de HPM, sur la fenetre h17 (17h00-17h59). La cible TxPen_HPS se derive de FCD_HPS_TV sur TMJOBCTV_HPS, la sortie HPS_FCDr donne le debit redresse en vehicules/heure. La chaine reutilise l'architecture, les callbacks et la grille TV, avec features et target propres au pic du soir. Rapport HTML peak et carte folium specifiques a la fenetre horaire.",
       keyMetrics: [
-        "Fenetre 17h-18h",
-        "Cible TxPen_HPS",
-        "Sortie HPS_FCDr (v/h)",
+        "Fenetre h17-h18 (CEREMA Grand Lyon)",
+        "Cible TxPen_HPS, sortie HPS_FCDr en v/h",
+        "GEH horaire stratifie + rapport HTML peak dedie",
       ],
       cta: "Lancer l'analyse HPS",
     },
@@ -78,27 +82,29 @@ export const landingContent = {
       id: "carte",
       shortTitle: "Carte",
       title: "Carte de Debits",
-      tagline: "Application des modeles TV et PL sur le reseau FCD complet.",
+      tagline:
+        "Inference cartographique TV+PL+HPM+HPS sur reseau FCD, sortie GeoJSON exploitable.",
       description:
-        "Charge un modele entraine, applique les predictions segment par segment et genere un GeoJSON enrichi (JOr, DPL, intervalles de confiance). Viewer maplibre integre avec filtres dynamiques et palette graduee.",
+        "Charge un modele Keras entraine, normalise les features FCD (HERE/SIREDO) et applique les predictions segment par segment. Post-traitement metier : saturation hierarchique v3 PL (ratio FCD adaptatif, plancher par classe fonctionnelle HERE FC1-FC5, plafond biomecanique CEREMA 0.55), override zones critiques (buffer 1 km en Lambert-93 EPSG:2154 autour des capteurs SIREDO depassant 15% de ratio PL/TV), arrondi progressif 3 paliers (multiples de 5, 10, 100 selon l'ordre de grandeur). Sortie GeoJSON enrichie (JOr, DPL, PM, PS, intervalles de confiance) servie inline pour le viewer MapLibre GL JS integre.",
       keyMetrics: [
-        "Palette graduee 7 paliers",
-        "Filtres JOr / FC",
-        "Viewer maplibre integre",
+        "Saturation v3 + override SIREDO 1 km EPSG:2154",
+        "Arrondi progressif 3 paliers post-IC",
+        "4 modeles combines (TV, PL, HPM, HPS)",
       ],
-      cta: "Ouvrir la carte",
+      cta: "Generer la carte",
     },
     {
       id: "compteurs",
       shortTitle: "Compteurs",
       title: "Fichier Compteurs",
-      tagline: "Extraction standardisee pour partage tiers et SIG.",
+      tagline:
+        "Extraction standardisee des boucles de comptage pour partage SIG tiers.",
       description:
-        "Genere le fichier counting-loops au format standardise (9 colonnes, geometries WKT). Export GeoJSON parallele pour ouverture directe dans QGIS ou ArcGIS, sans retouche manuelle.",
+        "Genere le fichier counting-loops au schema canonique 9 colonnes (Identifiant Poste/Section, Annee, Commune, RD, PRD, Type capteur, TMJA TV, TMJA PL, Sens de comptage). Coercion numerique tolerante aux decimales francaises, normalisation des aliases lat/lon (10 variantes detectees), dispatch par format CSV / xlsx / Parquet / GeoJSON. Sortie GeoJSON Point en WGS84 (EPSG:4326), exploitable directement dans QGIS ou ArcGIS sans retouche manuelle, avec stats de distribution par annee et par type de capteur.",
       keyMetrics: [
-        "Schema standardise 9 colonnes",
-        "Export GeoJSON",
-        "Compatible QGIS",
+        "Schema canonique 9 colonnes, WGS84",
+        "4 formats acceptes en entree",
+        "Export QGIS / ArcGIS sans retouche",
       ],
       cta: "Generer le fichier",
     },
@@ -106,27 +112,29 @@ export const landingContent = {
       id: "visualisation",
       shortTitle: "Visualisation",
       title: "Carte + Capteurs",
-      tagline: "Visualisez carte de debits et points de comptage sur la meme vue.",
+      tagline:
+        "Vue interactive segments redresses et points de comptage sur une seule carte.",
       description:
-        "Chargez un GeoJSON de predictions (sortie module Carte) et un fichier capteurs (CSV/xlsx) pour une vue interactive complete : segments colories, capteurs TV/PL, popups detailles, lien Street View et filtres dynamiques.",
+        "Maille un GeoJSON de segments (LineString JOr / DPL / PM / PS) et un fichier capteurs (CSV, xlsx, Parquet ou GeoJSON Point) dans un viewer MapLibre GL JS unique. Rendu trois couches halo + core + shine pour l'effet neon lisible sur fond satellite ou Carto Dark Matter, palette TVr graduee chaude (7 paliers) et DPL froide (8 paliers), filtres dynamiques, popups detailles, lien Street View et bbox auto-zoom. Backend FastAPI : validation defensive (agregId + au moins une colonne de debit JOr ou TVr legacy), support multi-format avec sidecar metadata cache pour les GET.",
       keyMetrics: [
-        "Lignes + Points",
-        "Popups detailles",
-        "Street View",
+        "3 couches MapLibre halo / core / shine",
+        "Palettes TVr 7 paliers + DPL 8 paliers",
+        "Multi-format : CSV / xlsx / Parquet / GeoJSON",
       ],
-      cta: "Ouvrir",
+      cta: "Ouvrir la vue",
     },
     {
       id: "discontinuites",
       shortTitle: "Discontinuites",
       title: "Analyse des discontinuites JOr",
-      tagline: "Detecte les sauts de debit entre arcs adjacents et explique les causes.",
+      tagline:
+        "Detection algorithmique des ruptures de flux entre arcs HERE adjacents.",
       description:
-        "Charge un GeoJSON enrichi (JOr/DPL par segment), execute le pipeline de detection cote serveur (5 etapes, 30 s - 2 min selon volume) puis affiche une carte interactive des noeuds discontinus avec cause principale, topologie, drivers rankes et table par segment.",
+        "Reconstruit le graphe oriente HERE depuis les suffixes -F / -T des AgregId, agrege flow_in / flow_out par noeud et applique la regle utilisateur adaptative (seuil 2000 v/j si max(flow) <= 20000, sinon 4000 v/j, avec tier rouge a 2x seuil). Le scoring identifie les drivers FCD (TMJOFCDTV, TMJOFCDPL, functional_class, distances avant / minimales) puis classe chaque noeud en 8 causes typees (FCD_TV_cliff, FCD_PL_cliff, FC_transition, RAMP_asymmetry, ROUNDABOUT_asymmetry, Coverage_gap, Distance_anomaly, Unexplained) et 3 topologies (Bretelle, Carrefour, Continuite). Sortie Point FeatureCollection cartographiee dans MapLibre avec NodePanel drill-down et cross-tab cause x topologie ; jointure parquet FCDREFGLOBAL optionnelle pour completer les drivers manquants.",
       keyMetrics: [
-        "8 causes typees",
-        "3 topologies",
-        "Popups drill-down",
+        "8 causes typees, 3 topologies, 2 tiers de severite",
+        "Pipeline 5 etapes (30s a 2 min selon volume)",
+        "Jointure parquet FCDREFGLOBAL en option",
       ],
       cta: "Lancer l'analyse",
     },
