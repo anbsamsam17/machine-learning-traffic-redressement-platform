@@ -10,27 +10,27 @@ type Feature = {
 
 const FEATURES: Feature[] = [
   {
-    icon: Brain,
-    title: "Machine Learning",
-    desc: "TensorFlow/Keras, grid search 11 axes, reproductibilite bit-a-bit.",
+    icon: Route,
+    title: "Data Engineering",
+    desc: "Ingestion 5 formats, reproj WGS84 vers Lambert-93, spatial join buffer 1 km SIREDO.",
     accent: "text-indigo-300",
   },
   {
-    icon: Radio,
-    title: "Capteurs SIREDO",
-    desc: "Boucles et permanents Siredo. Sample weights x4, stratification TMJA.",
+    icon: Brain,
+    title: "Machine Learning",
+    desc: "Quantile NN q={0.2,0.5,0.8}, grid 15 axes, reproductibilite bit-a-bit Keras.",
     accent: "text-cyan-300",
   },
   {
-    icon: Route,
-    title: "Donnees FCD",
-    desc: "Traces HERE croisees avec compteurs terrain, classes fonctionnelles FC1-FC5.",
+    icon: Activity,
+    title: "Data Analyst",
+    desc: "Bootstrap CI95 1000 resamples, stratification TMJA, rapports HTML TV/PL/HPM/HPS.",
     accent: "text-amber-300",
   },
   {
-    icon: Activity,
-    title: "Modelisation",
-    desc: "Saturation hierarchique v3, arrondi progressif, GEH<5 sur bootstrap CI95.",
+    icon: Radio,
+    title: "Full-Stack",
+    desc: "Next 16, React 19, FastAPI durci OWASP, 324 tests, GSAP 60fps SSR-safe.",
     accent: "text-emerald-300",
   },
 ];

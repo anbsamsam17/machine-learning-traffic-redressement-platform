@@ -23,13 +23,13 @@ export function HeroSection() {
         data-enter="subtitle"
         className="login-text-shadow text-base font-medium text-zinc-100 md:text-lg"
       >
+        Data Engineering
+        <span className="mx-2 text-zinc-400">&middot;</span>
         Machine Learning
         <span className="mx-2 text-zinc-400">&middot;</span>
-        Capteurs SIREDO
-        <span className="mx-2 text-zinc-400">&middot;</span>
-        FCD HERE
-        <span className="mx-2 text-zinc-400">&middot;</span>
         Cartographie
+        <span className="mx-2 text-zinc-400">&middot;</span>
+        Full-Stack
       </p>
 
       <p
@@ -37,8 +37,8 @@ export function HeroSection() {
         className="login-text-shadow text-sm text-zinc-200"
       >
         FastAPI et TensorFlow/Keras au backend, Next.js 16 et MapLibre GL JS
-        au frontend. Une stack full-stack pour redresser et analyser les
-        debits de trafic routier.
+        au frontend. Ingestion multi-format, ML reproductible, rapports
+        stratifies et visualisation neon en production.
       </p>
     </div>
   );

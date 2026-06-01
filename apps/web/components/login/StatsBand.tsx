@@ -6,19 +6,19 @@ type Stat = {
 
 const STATS: Stat[] = [
   {
-    value: "8",
-    label: "modules",
-    caption: "TV · PL · HPM · HPS · Carte · Compteurs · Vue · Discontinuites",
-  },
-  {
     value: "99.86%",
     label: "GEH < 5 (PL)",
-    caption: "700 capteurs Grand Lyon · R2 0.97 · MAE 0.17",
+    caption: "700 capteurs Grand Lyon · Keras 5 couches bs=64 ep=1500",
   },
   {
-    value: "11",
-    label: "axes grid search",
-    caption: "Sample weights x4 · multi-seed TF determinism",
+    value: "1000",
+    label: "resamples bootstrap",
+    caption: "CI95 sur tol_in_pct, p80, R2 · stratification TMJA et drift annuel",
+  },
+  {
+    value: "324",
+    label: "tests pytest",
+    caption: "IDOR · security headers · rate limit · ML pipeline E2E",
   },
 ];
 
