@@ -88,7 +88,7 @@ function computeKpis(
   features: SegmentFeature[],
   filters: MapViewFilters,
 ): KpiSnapshot {
-  let total = features.length;
+  const total = features.length;
   const tvr: number[] = [];
   const dpl: number[] = [];
   let tvrMax = 0;
@@ -687,11 +687,6 @@ function renderQuickPopup(p: Record<string, unknown>): string {
   const mono = "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace";
   const cell = (label: string, value: string) =>
     `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)"><span style="color:#94a3b8;font-size:11px">${label}</span><span style="color:#f8fafc;font-size:12px;font-family:${mono};font-variant-numeric:tabular-nums">${value}</span></div>`;
-  const num = (v: unknown, unit?: string): string => {
-    const n = Number(v);
-    if (!isFinite(n)) return "—";
-    return unit ? `${NF_FR.format(Math.round(n))} ${unit}` : NF_FR.format(Math.round(n));
-  };
   const range = (lo: unknown, hi: unknown): string => {
     const a = Number(lo);
     const b = Number(hi);
@@ -700,18 +695,27 @@ function renderQuickPopup(p: Record<string, unknown>): string {
     if (!isFinite(b)) return `≥ ${NF_FR.format(Math.round(a))}`;
     return `${NF_FR.format(Math.round(a))} – ${NF_FR.format(Math.round(b))}`;
   };
+  // Metric row: central value + [min – max], rendered only when present.
+  const metric = (label: string, unit: string, val: unknown, lo: unknown, hi: unknown): string => {
+    const n = Number(val);
+    if (val == null || !isFinite(n)) return "";
+    const r = range(lo, hi);
+    const rangeSpan =
+      r !== "—"
+        ? `<span style="color:#94a3b8;font-size:11px;font-weight:400;margin-left:8px">${r}</span>`
+        : "";
+    return `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)"><span style="color:#94a3b8;font-size:11px">${label} <span style="color:#64748b">(${unit})</span></span><span style="color:#f8fafc;font-size:12px;font-family:${mono};font-variant-numeric:tabular-nums">${NF_FR.format(Math.round(n))}${rangeSpan}</span></div>`;
+  };
   return `
-    <div style="font-family:Inter,system-ui,sans-serif;color:#f8fafc;min-width:220px">
+    <div style="font-family:Inter,system-ui,sans-serif;color:#f8fafc;min-width:240px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.1)">
         <span style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em">Troncon</span>
         <span style="font-size:11px;font-family:${mono};color:#a5b4fc">#${p.agregId ?? "—"}</span>
       </div>
-      ${cell("JOr", num(p.JOr ?? p.TVr, "veh/j"))}
-      ${cell("DPL", num(p.DPL, "PL/j"))}
-      ${p.VLred != null ? cell("VLred", num(p.VLred, "veh/j")) : ""}
-      ${p.PLred != null ? cell("PLred", num(p.PLred, "PL/j")) : ""}
-      ${cell("IC JOr", range(p.JOrmin ?? p.TVrmin, p.JOrmax ?? p.TVrmax))}
-      ${cell("IC DPL", range(p.DPLmin, p.DPLmax))}
+      ${metric("JOr", "véh/j", p.JOr ?? p.TVr, p.JOrmin ?? p.TVrmin, p.JOrmax ?? p.TVrmax)}
+      ${metric("DPL", "PL/j", p.DPL, p.DPLmin, p.DPLmax)}
+      ${metric("PM", "véh/h", p.PM, p.PMmin, p.PMmax)}
+      ${metric("PS", "véh/h", p.PS, p.PSmin, p.PSmax)}
       ${p.FC != null ? cell("FC", String(p.FC)) : ""}
     </div>
   `;

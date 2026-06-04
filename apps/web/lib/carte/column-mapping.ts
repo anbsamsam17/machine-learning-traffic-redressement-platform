@@ -65,6 +65,56 @@ export const COLUMN_METADATA: Record<string, { label: string; description: strin
   linkFC: { label: "linkFC (legacy)", description: "Ancien nom : sera mappe automatiquement vers functional_class" },
 };
 
+// ---------------------------------------------------------------------------
+// Auto-mapping synonyms — source (FCDREFGLOBAL parquet) -> canonical target.
+// ---------------------------------------------------------------------------
+// Lets the mapping form PRE-FILL the FCDREFGLOBAL native column names so the
+// operator no longer has to map them by hand on every generation. Mirrors the
+// server-side carte.SOURCE_TO_CANONICAL table, but uses the *_m distance names
+// actually present in the parquet (the backend table historically listed *_km).
+// Matching is case-insensitive (cf. findSourceColumn).
+export const COLUMN_SOURCE_SYNONYMS: Record<string, string[]> = {
+  TMJOFCDTV: ["TMJFCDTV", "TMJATV", "TMJAFCDTV"],
+  TMJOFCDPL: ["TMJFCDPL", "TMJAPL", "TMJAFCDPL"],
+  functional_class: ["FUNC_CLASS", "linkFC"],
+  avg_distance_m: ["car_average_distance_m"],
+  avg_min_distance_m: ["car_min_average_distance_m"],
+  avg_distance_before_m: ["car_average_distance_before_m"],
+  avg_distance_after_m: ["car_average_distance_after_m"],
+  truck_avg_distance_m: ["truck_average_distance_m"],
+  truck_avg_min_distance_m: ["truck_min_average_distance_m"],
+  truck_avg_distance_before_m: ["truck_average_distance_before_m"],
+  truck_avg_distance_after_m: ["truck_average_distance_after_m"],
+  avg_speed_kmh: ["car_average_speed_kmh"],
+  truck_avg_speed_kmh: ["truck_average_speed_kmh"],
+  agregId: ["AgregId", "LINK_ID", "link_id", "id"],
+};
+
+/**
+ * Resolve the best source column for a canonical target key:
+ *   1. exact match, 2. case-insensitive match, 3. known synonym (case-insensitive).
+ * Returns null when nothing matches (the operator then maps it manually).
+ */
+export function findSourceColumn(
+  targetKey: string,
+  sourceColumns: string[],
+): string | null {
+  const exact = sourceColumns.find((c) => c === targetKey);
+  if (exact) return exact;
+  const lowerTarget = targetKey.toLowerCase();
+  const ci = sourceColumns.find((c) => c.toLowerCase() === lowerTarget);
+  if (ci) return ci;
+  const syns = COLUMN_SOURCE_SYNONYMS[targetKey];
+  if (syns) {
+    for (const syn of syns) {
+      const lowerSyn = syn.toLowerCase();
+      const m = sourceColumns.find((c) => c.toLowerCase() === lowerSyn);
+      if (m) return m;
+    }
+  }
+  return null;
+}
+
 // Backend-derived columns that must NOT appear in the mapping form (they are
 // computed server-side from other inputs).
 export const BACKEND_DERIVED_COLUMNS = new Set<string>(["year_mapped"]);

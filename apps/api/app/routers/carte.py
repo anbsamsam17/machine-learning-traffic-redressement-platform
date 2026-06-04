@@ -100,10 +100,11 @@ router = APIRouter(prefix="/api/carte", tags=["carte"])
 # ---------------------------------------------------------------------------
 
 class ErrorThresholds(BaseModel):
-    err_0_1000: float = 0.25
-    err_1000_2000: float = 0.18
-    err_2000_4000: float = 0.18
-    err_4000_plus: float = 0.14
+    # IC JOr par defaut (tranches de debit JOr v/j) : 20 / 15 / 15 / 10 %.
+    err_0_1000: float = 0.20
+    err_1000_2000: float = 0.15
+    err_2000_4000: float = 0.15
+    err_4000_plus: float = 0.10
 
 
 class PeakHourErrorThresholds(BaseModel):
@@ -436,6 +437,17 @@ SOURCE_TO_CANONICAL = {
     "truck_min_average_distance_km": "truck_avg_min_distance_m",
     "truck_average_distance_before_km": "truck_avg_distance_before_m",
     "truck_average_distance_after_km": "truck_avg_distance_after_m",
+    # FCDREFGLOBAL livre les distances en METRES (suffixe _m) — pas _km. On
+    # mappe donc aussi les noms _m natifs vers les noms canoniques attendus par
+    # les modeles (evite un mapping manuel systematique cote UI).
+    "car_average_distance_m": "avg_distance_m",
+    "car_min_average_distance_m": "avg_min_distance_m",
+    "car_average_distance_before_m": "avg_distance_before_m",
+    "car_average_distance_after_m": "avg_distance_after_m",
+    "truck_average_distance_m": "truck_avg_distance_m",
+    "truck_min_average_distance_m": "truck_avg_min_distance_m",
+    "truck_average_distance_before_m": "truck_avg_distance_before_m",
+    "truck_average_distance_after_m": "truck_avg_distance_after_m",
     # AgregId variants
     "agregId": "AgregId",
 }

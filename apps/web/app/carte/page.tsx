@@ -60,6 +60,7 @@ import {
   computeDynamicRequiredColumns,
   resolveYearColumn,
   usesYearFeature,
+  findSourceColumn,
 } from "@/lib/carte/column-mapping";
 import {
   YearMappingPanel,
@@ -122,10 +123,10 @@ export default function CartePage() {
   const [filterTvrEnabled, setFilterTvrEnabled] = useState(true);
   const [filterTvrValue, setFilterTvrValue] = useState(100);
   const [filterFcEnabled, setFilterFcEnabled] = useState(true);
-  const [err01000, setErr01000] = useState(25);
-  const [err10002000, setErr10002000] = useState(18);
-  const [err20004000, setErr20004000] = useState(18);
-  const [err4000plus, setErr4000plus] = useState(14);
+  const [err01000, setErr01000] = useState(20);
+  const [err10002000, setErr10002000] = useState(15);
+  const [err20004000, setErr20004000] = useState(15);
+  const [err4000plus, setErr4000plus] = useState(10);
   // v/h tranches IC heures de pointe (used only when HPM and/or HPS loaded).
   // D2: 0-100=25%, 100-300=18%, 300-600=18%, >600=14%. PM and PS thresholds
   // are kept independent so the user can tune HPM and HPS separately.
@@ -263,8 +264,7 @@ export default function CartePage() {
       // been uploaded and dynamicRequiredColumns has been computed.
       const autoMapping: Record<string, string | null> = {};
       for (const col of REQUIRED_COLUMNS) {
-        const match = res.columns.find((c) => c === col.key);
-        autoMapping[col.key] = match ?? null;
+        autoMapping[col.key] = findSourceColumn(col.key, res.columns);
       }
       setColumnMapping(autoMapping);
       toast.success(`${res.rows} troncons charges depuis ${res.filename}`);
@@ -382,7 +382,7 @@ export default function CartePage() {
       let changed = false;
       for (const col of dynamicRequiredColumns) {
         if (next[col.key] !== undefined && next[col.key] !== null && next[col.key] !== "") continue;
-        const match = sourceColumns.find((c) => c === col.key);
+        const match = findSourceColumn(col.key, sourceColumns);
         if (match) {
           next[col.key] = match;
           changed = true;

@@ -11,16 +11,27 @@ import type { GeoJsonProperties } from "geojson";
 /** Properties we expect on each LineString feature (from /api/carte/generate). */
 export interface SegmentProps {
   agregId?: string | number | null;
-  TVr?: number | null;
+  // Débit TV redressé journalier — nom canonique JOr (anciennement TVr).
+  JOr?: number | null;
+  JOrmin?: number | null;
+  JOrmax?: number | null;
+  // Débit PL redressé journalier (présent seulement si modèle PL fourni).
   DPL?: number | null;
-  PLr?: number | null;
-  TVrmin?: number | null;
-  TVrmax?: number | null;
   DPLmin?: number | null;
   DPLmax?: number | null;
-  PLrmin?: number | null;
-  PLrmax?: number | null;
+  // Heure de pointe matin (v/h) — présent seulement si modèle HPM fourni.
+  PM?: number | null;
+  PMmin?: number | null;
+  PMmax?: number | null;
+  // Heure de pointe soir (v/h) — présent seulement si modèle HPS fourni.
+  PS?: number | null;
+  PSmin?: number | null;
+  PSmax?: number | null;
   FC?: number | null;
+  // --- Legacy fallbacks (anciens GeoJSON) ---
+  TVr?: number | null;
+  TVrmin?: number | null;
+  TVrmax?: number | null;
   /** Geometric Equivalent Hours (computed client-side, if available). */
   GEH?: number | null;
   [k: string]: unknown;
@@ -32,11 +43,6 @@ function fmt(v: number | null | undefined, unit = ""): string {
   if (v == null || (typeof v === "number" && !isFinite(v))) return "—";
   const rounded = Math.round(v as number);
   return unit ? `${NF_FR.format(rounded)} ${unit}` : NF_FR.format(rounded);
-}
-
-function fmtPct(v: number | null | undefined): string {
-  if (v == null || (typeof v === "number" && !isFinite(v))) return "—";
-  return `${(v as number).toFixed(1)} %`;
 }
 
 function rangeStr(lo: number | null | undefined, hi: number | null | undefined): string {
@@ -61,17 +67,42 @@ export function renderPopupHTML(raw: GeoJsonProperties): string {
        <span style="color:#f8fafc;font-size:12px;font-family:${mono};font-variant-numeric:tabular-nums">${value}</span>
      </div>`;
 
+  // A metric row: central value + [min – max] range, shown only when the
+  // central value is present (TV-only cartes have no DPL/PM/PS columns).
+  const metric = (
+    label: string,
+    unit: string,
+    val: number | null | undefined,
+    lo: number | null | undefined,
+    hi: number | null | undefined,
+  ): string => {
+    if (val == null || !isFinite(Number(val))) return "";
+    const r = rangeStr(lo, hi);
+    const rangeSpan =
+      r !== "—"
+        ? `<span style="color:#94a3b8;font-size:11px;font-weight:400;margin-left:8px">${r}</span>`
+        : "";
+    return `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+       <span style="color:#94a3b8;font-size:11px">${label} <span style="color:#64748b">(${unit})</span></span>
+       <span style="color:#f8fafc;font-size:12px;font-family:${mono};font-variant-numeric:tabular-nums">${fmt(val)}${rangeSpan}</span>
+     </div>`;
+  };
+
+  // Canonical names with legacy fallback (JOr <- TVr).
+  const jor = p.JOr ?? p.TVr;
+  const jorMin = p.JOrmin ?? p.TVrmin;
+  const jorMax = p.JOrmax ?? p.TVrmax;
+
   return `
-    <div style="font-family:Inter,system-ui,sans-serif;color:#f8fafc;min-width:220px">
+    <div style="font-family:Inter,system-ui,sans-serif;color:#f8fafc;min-width:240px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.1)">
         <span style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em">Tronçon</span>
         <span style="font-size:11px;font-family:${mono};color:#a5b4fc">#${p.agregId ?? "—"}</span>
       </div>
-      ${cell("TVr", fmt(p.TVr, "veh/j"))}
-      ${cell("DPL", fmt(p.DPL, "PL/j"))}
-      ${cell("PLr", fmtPct(p.PLr))}
-      ${cell("IC TVr", rangeStr(p.TVrmin, p.TVrmax))}
-      ${cell("IC DPL", rangeStr(p.DPLmin, p.DPLmax))}
+      ${metric("JOr", "véh/j", jor, jorMin, jorMax)}
+      ${metric("DPL", "PL/j", p.DPL, p.DPLmin, p.DPLmax)}
+      ${metric("PM", "véh/h", p.PM, p.PMmin, p.PMmax)}
+      ${metric("PS", "véh/h", p.PS, p.PSmin, p.PSmax)}
       ${p.FC != null ? cell("FC", String(p.FC)) : ""}
       ${p.GEH != null ? cell("GEH", (p.GEH as number).toFixed(2)) : ""}
     </div>
