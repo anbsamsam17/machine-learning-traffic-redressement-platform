@@ -123,7 +123,11 @@ class PeakHourErrorThresholds(BaseModel):
 class CarteGenerateRequest(BaseModel):
     session_id: str
     model_tv_dir: str
-    model_pl_dir: str
+    # Modele PL OPTIONNEL (comme HPM/HPS). Quand falsy (None/""/whitespace),
+    # le modele PL n'est PAS charge et aucune colonne derivee du PL n'est
+    # produite (DPL/DPLmin/DPLmax/PLr*/PLred/VLred). Le frontend envoie null
+    # quand pas de modele PL. None => pipeline TV-seul (+HPM/HPS si fournis).
+    model_pl_dir: str | None = None
     # Optional peak-hour models (D3): each is independent. When None, the
     # corresponding PM / PS columns are not produced (zero behavioural change
     # vs. the legacy TV+PL-only pipeline).
@@ -141,6 +145,16 @@ class CarteGenerateRequest(BaseModel):
     # ``error_thresholds`` (which stays in v/j for TV/PL).
     err_pm_thresholds: PeakHourErrorThresholds = Field(default_factory=PeakHourErrorThresholds)
     err_ps_thresholds: PeakHourErrorThresholds = Field(default_factory=PeakHourErrorThresholds)
+
+    # Overrides annee fournis par le body (UI). Quand non-None, ils PRIMENT sur
+    # le training_config du modele (priorite body > config) :
+    #   - year_column_name   override config["year_column_name"] (defaut "Annee")
+    #   - year_value_mapping override config["year_value_mapping"]
+    # La resolution finale est faite dans services.ml.inference._apply_year_mapping
+    # (qui prend ces overrides en kwargs). Memes overrides pour TV / PL / HPM /
+    # HPS : une seule source annee cote UI. None => comportement legacy (config).
+    year_column_name: str | None = None
+    year_value_mapping: dict[str, float] | None = None
 
     # PL saturation hierarchique v2 hybride adaptative (cf SATURATION_PL_specs.md
     # v2.0). Active par defaut — pour reproduire l'ancien comportement
@@ -487,12 +501,18 @@ async def _predict_peak_hour(
     canonical_fcd: str,
     fcd_aliases: tuple[str, ...],
     fallback_input_cols: list[str],
+    year_column_override: str | None = None,
+    year_mapping_override: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run a peak-hour model (HPM/HPS) and return (TxPen_pred, debit_v_per_h).
 
     Thin wrapper that delegates to
     :func:`app.services.ml.inference._predict_peak_hour_impl`, injecting the
     router-specific column-normalisation helpers.
+
+    ``year_column_override`` / ``year_mapping_override`` (None par defaut =>
+    comportement legacy) sont propages a ``_apply_year_mapping`` cote impl,
+    pour aligner HPM/HPS sur les memes overrides annee que TV/PL.
     """
     return await _predict_peak_hour_impl(
         raw_df=raw_df,
@@ -504,6 +524,8 @@ async def _predict_peak_hour(
         fallback_input_cols=fallback_input_cols,
         normalize_source_columns=_normalize_source_columns,
         apply_column_aliases=_apply_column_aliases,
+        year_column_override=year_column_override,
+        year_mapping_override=year_mapping_override,
     )
 
 
@@ -803,16 +825,23 @@ async def generate_carte(
     if raw_df is None:
         raise HTTPException(status_code=400, detail="Aucune donnee FCD dans la session. Uploadez un fichier d'abord.")
 
-    # 3. Load both models
+    # 3. Load TV model (toujours requis). Le modele PL est OPTIONNEL : il n'est
+    #    charge que si ``model_pl_dir`` est non-vide (None/""/whitespace = pas
+    #    de PL). Tout le bloc de prediction PL et les colonnes derivees du PL
+    #    (DPL*/PLr*/PLred/VLred) sont conditionnes par ce flag.
     try:
         model_tv, coeff_tv, config_tv = await asyncio.to_thread(_load_model, body.model_tv_dir)
     except (FileNotFoundError, Exception) as e:
         raise HTTPException(status_code=400, detail=f"Erreur chargement modele TV: {e}")
 
-    try:
-        model_pl, coeff_pl, config_pl = await asyncio.to_thread(_load_model, body.model_pl_dir)
-    except (FileNotFoundError, Exception) as e:
-        raise HTTPException(status_code=400, detail=f"Erreur chargement modele PL: {e}")
+    pl_enabled = bool(body.model_pl_dir and body.model_pl_dir.strip())
+
+    model_pl = coeff_pl = config_pl = None
+    if pl_enabled:
+        try:
+            model_pl, coeff_pl, config_pl = await asyncio.to_thread(_load_model, body.model_pl_dir)
+        except (FileNotFoundError, Exception) as e:
+            raise HTTPException(status_code=400, detail=f"Erreur chargement modele PL: {e}")
 
     # 4. Extract norm coefficients
     muY_tv = coeff_tv["muY"][0]
@@ -820,10 +849,12 @@ async def generate_carte(
     SX_tv = coeff_tv["SX"][0]
     muX_tv = coeff_tv["muX"][0]
 
-    muY_pl = coeff_pl["muY"][0]
-    SY_pl = coeff_pl["SY"][0]
-    SX_pl = coeff_pl["SX"][0]
-    muX_pl = coeff_pl["muX"][0]
+    muY_pl = SY_pl = SX_pl = muX_pl = None
+    if pl_enabled:
+        muY_pl = coeff_pl["muY"][0]
+        SY_pl = coeff_pl["SY"][0]
+        SX_pl = coeff_pl["SX"][0]
+        muX_pl = coeff_pl["muX"][0]
 
     # 5. Prepare data — apply column mapping
     data = raw_df.copy()
@@ -838,8 +869,12 @@ async def generate_carte(
     # Apply legacy column aliases (silent retrocompat)
     data = _apply_column_aliases(data)
 
-    # Apply year mapping for TV
-    data = _apply_year_mapping(data, config_tv)
+    # Apply year mapping for TV (overrides body > training_config si fournis)
+    data = _apply_year_mapping(
+        data, config_tv,
+        year_column_override=body.year_column_name,
+        year_mapping_override=body.year_value_mapping,
+    )
 
     # 6. TV prediction
     if config_tv and "input_cols" in config_tv:
@@ -936,48 +971,58 @@ async def generate_carte(
     available_cols = [c for c in selected_columns if c in data.columns]
     prod = data[available_cols].copy()
 
-    # 7. PL prediction — use a fresh copy from raw with mapping
-    data_pl = raw_df.copy()
-    data_pl = data_pl.rename(columns=rename_dict)
-    data_pl = _normalize_source_columns(data_pl)
-    data_pl = _apply_column_aliases(data_pl)
-    data_pl = _apply_year_mapping(data_pl, config_pl)
-
-    if config_pl and "input_cols" in config_pl:
-        input_cols_pl = _normalize_input_cols(config_pl["input_cols"])
-    else:
-        input_cols_pl = [
-            "TMJOFCDPL", "avg_distance_m", "avg_speed_kmh",
-            "truck_avg_min_distance_m", "truck_avg_speed_kmh",
-        ]
-
-    missing_pl = [c for c in input_cols_pl if c not in data_pl.columns]
-    if missing_pl:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Colonnes manquantes pour le modele PL: {missing_pl}",
+    # 7. PL prediction (OPTIONNEL) — use a fresh copy from raw with mapping.
+    #    Tout ce bloc est saute quand ``pl_enabled`` est False : aucune colonne
+    #    derivee du PL (DPL/DPLmin/DPLmax/PLr*/PLred/VLred) n'est produite.
+    #    ``data_pl`` reste None en mode TV-seul ; les references downstream sont
+    #    gardees par ``pl_enabled`` / ``"DPL" in prod.columns``.
+    data_pl = None
+    if pl_enabled:
+        data_pl = raw_df.copy()
+        data_pl = data_pl.rename(columns=rename_dict)
+        data_pl = _normalize_source_columns(data_pl)
+        data_pl = _apply_column_aliases(data_pl)
+        data_pl = _apply_year_mapping(
+            data_pl, config_pl,
+            year_column_override=body.year_column_name,
+            year_mapping_override=body.year_value_mapping,
         )
 
-    x1_pl = data_pl[input_cols_pl]
-    onOffNorm_pl = config_pl.get("on_off_norm") if config_pl else None
-    if not onOffNorm_pl or len(onOffNorm_pl) != len(input_cols_pl):
-        onOffNorm_pl = [1] * len(input_cols_pl)
-    xNorm_pl = _my_norm(x1_pl, onOffNorm_pl, muX_pl, SX_pl)
-    x_pl = np.array(xNorm_pl).astype(np.float32)
-    # B4: TF predict can take several seconds - offload to worker thread
-    yestTNorm_pl = await asyncio.to_thread(model_pl.predict, x_pl, verbose=0)
-    yestT_pl = _my_denorm(yestTNorm_pl, muY_pl, SY_pl)
+        if config_pl and "input_cols" in config_pl:
+            input_cols_pl = _normalize_input_cols(config_pl["input_cols"])
+        else:
+            input_cols_pl = [
+                "TMJOFCDPL", "avg_distance_m", "avg_speed_kmh",
+                "truck_avg_min_distance_m", "truck_avg_speed_kmh",
+            ]
 
-    data_pl["TxPenPL"] = yestT_pl[:, 0]
-    data_pl["DPLpred"] = data_pl["TMJOFCDPL"] / yestT_pl[:, 0] * 100
+        missing_pl = [c for c in input_cols_pl if c not in data_pl.columns]
+        if missing_pl:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Colonnes manquantes pour le modele PL: {missing_pl}",
+            )
 
-    # C7: release PL model resources after predict (factorise — cf TV ci-dessus).
-    del model_pl, x_pl, yestTNorm_pl
-    release_tf_model()
+        x1_pl = data_pl[input_cols_pl]
+        onOffNorm_pl = config_pl.get("on_off_norm") if config_pl else None
+        if not onOffNorm_pl or len(onOffNorm_pl) != len(input_cols_pl):
+            onOffNorm_pl = [1] * len(input_cols_pl)
+        xNorm_pl = _my_norm(x1_pl, onOffNorm_pl, muX_pl, SX_pl)
+        x_pl = np.array(xNorm_pl).astype(np.float32)
+        # B4: TF predict can take several seconds - offload to worker thread
+        yestTNorm_pl = await asyncio.to_thread(model_pl.predict, x_pl, verbose=0)
+        yestT_pl = _my_denorm(yestTNorm_pl, muY_pl, SY_pl)
 
-    # Add PL results — DPL (debit PL/j redresse). PLr (ratio PL/TV) n'est plus
-    # produit en sortie (cf changement 2 : nettoyage schema).
-    prod["DPL"] = data_pl["DPLpred"].round(0).values
+        data_pl["TxPenPL"] = yestT_pl[:, 0]
+        data_pl["DPLpred"] = data_pl["TMJOFCDPL"] / yestT_pl[:, 0] * 100
+
+        # C7: release PL model resources after predict (factorise — cf TV ci-dessus).
+        del model_pl, x_pl, yestTNorm_pl
+        release_tf_model()
+
+        # Add PL results — DPL (debit PL/j redresse). PLr (ratio PL/TV) n'est plus
+        # produit en sortie (cf changement 2 : nettoyage schema).
+        prod["DPL"] = data_pl["DPLpred"].round(0).values
 
     # ── HPM (optionnel) — produit PM/PMmin/PMmax en v/h (Heure de Pointe Matin)
     # cf CONFIGS["HPM"] / FCD_HPM_TV = FCDTV_h08 / TxPen_HPM hourly target.
@@ -999,6 +1044,8 @@ async def generate_carte(
             canonical_fcd="FCD_HPM_TV",
             fcd_aliases=_hpm_aliases,
             fallback_input_cols=_hpm_fallback_inputs,
+            year_column_override=body.year_column_name,
+            year_mapping_override=body.year_value_mapping,
         )
         # debit_pm is index-aligned with raw_df. Reindex to ``prod`` (which has
         # been filtered/renamed; "agregId" rename happens later so we use the
@@ -1030,6 +1077,8 @@ async def generate_carte(
             canonical_fcd="FCD_HPS_TV",
             fcd_aliases=_hps_aliases,
             fallback_input_cols=_hps_fallback_inputs,
+            year_column_override=body.year_column_name,
+            year_mapping_override=body.year_value_mapping,
         )
         ps_series = pd.Series(debit_ps, index=raw_df.index).reindex(prod.index)
         ps_series = ps_series.replace([np.inf, -np.inf], np.nan).round(0)
@@ -1066,21 +1115,22 @@ async def generate_carte(
     prod.loc[mask_min, "JOrmin"] = 0
     prod.loc[mask_max, "JOrmax"] = 100
 
-    # 9. Confidence intervals — DPL
-    prod["DPLmin"] = prod["DPL"].apply(_calculer_DPLmin)
-    prod.loc[prod["DPLmin"] > 1e4, "DPLmin"] = np.round(
-        prod.loc[prod["DPLmin"] > 1e4, "DPLmin"], -3
-    )
-    prod["DPLmax"] = prod["DPL"].apply(_calculer_DPLmax)
-    prod.loc[prod["DPLmax"] > 1e4, "DPLmax"] = np.round(
-        prod.loc[prod["DPLmax"] > 1e4, "DPLmax"], -3
-    )
-    prod.loc[prod["DPLmin"] > 50, "DPLmin"] = 10 * np.floor(
-        prod.loc[prod["DPLmin"] > 50, "DPLmin"] / 10
-    )
-    prod.loc[prod["DPLmax"] > 50, "DPLmax"] = 10 * np.ceil(
-        prod.loc[prod["DPLmax"] > 50, "DPLmax"] / 10
-    )
+    # 9. Confidence intervals — DPL (uniquement si PL present).
+    if pl_enabled and "DPL" in prod.columns:
+        prod["DPLmin"] = prod["DPL"].apply(_calculer_DPLmin)
+        prod.loc[prod["DPLmin"] > 1e4, "DPLmin"] = np.round(
+            prod.loc[prod["DPLmin"] > 1e4, "DPLmin"], -3
+        )
+        prod["DPLmax"] = prod["DPL"].apply(_calculer_DPLmax)
+        prod.loc[prod["DPLmax"] > 1e4, "DPLmax"] = np.round(
+            prod.loc[prod["DPLmax"] > 1e4, "DPLmax"], -3
+        )
+        prod.loc[prod["DPLmin"] > 50, "DPLmin"] = 10 * np.floor(
+            prod.loc[prod["DPLmin"] > 50, "DPLmin"] / 10
+        )
+        prod.loc[prod["DPLmax"] > 50, "DPLmax"] = 10 * np.ceil(
+            prod.loc[prod["DPLmax"] > 50, "DPLmax"] / 10
+        )
 
     # 10. (PLr/PLrmin/PLrmax supprimes — cf changement 2 : nettoyage schema.
     # Le ratio PL/JOr est trivialement re-derivable downstream si besoin.)
@@ -1498,8 +1548,10 @@ async def generate_carte(
     if body.arrondi_progressif_enabled:
         triplets_a_arrondir: list[tuple[str, str, str]] = [
             ("JOrmin", "JOr", "JOrmax"),
-            ("DPLmin", "DPL", "DPLmax"),
         ]
+        # Triplet DPL uniquement si PL present (DPL absent => pas d'arrondi PL).
+        if "DPL" in prod.columns:
+            triplets_a_arrondir.append(("DPLmin", "DPL", "DPLmax"))
         if "PM" in prod.columns:
             triplets_a_arrondir.append(("PMmin", "PM", "PMmax"))
         if "PS" in prod.columns:
@@ -1507,16 +1559,19 @@ async def generate_carte(
 
         prod = _appliquer_arrondi_avec_coherence(prod, triplets_a_arrondir)
 
-        # Recomposition POST-arrondi (cf spec etapes 3 et 4) :
-        #   PLred = DPL arrondi (deja arrondi par le triplet ci-dessus)
-        #   VLred = round_progressive(max(JOr_arrondi - DPL_arrondi, 0))
-        prod["PLred"] = prod["DPL"].astype("int32")
-        prod["VLred"] = _round_progressive(
-            np.maximum(
-                prod["JOr"].astype("int64") - prod["DPL"].astype("int64"),
-                0,
-            )
-        ).astype("int32")
+        # Recomposition POST-arrondi (cf spec etapes 3 et 4). PLred/VLred ne sont
+        # derivables que si DPL existe ; sans modele PL on les omet (cf changement
+        # PL optionnel) — le schema de sortie n'inclut alors aucune colonne PL.
+        if "DPL" in prod.columns:
+            #   PLred = DPL arrondi (deja arrondi par le triplet ci-dessus)
+            #   VLred = round_progressive(max(JOr_arrondi - DPL_arrondi, 0))
+            prod["PLred"] = prod["DPL"].astype("int32")
+            prod["VLred"] = _round_progressive(
+                np.maximum(
+                    prod["JOr"].astype("int64") - prod["DPL"].astype("int64"),
+                    0,
+                )
+            ).astype("int32")
 
         # Audit logs (max/median pour detection regression).
         for triplet in triplets_a_arrondir:
@@ -1553,10 +1608,12 @@ async def generate_carte(
             if col in prod.columns:
                 prod.loc[prod[col] == 0, col] = 10
 
-        prod["PLred"] = prod["DPL"].astype("int32")
-        prod["VLred"] = np.maximum(
-            prod["JOr"].astype("int64") - prod["DPL"].astype("int64"), 0,
-        ).astype("int32")
+        # PLred/VLred uniquement si DPL present (PL optionnel — cf supra).
+        if "DPL" in prod.columns:
+            prod["PLred"] = prod["DPL"].astype("int32")
+            prod["VLred"] = np.maximum(
+                prod["JOr"].astype("int64") - prod["DPL"].astype("int64"), 0,
+            ).astype("int32")
 
     # Integer-cast residuel pour HD, PM/PS (au cas ou).
     int_cols = ["HD"]
@@ -1607,14 +1664,18 @@ async def generate_carte(
     #
     # Supprimes par rapport a l'ancien schema : PL (FCD brute), VL, TP, PLr,
     # PLrmin, PLrmax (cf changements 1+2).
+    # Colonnes PL (DPL*/PLred/VLred) omises quand le modele PL est absent
+    # (pl_enabled=False) — elles n'ont pas de sens sans prediction PL.
     output_columns = [
         "agregId",
         "JOr", "JOrmin", "JOrmax",
-        "DPL", "DPLmin", "DPLmax",
-        "PLred", "VLred",
+    ]
+    if "DPL" in prod.columns:
+        output_columns.extend(["DPL", "DPLmin", "DPLmax", "PLred", "VLred"])
+    output_columns.extend([
         "FC",
         "DD", "HD",
-    ]
+    ])
     if "PM" in prod.columns:
         output_columns.extend(["PM", "PMmin", "PMmax"])
     if "PS" in prod.columns:

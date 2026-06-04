@@ -62,6 +62,13 @@ export interface UseCarteGenerationOptions {
   filters: CarteGenerationFilters;
   saturations: CarteGenerationSaturations;
   canGenerate: boolean;
+  /**
+   * Dedicated year mapping (split from the regular column_mapping). The backend
+   * derives ``year_mapped`` from ``year_column_name`` via ``year_value_mapping``.
+   * Both are null when no loaded model uses the year feature.
+   */
+  yearColumnName: string | null;
+  yearValueMapping: Record<string, number> | null;
 }
 
 export interface UseCarteGenerationReturn {
@@ -78,7 +85,16 @@ export interface UseCarteGenerationReturn {
 export function useCarteGeneration(
   opts: UseCarteGenerationOptions,
 ): UseCarteGenerationReturn {
-  const { sessionId, models, mapping, filters, saturations, canGenerate } = opts;
+  const {
+    sessionId,
+    models,
+    mapping,
+    filters,
+    saturations,
+    canGenerate,
+    yearColumnName,
+    yearValueMapping,
+  } = opts;
 
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -109,12 +125,19 @@ export function useCarteGeneration(
         {
           session_id: sessionId,
           model_tv_dir: models.modelTvDir,
-          model_pl_dir: models.modelPlDir,
           // Optional models — null when the user didn't upload them. The
-          // backend (Agent 1) treats null/missing as "skip this output".
+          // backend treats null/missing as "skip this output". PL is now
+          // optional like HPM/HPS : null => no PL outputs (DPL/DPLmin/DPLmax
+          // and derived PLr*/PLred/VLred are not produced).
+          model_pl_dir: models.modelPlDir || null,
           model_hpm_dir: models.modelHpmDir || null,
           model_hps_dir: models.modelHpsDir || null,
           column_mapping: mapping,
+          // Dedicated year handling — the backend computes year_mapped from
+          // df[year_column_name].map(year_value_mapping). Both null when no
+          // loaded model uses the year feature (contract agreed with backend).
+          year_column_name: yearColumnName,
+          year_value_mapping: yearValueMapping,
           filter_tvr_enabled: filters.filterTvrEnabled,
           filter_tvr_value: filters.filterTvrValue,
           filter_fc_enabled: filters.filterFcEnabled,
@@ -244,7 +267,7 @@ export function useCarteGeneration(
     } finally {
       setGenerating(false);
     }
-  }, [canGenerate, sessionId, models, mapping, filters, saturations]);
+  }, [canGenerate, sessionId, models, mapping, filters, saturations, yearColumnName, yearValueMapping]);
 
   const resetResults = useCallback(() => {
     setDone(false);

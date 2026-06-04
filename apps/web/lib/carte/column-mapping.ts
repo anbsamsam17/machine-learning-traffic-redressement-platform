@@ -92,6 +92,7 @@ type TrainingCfg =
       input_cols?: unknown;
       use_year_feature?: unknown;
       year_column_name?: unknown;
+      year_value_mapping?: unknown;
     }
   | null
   | undefined;
@@ -101,25 +102,106 @@ interface DynamicColumnsInput {
   plCfg: TrainingCfg;
   hpmCfg: TrainingCfg;
   hpsCfg: TrainingCfg;
+  /**
+   * PL is optional (same as HPM/HPS). Its input columns are merged into the
+   * required union ONLY when the PL model is loaded & valid. When ``plValid``
+   * is not true, PL-specific inputs are dropped from the mapping form and the
+   * derived PL outputs (DPL/DPLmin/DPLmax, PLr*, PLred, VLred) won't be
+   * produced server-side.
+   */
+  plValid: boolean | null;
   hpmValid: boolean | null;
   hpsValid: boolean | null;
+}
+
+// ---------------------------------------------------------------------------
+// Year helpers — shared with the page so the dedicated "Mapping de l'annee"
+// block (ported from evaluation/page.tsx) consumes the SAME logic that
+// removes year columns from the regular mapping. The year is no longer asked
+// as a regular mapping row : it is derived server-side from a single source
+// column + a year->value table.
+// ---------------------------------------------------------------------------
+
+const includesYearMapped = (cfg: TrainingCfg): boolean =>
+  Array.isArray(cfg?.input_cols) &&
+  (cfg!.input_cols as unknown[]).includes("year_mapped");
+
+/**
+ * True when ANY of the supplied configs needs the year feature — either via an
+ * explicit ``use_year_feature`` flag or because ``year_mapped`` is present in
+ * its ``input_cols``. The dedicated year block is shown only when this is true.
+ */
+export function usesYearFeature(
+  configs: ReadonlyArray<TrainingCfg>,
+): boolean {
+  return configs.some(
+    (cfg) => cfg?.use_year_feature === true || includesYearMapped(cfg),
+  );
+}
+
+/**
+ * Resolve the SINGLE canonical source-year column name across all models.
+ * We no longer expose one row per model (which produced duplicate 'Annee' /
+ * 'annee' rows). Instead we pick the first non-empty ``year_column_name``
+ * declared by any config, defaulting to "Annee" when the year feature is used
+ * but no column name is declared. Returns null when the year feature is unused.
+ */
+export function resolveYearColumn(
+  configs: ReadonlyArray<TrainingCfg>,
+): string | null {
+  if (!usesYearFeature(configs)) return null;
+  for (const cfg of configs) {
+    if (typeof cfg?.year_column_name === "string" && cfg.year_column_name.length > 0) {
+      return cfg.year_column_name as string;
+    }
+  }
+  return "Annee";
+}
+
+// Literal year column names that must never appear as a regular mapping row
+// (they are handled by the dedicated year block). Compared case-insensitively.
+const YEAR_COLUMN_LITERALS = ["annee", "year"];
+
+/**
+ * Build the set of column names (lower-cased) that must be EXCLUDED from the
+ * regular mapping because they represent the year. Covers ``year_mapped``,
+ * every config's ``year_column_name`` (case-insensitive) and the literals
+ * "annee"/"Annee" (+ "year"/"Year").
+ */
+function buildYearExclusionSet(
+  configs: ReadonlyArray<TrainingCfg>,
+): Set<string> {
+  const excluded = new Set<string>();
+  for (const d of BACKEND_DERIVED_COLUMNS) excluded.add(d.toLowerCase());
+  for (const lit of YEAR_COLUMN_LITERALS) excluded.add(lit);
+  for (const cfg of configs) {
+    if (typeof cfg?.year_column_name === "string" && cfg.year_column_name.length > 0) {
+      excluded.add((cfg.year_column_name as string).toLowerCase());
+    }
+  }
+  return excluded;
 }
 
 export function computeDynamicRequiredColumns(
   input: DynamicColumnsInput,
 ): ColumnDef[] {
-  const { tvCfg, plCfg, hpmCfg, hpsCfg, hpmValid, hpsValid } = input;
+  const { tvCfg, plCfg, hpmCfg, hpsCfg, plValid, hpmValid, hpsValid } = input;
 
   const tvInputs = Array.isArray(tvCfg?.input_cols)
     ? (tvCfg!.input_cols as unknown[])
     : null;
-  const plInputs = Array.isArray(plCfg?.input_cols)
-    ? (plCfg!.input_cols as unknown[])
-    : null;
+  // PL is optional (like HPM/HPS). Its inputs are merged into the union ONLY
+  // when the PL model is loaded & valid. When PL is absent, none of the
+  // PL-specific input columns are asked for and the backend skips the PL
+  // outputs (DPL/DPLmin/DPLmax and derived PLr*/PLred/VLred).
+  const plInputs =
+    plValid === true && Array.isArray(plCfg?.input_cols)
+      ? (plCfg!.input_cols as unknown[])
+      : null;
   // HPM / HPS inputs are merged into the union ONLY when the corresponding
   // model is loaded — keeps the mapping form lean when the user only does
-  // TV+PL. Backend tolerates missing FCD_HPM_TV when ``model_hpm_dir`` is
-  // null, so the form follows the same conditional logic.
+  // TV (+ optional PL). Backend tolerates missing FCD_HPM_TV when
+  // ``model_hpm_dir`` is null, so the form follows the same conditional logic.
   const hpmInputs =
     hpmValid === true && Array.isArray(hpmCfg?.input_cols)
       ? (hpmCfg!.input_cols as unknown[])
@@ -129,52 +211,46 @@ export function computeDynamicRequiredColumns(
       ? (hpsCfg!.input_cols as unknown[])
       : null;
 
-  // Fallback: if either mandatory model (TV / PL) lacks training_config /
-  // input_cols, use the legacy hardcoded list to preserve compatibility
-  // with old models. HPM/HPS are optional so they don't trigger fallback.
-  if (!tvInputs || !plInputs) {
+  // Configs that actually participate in the union (PL/HPM/HPS only when
+  // loaded). Used for year detection so a year column declared only by an
+  // unloaded optional model never leaks into the exclusion set / dedicated
+  // block.
+  const activeConfigs: TrainingCfg[] = [tvCfg];
+  if (plValid === true) activeConfigs.push(plCfg);
+  if (hpmValid === true) activeConfigs.push(hpmCfg);
+  if (hpsValid === true) activeConfigs.push(hpsCfg);
+
+  // Fallback: if the mandatory model (TV) lacks training_config / input_cols,
+  // use the legacy hardcoded list to preserve compatibility with old models.
+  // PL/HPM/HPS are optional so they don't trigger fallback.
+  // NOTE: even in fallback we strip the {key:"annee"} row when the year is
+  // handled by the dedicated block. With no training_config we cannot know
+  // whether the year feature is used, so we conservatively KEEP the legacy
+  // "annee" row (old models without training_config relied on it being mapped
+  // as a regular column). The dedicated block only renders when a loaded
+  // config declares the year feature, so there is no double-ask in practice.
+  if (!tvInputs) {
     return REQUIRED_COLUMNS;
   }
 
   const union = new Set<string>();
   for (const c of [
     ...tvInputs,
-    ...plInputs,
+    ...(plInputs ?? []),
     ...(hpmInputs ?? []),
     ...(hpsInputs ?? []),
   ]) {
     if (typeof c === "string" && c.length > 0) union.add(c);
   }
 
-  // The form should never ask for backend-derived columns
-  for (const derived of BACKEND_DERIVED_COLUMNS) union.delete(derived);
-
-  // If year_mapped was in input_cols (or any config requests the year
-  // feature), the form must ask for the source year column (default "Annee")
-  // instead, because the backend derives year_mapped via _apply_year_mapping.
-  const includesYearMapped = (cfg: TrainingCfg) =>
-    Array.isArray(cfg?.input_cols) &&
-    (cfg!.input_cols as unknown[]).includes("year_mapped");
-  const yearColOf = (cfg: TrainingCfg, dflt = "Annee") =>
-    typeof cfg?.year_column_name === "string"
-      ? (cfg!.year_column_name as string)
-      : dflt;
-  const usesYear =
-    tvCfg?.use_year_feature === true ||
-    plCfg?.use_year_feature === true ||
-    hpmCfg?.use_year_feature === true ||
-    hpsCfg?.use_year_feature === true ||
-    includesYearMapped(tvCfg) ||
-    includesYearMapped(plCfg) ||
-    (hpmValid === true && includesYearMapped(hpmCfg)) ||
-    (hpsValid === true && includesYearMapped(hpsCfg));
-  if (usesYear) {
-    const yrs = new Set<string>();
-    yrs.add(yearColOf(tvCfg));
-    yrs.add(yearColOf(plCfg));
-    if (hpmValid === true) yrs.add(yearColOf(hpmCfg));
-    if (hpsValid === true) yrs.add(yearColOf(hpsCfg));
-    for (const y of yrs) union.add(y);
+  // Exclude EVERY year-related column from the regular mapping. The year is
+  // mapped exclusively through the dedicated "Mapping de l'annee" block
+  // (single source column + year->value table), exactly like in Evaluation.
+  // This removes the old duplicate 'Annee'/'annee' rows and the year_mapped
+  // derived column in one pass (case-insensitive).
+  const yearExcluded = buildYearExclusionSet(activeConfigs);
+  for (const key of Array.from(union)) {
+    if (yearExcluded.has(key.toLowerCase())) union.delete(key);
   }
 
   // Required model inputs, sorted alphabetically for stable rendering

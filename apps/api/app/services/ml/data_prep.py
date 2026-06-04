@@ -194,15 +194,26 @@ _derive_flag_comptage = _derive_flag_permanent
 def _apply_year_mapping(
     df: pd.DataFrame, config: dict[str, Any]
 ) -> pd.DataFrame:
-    """Create ``year_mapped`` column from config if needed."""
+    """Create ``year_mapped`` column from config if needed.
+
+    Shares the float/int/str key canonicalisation with the inference pipeline
+    (``inference._normalize_year_keys`` / ``_normalize_year_mapping_keys``) so a
+    float-typed ``Annee`` column (``2024.0``) still matches a ``"2024"`` mapping
+    key at train time exactly as it does at inference time.
+    """
     if "year_mapped" not in config.get("input_cols", []):
         return df
+
+    # Import locally to avoid a hard import-time coupling (and the transitive
+    # TF/env side effects) of the inference module on the training path.
+    from .inference import _normalize_year_keys, _normalize_year_mapping_keys
 
     year_column = config.get("year_column_name")
     year_mapping = config.get("year_value_mapping", {})
 
     if year_column and year_column in df.columns and year_mapping:
-        df["year_mapped"] = df[year_column].astype(str).map(year_mapping)
+        keys = _normalize_year_keys(df[year_column])
+        df["year_mapped"] = keys.map(_normalize_year_mapping_keys(year_mapping))
         if df["year_mapped"].isna().any():
             mean_val = df["year_mapped"].mean()
             df["year_mapped"] = df["year_mapped"].fillna(mean_val)

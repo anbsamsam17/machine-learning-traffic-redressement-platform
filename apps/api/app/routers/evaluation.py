@@ -796,7 +796,14 @@ async def run_evaluation(
                     break
         year_mapping = body.year_value_mapping or (training_config or {}).get("year_value_mapping") or {}
         if year_col and year_mapping:
-            df["year_mapped"] = df[year_col].astype(str).map(year_mapping)
+            from ..services.ml.inference import (
+                _normalize_year_keys,
+                _normalize_year_mapping_keys,
+            )
+            _year_keys = _normalize_year_keys(df[year_col])
+            df["year_mapped"] = _year_keys.map(
+                _normalize_year_mapping_keys(year_mapping)
+            )
             if df["year_mapped"].isna().any():
                 df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].median())
             logger.info(

@@ -91,7 +91,10 @@ export function GenerationSection(props: GenerationSectionProps) {
       {!canGenerate && !generating && !done && (
         <p className="text-center text-[10px] text-slate-400 mt-3">
           {tvValid !== true && "Modele TV non valide. "}
-          {plValid !== true && "Modele PL non valide. "}
+          {/* PL is optional : only warn when the user actually uploaded an
+              INVALID PL model (plValid === false). plValid === null means no
+              PL uploaded, which is a valid TV-only generation. */}
+          {plValid === false && "Modele PL invalide (retirez-le ou corrigez-le). "}
           {!sessionId && "Aucun fichier FCD charge. "}
           {!requiredMapped && "Mapping des colonnes incomplet."}
         </p>

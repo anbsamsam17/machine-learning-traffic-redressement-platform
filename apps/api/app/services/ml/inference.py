@@ -141,37 +141,148 @@ def _my_denorm(Xnorm: np.ndarray, mu: float, S: float) -> np.ndarray:
     return Xnorm * S + mu
 
 
-def _apply_year_mapping(data: pd.DataFrame, config: dict | None) -> pd.DataFrame:
+def _normalize_year_keys(series: pd.Series) -> pd.Series:
+    """Convert each year value to a canonical string key.
+
+    Robust to int / float / str dtypes so that ``2024``, ``2024.0`` and
+    ``"2024"`` all collapse to the same key ``"2024"`` :
+
+      - numeric integer-like  -> int string  ("2024.0" -> "2024", 2024 -> "2024")
+      - numeric non-integer    -> plain str   (2024.5 -> "2024.5")
+      - non-numeric            -> plain str    ("intervalle" -> "intervalle")
+
+    Vectorised : uses ``pd.to_numeric(errors="coerce")`` to detect the numeric
+    subset, then masks integer-like values via ``num == num.round()``.
+    """
+    s = pd.Series(series).reset_index(drop=True)
+    num = pd.to_numeric(s, errors="coerce")
+
+    # Default key: the raw string representation of the original value.
+    keys = s.astype(str)
+
+    numeric_mask = num.notna()
+    if numeric_mask.any():
+        int_like_mask = numeric_mask & (num == num.round())
+        # Integer-like numerics -> "<int>" (drops the ".0" float suffix).
+        if int_like_mask.any():
+            keys.loc[int_like_mask] = (
+                num.loc[int_like_mask].astype("int64").astype(str)
+            )
+        # Numeric but non-integer -> canonical str of the float (e.g. "2024.5").
+        float_like_mask = numeric_mask & ~int_like_mask
+        if float_like_mask.any():
+            keys.loc[float_like_mask] = num.loc[float_like_mask].astype(str)
+
+    keys.index = pd.Series(series).index
+    return keys
+
+
+def _normalize_year_mapping_keys(mapping: dict) -> dict:
+    """Canonicalise the KEYS of a year-value mapping dict.
+
+    Applies the same rule as :func:`_normalize_year_keys` so that mapping keys
+    expressed as ``"2024"``, ``2024`` or ``"2024.0"`` all become ``"2024"`` and
+    therefore match a normalised year series. On a key collision the last value
+    in iteration order wins (deterministic for dicts ordered by insertion).
+    """
+    if not mapping:
+        return {}
+    normalized_keys = _normalize_year_keys(pd.Series(list(mapping.keys())))
+    return {
+        canonical: value
+        for canonical, value in zip(normalized_keys.tolist(), mapping.values())
+    }
+
+
+def _apply_year_mapping(
+    data: pd.DataFrame,
+    config: dict | None,
+    *,
+    year_column_override: str | None = None,
+    year_mapping_override: dict | None = None,
+) -> pd.DataFrame:
     """Apply year feature mapping if configured in model config.
 
     Triggers when EITHER:
       - config["use_year_feature"] is True (legacy explicit flag), OR
       - "year_mapped" appears in config["input_cols"] (modern training_config
         does not set the use_year_feature flag — production Lyon models fall
-        into this branch).
+        into this branch), OR
+      - an explicit override (column or mapping) is supplied by the caller.
+
+    Robustness: the year series AND the mapping keys are canonicalised via
+    :func:`_normalize_year_keys` / :func:`_normalize_year_mapping_keys` so a
+    float-typed ``Annee`` column (``2024.0``) still matches a ``"2024"`` key.
+
+    Parameters
+    ----------
+    year_column_override : optional column name overriding
+        ``config["year_column_name"]`` (defaults to ``"Annee"``).
+    year_mapping_override : optional mapping dict overriding
+        ``config["year_value_mapping"]``.
     """
-    if not config:
+    has_override = bool(year_column_override) or bool(year_mapping_override)
+    if not config and not has_override:
         return data
-    input_cols = config.get("input_cols") or []
-    needs_year = config.get("use_year_feature", False) or ("year_mapped" in input_cols)
+
+    cfg = config or {}
+    input_cols = cfg.get("input_cols") or []
+    needs_year = (
+        cfg.get("use_year_feature", False)
+        or ("year_mapped" in input_cols)
+        or has_override
+    )
     if not needs_year:
         return data
 
-    year_col = config.get("year_column_name", "Annee")
-    year_mapping = config.get("year_value_mapping", {})
+    requested_col = year_column_override or cfg.get("year_column_name", "Annee")
+    year_mapping = year_mapping_override or cfg.get("year_value_mapping", {})
 
-    if year_col in data.columns and year_mapping:
-        data["year_mapped"] = data[year_col].astype(str).map(year_mapping)
-        if data["year_mapped"].notna().sum() > 0:
+    # Resolve the actual year column CASE-INSENSITIVELY. The source-normalisation
+    # step (carte.SOURCE_TO_CANONICAL) may have lowercased the column, e.g.
+    # "Annee" -> "annee", so a literal ``year_col in data.columns`` check fails
+    # and the year feature silently degenerates to a constant (observed bug:
+    # year_mapped frozen at the mapping median for the Lyon 2023 parquet).
+    # Mirrors the fallback already used by the evaluation pipeline.
+    year_col = None
+    if requested_col:
+        lower_to_actual = {c.lower(): c for c in data.columns}
+        for cand in (requested_col, "Annee", "annee", "Year", "year"):
+            actual = lower_to_actual.get(str(cand).lower())
+            if actual is not None:
+                year_col = actual
+                break
+
+    if year_col and year_mapping:
+        keys = _normalize_year_keys(data[year_col])
+        normalized_mapping = _normalize_year_mapping_keys(year_mapping)
+        data["year_mapped"] = keys.map(normalized_mapping)
+        n_mapped = int(data["year_mapped"].notna().sum())
+        if n_mapped > 0:
             mean_year = data["year_mapped"].mean()
             data["year_mapped"] = data["year_mapped"].fillna(mean_year)
         else:
+            # The column exists but NONE of its values matched the mapping keys.
+            logger.warning(
+                "year_mapped: colonne '%s' trouvee mais aucune valeur ne matche "
+                "le mapping %s -> feature annee neutralisee a 0.",
+                year_col, sorted(normalized_mapping.keys()),
+            )
             data["year_mapped"] = 0
     else:
         if year_mapping:
             median_value = sorted(year_mapping.values())[len(year_mapping) // 2]
         else:
             median_value = 0
+        # Loud signal: a year-aware model is about to receive a CONSTANT year
+        # feature, which biases predictions (the model was trained on a varying
+        # year_mapped). This is silent data degradation, so warn explicitly.
+        logger.warning(
+            "year_mapped: colonne annee '%s' introuvable parmi %s -> valeur "
+            "CONSTANTE %s appliquee. Les predictions seront biaisees si le "
+            "modele a ete entraine avec une annee variable.",
+            requested_col, list(data.columns)[:40], median_value,
+        )
         data["year_mapped"] = median_value
 
     return data
@@ -264,6 +375,8 @@ async def _predict_peak_hour(
     fallback_input_cols: list[str],
     normalize_source_columns: Any,
     apply_column_aliases: Any,
+    year_column_override: str | None = None,
+    year_mapping_override: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run a peak-hour model (HPM/HPS) and return (TxPen_pred, debit_v_per_h).
 
@@ -287,6 +400,10 @@ async def _predict_peak_hour(
         normalize_source_columns : carte.py-provided helper (injected to avoid
                                    circular imports).
         apply_column_aliases     : carte.py-provided helper (injected).
+        year_column_override     : optional year-column override (body.year_column_name).
+                                   None => use the model's training_config (legacy).
+        year_mapping_override    : optional year-value mapping override
+                                   (body.year_value_mapping). None => config.
     """
     # 1. Prepare a fresh copy with the same column-mapping/alias pipeline as TV/PL.
     data = raw_df.copy()
@@ -303,8 +420,13 @@ async def _predict_peak_hour(
             detail=f"Erreur chargement modele {kind}: {exc}",
         )
 
-    # 3. Apply year mapping (uses the model's own training_config).
-    data = _apply_year_mapping(data, config_pk)
+    # 3. Apply year mapping (config + body overrides ; overrides PRIMENT,
+    #    memes regles que TV/PL). None => comportement legacy (config seul).
+    data = _apply_year_mapping(
+        data, config_pk,
+        year_column_override=year_column_override,
+        year_mapping_override=year_mapping_override,
+    )
 
     # 4. Ensure the hourly FCD column exists (derive from FCDTV_hXX if needed).
     data = _ensure_hourly_fcd_column(data, canonical_fcd, fcd_aliases, kind)
@@ -362,6 +484,8 @@ __all__ = [
     "_my_norm",
     "_my_denorm",
     "_apply_year_mapping",
+    "_normalize_year_keys",
+    "_normalize_year_mapping_keys",
     "_normalize_input_cols",
     "_peak_hour_err_pct",
     "_ensure_hourly_fcd_column",

@@ -99,29 +99,32 @@ export function FcdUploadSection(props: FcdUploadSectionProps) {
         </div>
       )}
 
-      {/* Hint: mapping form will appear after models are loaded.
-          Avoids exposing the legacy fallback REQUIRED_COLUMNS list when
-          no training_config is available yet (would confuse the user
-          into mapping columns the new models don't even need). */}
+      {/* Hint: mapping form will appear after the TV model is loaded.
+          PL is optional, so we gate only on the mandatory TV model. Avoids
+          exposing the legacy fallback REQUIRED_COLUMNS list when no
+          training_config is available yet (would confuse the user into
+          mapping columns the new models don't even need). */}
       {sessionId &&
         rowCount > 0 &&
-        (!tvModelInfo?.training_config || !plModelInfo?.training_config) && (
+        !tvModelInfo?.training_config && (
           <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-cyan/5 border border-cyan/20 text-cyan text-xs">
             <Layers size={14} className="mt-0.5 flex-shrink-0" />
             <span>
-              Importez maintenant les modeles TV + PL (Etape 2) pour configurer
-              le mapping des colonnes en fonction des entrees attendues par
-              chaque modele.
+              Importez maintenant le modele TV (Etape 2) pour configurer le
+              mapping des colonnes en fonction des entrees attendues. Le modele
+              PL est optionnel et ajoute ses propres colonnes au mapping s&apos;il
+              est charge.
             </span>
           </div>
         )}
 
-      {/* Column Mapping — only after both models with a training_config are uploaded */}
+      {/* Column Mapping — appears as soon as the mandatory TV model is loaded.
+          PL is optional : if loaded, computeDynamicRequiredColumns merges its
+          input columns into the list; if not, the form shows the TV-only set. */}
       <AnimatePresence>
         {sourceColumns.length > 0 &&
           dynamicRequiredColumns.length > 0 &&
-          tvModelInfo &&
-          plModelInfo && (
+          tvModelInfo && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -137,7 +140,8 @@ export function FcdUploadSection(props: FcdUploadSectionProps) {
                   ({mappedRequiredCount}/{requiredTargetsCount} obligatoires
                   mappees)
                 </span>
-                {tvModelInfo?.training_config && plModelInfo?.training_config ? (
+                {tvModelInfo?.training_config &&
+                (!plModelInfo || plModelInfo.training_config) ? (
                   <span className="text-[10px] text-cyan/80 bg-cyan/10 px-1.5 py-0.5 rounded">
                     Champs derives du training_config des modeles
                   </span>

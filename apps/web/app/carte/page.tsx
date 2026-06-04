@@ -58,7 +58,13 @@ import type {
 import {
   REQUIRED_COLUMNS,
   computeDynamicRequiredColumns,
+  resolveYearColumn,
+  usesYearFeature,
 } from "@/lib/carte/column-mapping";
+import {
+  YearMappingPanel,
+  type YearMappingRow,
+} from "@/components/carte/YearMappingPanel";
 import { useCarteGeneration } from "@/lib/hooks/use-carte-generation";
 
 // ---------------------------------------------------------------------------
@@ -104,6 +110,13 @@ export default function CartePage() {
   const [rowCount, setRowCount] = useState<number>(0);
   const [columnMapping, setColumnMapping] = useState<Record<string, string | null>>({});
   const [uploading, setUploading] = useState(false);
+
+  // Section 2bis — Mapping dedie de l'annee (porte d'evaluation/page.tsx).
+  // year_mapped est DERIVE cote backend depuis une colonne source unique +
+  // une table annee->valeur (ex: 2019->1 ... 2025->7). Ces etats remplacent
+  // les anciennes lignes 'Annee'/'annee' du mapping regulier.
+  const [yearSourceCol, setYearSourceCol] = useState<string>("");
+  const [yearMapping, setYearMapping] = useState<YearMappingRow[]>([]);
 
   // Section 3 — Filters
   const [filterTvrEnabled, setFilterTvrEnabled] = useState(true);
@@ -281,11 +294,83 @@ export default function CartePage() {
         plCfg: plModelInfo?.training_config ?? null,
         hpmCfg: hpmModelInfo?.training_config ?? null,
         hpsCfg: hpsModelInfo?.training_config ?? null,
+        plValid,
         hpmValid,
         hpsValid,
       }),
-    [tvModelInfo, plModelInfo, hpmModelInfo, hpsModelInfo, hpmValid, hpsValid],
+    [tvModelInfo, plModelInfo, hpmModelInfo, hpsModelInfo, plValid, hpmValid, hpsValid],
   );
+
+  // ---- Dedicated year mapping (single source column + year->value table) ----
+  // The set of configs that actually drive the year feature : TV always,
+  // PL/HPM/HPS only when loaded & valid (same gating as computeDynamicRequiredColumns).
+  const activeYearConfigs = useMemo(
+    () => {
+      const cfgs = [tvModelInfo?.training_config ?? null];
+      if (plValid === true) cfgs.push(plModelInfo?.training_config ?? null);
+      if (hpmValid === true) cfgs.push(hpmModelInfo?.training_config ?? null);
+      if (hpsValid === true) cfgs.push(hpsModelInfo?.training_config ?? null);
+      return cfgs;
+    },
+    [tvModelInfo, plModelInfo, hpmModelInfo, hpsModelInfo, plValid, hpmValid, hpsValid],
+  );
+
+  const needsYearMapping = useMemo(
+    () => usesYearFeature(activeYearConfigs),
+    [activeYearConfigs],
+  );
+
+  // Auto-detect the source year column + auto-fill the year->value table from
+  // the first model that declares year_value_mapping (default 2019->1 ... 2025->7).
+  // Runs when the year requirement / source columns / loaded configs change.
+  useEffect(() => {
+    if (!needsYearMapping || sourceColumns.length === 0) {
+      if (!needsYearMapping) {
+        setYearSourceCol("");
+        setYearMapping([]);
+      }
+      return;
+    }
+
+    // Auto-detect source column (case-insensitive) : canonical year col,
+    // then "annee", then "year".
+    const lower: Record<string, string> = {};
+    sourceColumns.forEach((c) => { lower[c.toLowerCase()] = c; });
+    const canonical = resolveYearColumn(activeYearConfigs); // never null here
+    setYearSourceCol((prev) => {
+      if (prev) return prev; // preserve a user choice already made
+      return (
+        (canonical && lower[canonical.toLowerCase()]) ||
+        lower["annee"] ||
+        lower["year"] ||
+        ""
+      );
+    });
+
+    // Auto-fill the table from the first config that ships year_value_mapping.
+    setYearMapping((prev) => {
+      if (prev.length > 0) return prev; // keep user edits
+      let tcMapping: Record<string, number> | null = null;
+      for (const cfg of activeYearConfigs) {
+        const m = (cfg as { year_value_mapping?: unknown } | null)?.year_value_mapping;
+        if (m && typeof m === "object" && Object.keys(m as object).length > 0) {
+          tcMapping = m as Record<string, number>;
+          break;
+        }
+      }
+      if (tcMapping) {
+        return Object.entries(tcMapping)
+          .map(([year, value]) => ({ year, value: Number(value) }))
+          .sort((a, b) => a.year.localeCompare(b.year));
+      }
+      return [
+        { year: "2019", value: 1 }, { year: "2020", value: 2 },
+        { year: "2021", value: 3 }, { year: "2022", value: 4 },
+        { year: "2023", value: 5 }, { year: "2024", value: 6 },
+        { year: "2025", value: 7 },
+      ];
+    });
+  }, [needsYearMapping, sourceColumns, activeYearConfigs]);
 
   // Auto-populate the mapping with exact-name matches whenever the required
   // target list or the source column list changes. Existing user choices are
@@ -319,7 +404,22 @@ export default function CartePage() {
     (c) => columnMapping[c.key] && columnMapping[c.key] !== "",
   ).length;
   const requiredMapped = requiredTargets.length > 0 && mappedRequiredCount === requiredTargets.length;
-  const canGenerate = tvValid === true && plValid === true && sessionId !== null && requiredMapped;
+  // Year is ready when not needed, OR a source column + at least one valid
+  // year->value row are configured (same guard as evaluation/page.tsx).
+  const yearReady =
+    !needsYearMapping ||
+    (yearSourceCol !== "" &&
+      yearMapping.length > 0 &&
+      yearMapping.every((r) => r.year.trim() !== "" && Number.isFinite(r.value)));
+  // PL is OPTIONAL (same pattern as HPM/HPS). canGenerate requires a valid TV
+  // model + FCD session + required columns mapped + year ready. The PL model is
+  // not required : without it, the carte is generated for TV only and the PL
+  // outputs (DPL/DPLmin/DPLmax and derived PLr*/PLred/VLred) are not produced.
+  const canGenerate =
+    tvValid === true &&
+    sessionId !== null &&
+    requiredMapped &&
+    yearReady;
 
   // ---- PL saturation : reset + helpers ----
   const resetPlSaturationDefaults = useCallback(() => {
@@ -518,6 +618,17 @@ export default function CartePage() {
     ],
   );
 
+  // Year payload — Object.fromEntries of the editable table (trimmed years),
+  // null when no loaded model needs the year feature. Matches the agreed API
+  // contract : year_column_name: string | null, year_value_mapping: Record<string, number> | null.
+  const yearValueMapping = useMemo<Record<string, number> | null>(
+    () =>
+      needsYearMapping
+        ? Object.fromEntries(yearMapping.map((r) => [r.year.trim(), r.value]))
+        : null,
+    [needsYearMapping, yearMapping],
+  );
+
   const {
     generate: handleGenerate,
     generating,
@@ -533,6 +644,8 @@ export default function CartePage() {
     filters: generationFilters,
     saturations: generationSaturations,
     canGenerate,
+    yearColumnName: needsYearMapping ? yearSourceCol : null,
+    yearValueMapping,
   });
 
   // ---- Download ----
@@ -573,8 +686,8 @@ export default function CartePage() {
             Generation de la Carte des Debits
           </GradientText>
           <p className="text-sm text-slate-300">
-            Appliquez les modeles TV et PL sur vos donnees FCD pour estimer les debits
-            de trafic sur chaque troncon routier.
+            Appliquez le modele TV (et, en option, le modele PL) sur vos donnees FCD
+            pour estimer les debits de trafic sur chaque troncon routier.
           </p>
         </div>
 
@@ -594,6 +707,8 @@ export default function CartePage() {
             setSourceColumns([]);
             setRowCount(0);
             setColumnMapping({});
+            setYearSourceCol("");
+            setYearMapping([]);
             resetResults();
           }}
           columnMapping={columnMapping}
@@ -617,10 +732,20 @@ export default function CartePage() {
           <p className="text-xs text-slate-400 mb-3">
             Parcourez un dossier de modele pour chaque type. Le dossier doit contenir
             NNarchitecture.json, NNweights.weights.h5 (ou NNweights.h5) et NNnormCoefficients.json.
-            Les modeles <span className="text-pink-400">HPM</span> et{" "}
-            <span className="text-violet-400">HPS</span> sont optionnels et permettent
-            d&apos;enrichir la carte avec les debits de pointe matin / soir (v/h).
+            Seul le modele <span className="text-accent">TV</span> est obligatoire. Les modeles{" "}
+            <span className="text-violet">PL</span>, <span className="text-pink-400">HPM</span> et{" "}
+            <span className="text-violet-400">HPS</span> sont optionnels et enrichissent la carte
+            (debits poids lourds et debits de pointe matin / soir).
           </p>
+          <div className="mb-5 flex items-start gap-2 px-3 py-2 rounded-lg bg-violet/5 border border-violet/20 text-violet-200 text-xs">
+            <Truck size={14} className="mt-0.5 flex-shrink-0" />
+            <span>
+              Sans modele <span className="font-semibold text-violet">PL</span>, la carte est
+              generee pour le TV seul : les debits poids lourds{" "}
+              <span className="font-mono">DPL / DPLmin / DPLmax</span> et leurs derives{" "}
+              <span className="font-mono">PLr, PLred, VLred</span> ne seront pas produits.
+            </span>
+          </div>
           {!sessionId && (
             <div className="mb-5 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
               <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
@@ -675,7 +800,10 @@ export default function CartePage() {
               icon={<Truck size={16} className="text-violet" />}
               label="Modele PL (Poids Lourds)"
               browseLabel="Parcourir le dossier du modele PL"
-              browseDescription="Selectionnez le dossier contenant le modele"
+              browseDescription="Optionnel - selectionnez le dossier"
+              hint="Optionnel - ajoute DPL / DPLmin / DPLmax (PL/j) a la carte"
+              showLoadedBadge
+              dimWhenEmpty
               onUploadStart={(folder) => {
                 setPlFolderName(folder);
                 setPlUploading(true);
@@ -798,6 +926,20 @@ export default function CartePage() {
         </GlowCard>
 
         {/* ============================================================= */}
+        {/* SECTION 2bis — Mapping dedie de l'annee (porte d'Evaluation)   */}
+        {/* Affiche uniquement si un modele charge requiert l'annee.       */}
+        {/* ============================================================= */}
+        <YearMappingPanel
+          visible={needsYearMapping}
+          sourceColumns={sourceColumns}
+          yearSourceCol={yearSourceCol}
+          onYearSourceColChange={setYearSourceCol}
+          yearMapping={yearMapping}
+          onYearMappingChange={setYearMapping}
+          yearReady={yearReady}
+        />
+
+        {/* ============================================================= */}
         {/* SECTION 3 — Filtres et parametres                              */}
         {/* ============================================================= */}
         <GlowCard glowColor="violet">
@@ -841,6 +983,9 @@ export default function CartePage() {
             setErrPs600plus={setErrPs600plus}
           />
 
+          {/* PL saturation only makes sense when a PL model is loaded.
+              Hidden otherwise (PL optional, same idea as HPM/HPS panels). */}
+          {plValid === true && (
           <PlSaturationPanel
             plSatEnabled={plSatEnabled}
             onPlSatEnabledChange={setPlSatEnabled}
@@ -889,6 +1034,7 @@ export default function CartePage() {
             plSatModified={plSatModified}
             onReset={resetPlSaturationDefaults}
           />
+          )}
 
           <AnimatePresence>
             <HourlySaturationPanel
