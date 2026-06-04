@@ -257,6 +257,7 @@ from .routers import (  # noqa: E402
     compteurs,
     discontinuites,
     evaluation,
+    evolution,
     export,
     mapping,
     models,
@@ -274,6 +275,7 @@ app.include_router(training.router, dependencies=_protected)
 app.include_router(evaluation.router, dependencies=_protected)
 app.include_router(export.router, dependencies=_protected)
 app.include_router(carte.router, dependencies=_protected)
+app.include_router(evolution.router, dependencies=_protected)
 app.include_router(compteurs.router, dependencies=_protected)
 app.include_router(models.router, dependencies=_protected)
 app.include_router(visualisation.router, dependencies=_protected)

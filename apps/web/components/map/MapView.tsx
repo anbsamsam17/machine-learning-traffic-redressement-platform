@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   FeatureCollection,
   LineString,
@@ -28,6 +28,21 @@ export interface MapViewFilters {
   excludeFc1?: boolean;
 }
 
+/**
+ * Optional paint overrides — used by the evolution viewer to swap the default
+ * "debit" palette (graduated YlOrRd on JOr-volume) for a divergent RdYlGn
+ * palette keyed on JOr-percent, with sig-based opacity attenuation. When
+ * omitted, MapView keeps its default carte-des-debits behaviour untouched.
+ */
+export interface MapViewPaintOverrides {
+  /** `line-color` expression. */
+  lineColor?: unknown;
+  /** `line-width` expression. */
+  lineWidth?: unknown;
+  /** `line-opacity` expression. */
+  lineOpacity?: unknown;
+}
+
 export interface MapViewProps {
   /** GeoJSON returned by /api/carte/generate. */
   geojson: FeatureCollection<LineString, GeoJsonProperties> | null;
@@ -35,6 +50,33 @@ export interface MapViewProps {
   /** Theme override; defaults to the page theme. */
   theme?: "dark" | "light";
   className?: string;
+  /**
+   * Optional paint overrides (color/width/opacity). Backward-compatible:
+   * absent -> default carte-des-debits palette on JOr (volume).
+   */
+  paintOverrides?: MapViewPaintOverrides;
+  /**
+   * Optional popup HTML renderer. Absent -> default debit popup
+   * (JOr/DPL/PM/PS). The evolution viewer passes a renderer that shows
+   * T1/T2/JOr%/dJOr/match_level/sig.
+   */
+  renderPopup?: (props: GeoJsonProperties) => string;
+  /**
+   * Hide the built-in debit Legend overlay (the evolution viewer renders its
+   * own divergent legend). Default false.
+   */
+  hideDefaultLegend?: boolean;
+  /**
+   * Optional extra MapLibre `filter` expression applied to the line + hover
+   * layers ON TOP of the built-in debit filters. The evolution viewer uses it
+   * to show/hide dJOr categories from the interactive legend. `null` clears it.
+   */
+  paintFilter?: unknown[] | null;
+  /**
+   * Optional global layer visibility toggle (eye icon in the evolution
+   * legend). Absent/true -> layer visible. Default true.
+   */
+  layerVisible?: boolean;
 }
 
 /**
@@ -52,12 +94,25 @@ export function MapView({
   filters,
   theme = "dark",
   className = "",
+  paintOverrides,
+  renderPopup,
+  hideDefaultLegend = false,
+  paintFilter,
+  layerVisible = true,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MlMap | null>(null);
   const hoveredIdRef = useRef<string | number | null>(null);
   const lastFitGeoJsonRef = useRef<FeatureCollection | null>(null);
   const [styleLoaded, setStyleLoaded] = useState(false);
+
+  // Keep the popup renderer current without re-registering the click handler
+  // (which is bound once when the layer is created). Defaults to the debit
+  // popup; the evolution viewer overrides it.
+  const renderPopupRef = useRef<(props: GeoJsonProperties) => string>(
+    renderPopup ?? renderPopupHTML,
+  );
+  renderPopupRef.current = renderPopup ?? renderPopupHTML;
 
   // Honor prefers-reduced-motion: shorter / instant transitions
   const reducedMotion = useMemo(() => {
@@ -171,13 +226,15 @@ export function MapView({
         source: SOURCE_ID,
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": buildTvrStepExpression() as never,
-          "line-width": buildLineWidthExpression() as never,
-          "line-opacity": [
+          "line-color": (paintOverrides?.lineColor ??
+            buildTvrStepExpression()) as never,
+          "line-width": (paintOverrides?.lineWidth ??
+            buildLineWidthExpression()) as never,
+          "line-opacity": (paintOverrides?.lineOpacity ?? [
             "case",
             ["boolean", ["feature-state", "hover"], false], 1.0,
             0.85,
-          ] as never,
+          ]) as never,
         },
       });
 
@@ -234,7 +291,7 @@ export function MapView({
           offset: 8,
         })
           .setLngLat(e.lngLat)
-          .setHTML(renderPopupHTML(f.properties))
+          .setHTML(renderPopupRef.current(f.properties))
           .addTo(map);
       });
     }
@@ -257,7 +314,25 @@ export function MapView({
       }
       lastFitGeoJsonRef.current = geojson;
     }
-  }, [geojson, styleLoaded, reducedMotion]);
+  }, [geojson, styleLoaded, reducedMotion, paintOverrides]);
+
+  // ---------------------------------------------------------------------------
+  // Paint overrides — runtime setPaintProperty (e.g. evolution threshold edits
+  // recolor the existing layer without rebuilding the source).
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoaded || !map.getLayer(LAYER_ID)) return;
+    if (paintOverrides?.lineColor !== undefined) {
+      map.setPaintProperty(LAYER_ID, "line-color", paintOverrides.lineColor as never);
+    }
+    if (paintOverrides?.lineWidth !== undefined) {
+      map.setPaintProperty(LAYER_ID, "line-width", paintOverrides.lineWidth as never);
+    }
+    if (paintOverrides?.lineOpacity !== undefined) {
+      map.setPaintProperty(LAYER_ID, "line-opacity", paintOverrides.lineOpacity as never);
+    }
+  }, [paintOverrides, styleLoaded]);
 
   // ---------------------------------------------------------------------------
   // Filters — runtime setFilter
@@ -276,10 +351,26 @@ export function MapView({
     if (filters?.excludeFc1) {
       conditions.push(["!=", ["to-number", ["get", "FC"], 0], 1]);
     }
+    // Combine the built-in debit filters with the optional evolution-legend
+    // category filter (`paintFilter`). When both are absent -> no filter.
+    if (paintFilter) {
+      conditions.push(paintFilter);
+    }
     const expr = conditions.length === 1 ? null : (conditions as never);
     map.setFilter(LAYER_ID, expr);
     map.setFilter(HOVER_LAYER_ID, expr);
-  }, [filters?.minTvr, filters?.excludeFc1, styleLoaded]);
+  }, [filters?.minTvr, filters?.excludeFc1, styleLoaded, paintFilter]);
+
+  // ---------------------------------------------------------------------------
+  // Global layer visibility (evolution legend eye toggle)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoaded || !map.getLayer(LAYER_ID)) return;
+    const visibility = layerVisible ? "visible" : "none";
+    map.setLayoutProperty(LAYER_ID, "visibility", visibility);
+    map.setLayoutProperty(HOVER_LAYER_ID, "visibility", visibility);
+  }, [layerVisible, styleLoaded]);
 
   return (
     <div className={`relative w-full h-full ${className}`}>
@@ -301,7 +392,7 @@ export function MapView({
         </div>
       )}
 
-      {geojson && <Legend />}
+      {geojson && !hideDefaultLegend && <Legend />}
     </div>
   );
 }
