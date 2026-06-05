@@ -12,6 +12,7 @@ import {
   Activity,
   MapPinned,
   AlertCircle,
+  GitCompareArrows,
   Menu,
   X,
   LogOut,
@@ -34,6 +35,7 @@ const MODES = [
   { key: "compteurs" as AppMode, label: "Compteurs", icon: Activity, path: "/compteurs" },
   { key: "visualisation" as AppMode, label: "Visualisation", icon: MapPinned, path: "/visualisation" },
   { key: "discontinuites" as AppMode, label: "Discontinuites", icon: AlertCircle, path: "/discontinuites" },
+  { key: "evolution" as AppMode, label: "Evolution", icon: GitCompareArrows, path: "/evolution" },
 ] as const;
 
 export function AppHeader() {

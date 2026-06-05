@@ -75,7 +75,7 @@ export interface AuthMeResponse {
   id?: string;
 }
 
-export type AppMode = "tv" | "pl" | "hpm" | "hps" | "carte" | "compteurs" | "visualisation" | "discontinuites" | null;
+export type AppMode = "tv" | "pl" | "hpm" | "hps" | "carte" | "compteurs" | "visualisation" | "discontinuites" | "evolution" | null;
 
 /**
  * Backend ModelKind — uppercase variants sent in API payloads (e.g. /api/upload

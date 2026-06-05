@@ -138,6 +138,21 @@ export const landingContent = {
       ],
       cta: "Lancer l'analyse",
     },
+    {
+      id: "evolution",
+      shortTitle: "Evolution",
+      title: "Carte d'evolution des debits",
+      tagline:
+        "Comparaison inter-annuelle de deux cartes redressees, evolution du TMJO en veh/j.",
+      description:
+        "Charge deux cartes de debits redressees (annee 1 et annee 2) et calcule l'evolution du trafic troncon par troncon sur la metrique JOr (TMJO en vehicules/jour). Appariement robuste en cascade : cle exacte AgregId, puis matching geometrique par recouvrement des LineString, puis verification adresse BAN niveau 3 (optionnelle). Garde-fous metier : plancher T1 parametrable (defaut 50 v/j) contre les evolutions aberrantes, emission optionnelle des troncons apparus (nouveau trace). Sortie GeoJSON enrichie (delta absolu, variation en %, statut apparie/nouveau) servie inline pour un viewer MapLibre GL JS a palette divergente bleu (baisse) vers orange (hausse), centree sur zero.",
+      keyMetrics: [
+        "Appariement cle exacte + geometrique + BAN N3",
+        "Delta absolu + variation % sur JOr (veh/j)",
+        "Viewer divergente bleu / orange centree zero",
+      ],
+      cta: "Generer l'evolution",
+    },
   ],
 
   // Vide tant qu'aucun endpoint d'agregation reel n'existe (cf. apps/api/app/routers/models.py).

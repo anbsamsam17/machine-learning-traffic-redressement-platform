@@ -37,6 +37,7 @@ import {
   Activity,
   MapPinned,
   AlertCircle,
+  GitCompareArrows,
   type LucideIcon,
 } from "lucide-react";
 import { useAppStore, type AppMode } from "@/lib/store";
@@ -75,6 +76,8 @@ const MODE_VISUAL: Record<
   compteurs: { accent: "emerald", icon: Activity as LucideIcon },
   visualisation: { accent: "cyan", icon: MapPinned as LucideIcon },
   discontinuites: { accent: "amber", icon: AlertCircle as LucideIcon },
+  // Evolution inter-annuelle — comparaison T1/T2, palette divergente, accent indigo.
+  evolution: { accent: "indigo", icon: GitCompareArrows as LucideIcon },
 };
 
 const KIND_MAP: Record<string, "training" | "map" | "compteurs" | "report"> = {
@@ -136,6 +139,7 @@ const MODE_PATH: Record<LandingMode, string> = {
   compteurs: "/compteurs",
   visualisation: "/visualisation",
   discontinuites: "/discontinuites",
+  evolution: "/evolution",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

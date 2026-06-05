@@ -103,6 +103,11 @@ export const PAGE_MESSAGES: Record<string, PageMessage> = {
     message: "Charge tes segments + FCD pour detecter les ruptures de flux.",
     subtitle: "8 causes typees, 3 topologies, NodePanel drill-down par segment.",
   },
+  "/evolution": {
+    mood: "based",
+    message: "Charge deux cartes redressees pour comparer l'evolution du debit.",
+    subtitle: "Delta JOr en veh/j, palette divergente bleu vers orange centree zero.",
+  },
 };
 
 /**

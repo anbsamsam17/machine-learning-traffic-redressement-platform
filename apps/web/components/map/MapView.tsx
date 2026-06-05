@@ -332,7 +332,11 @@ export function MapView({
     if (paintOverrides?.lineOpacity !== undefined) {
       map.setPaintProperty(LAYER_ID, "line-opacity", paintOverrides.lineOpacity as never);
     }
-  }, [paintOverrides, styleLoaded]);
+    // NB: ``geojson`` is in the dep list so a DATA SWAP (preview -> real, via
+    // setData) re-applies the paint. Otherwise the line-opacity left at 0 by the
+    // crossfade fade-out (page.tsx) would never be restored and the real layer
+    // would render invisible (blank map despite correct stats/legend).
+  }, [paintOverrides, styleLoaded, geojson]);
 
   // ---------------------------------------------------------------------------
   // Filters — runtime setFilter
