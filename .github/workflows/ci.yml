@@ -47,7 +47,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: cd apps/api && pip install ".[dev]"
-      - run: cd apps/api && pytest tests/ -v --tb=short --timeout=120
+      - run: cd apps/api && pytest tests/ -v --tb=short --timeout=120 --cov=app --cov-report=term-missing
         env:
           REDIS_URL: redis://localhost:6379/0
           # 32+ chars, does not contain "change-me" (satisfies the config.py validator)

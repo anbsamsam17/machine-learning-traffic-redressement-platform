@@ -1,0 +1,25 @@
+# Dependabot — surveillance hebdomadaire des dependances.
+# Couvre les trois ecosystemes du monorepo : backend Python (apps/api),
+# frontend npm (workspaces a la racine) et les actions GitHub du pipeline CI.
+version: 2
+updates:
+  # Backend FastAPI — dependances declarees dans apps/api/pyproject.toml.
+  - package-ecosystem: "pip"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Frontend Next.js — lockfile npm a la racine (npm workspaces).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Actions du workflow CI/CD (.github/workflows).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
