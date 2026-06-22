@@ -101,6 +101,13 @@ def main() -> int:
         gdf = gdf.set_crs("EPSG:4326")
     elif gdf.crs.to_string() != "EPSG:4326":
         gdf = gdf.to_crs("EPSG:4326")
+    # Centroid calcule directement en WGS84 (EPSG:4326) : la latitude/longitude
+    # du centroide est ensuite passee a la distance Haversine. C'est une
+    # approximation acceptable a l'echelle du Grand Lyon (brins courts, faible
+    # etendue) ou la deformation du centroide en coordonnees geographiques reste
+    # negligeable. Pour un centroide metrique exact (grandes geometries ou
+    # precision critique), reprojeter en EPSG:2154 (Lambert-93), calculer le
+    # centroide, puis reprojeter ce point en EPSG:4326 avant le Haversine.
     centroids = gdf.geometry.centroid
     lats = centroids.y.values
     lons = centroids.x.values

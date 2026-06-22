@@ -1,8 +1,9 @@
 """Session manager with Redis backend (optional) and in-memory fallback.
 
-Security notes (audit 01):
+Notes de securite :
 
-- P0-2 (RCE): the previous implementation pickled non-Parquet DataFrames into
+- Execution de code a distance (RCE) : the previous implementation pickled
+  non-Parquet DataFrames into
   Redis as `__DFPKL__<bytes>` and used `pickle.loads` on read. Any attacker
   able to write a Redis key under `mdl:sdata:*` (compromised host, exposed
   port, mis-config) could trigger arbitrary code execution. We now refuse
@@ -14,9 +15,10 @@ Security notes (audit 01):
       Pickle blobs become unreadable; they will be re-uploaded by the user
       on the next session (TTL is short, default 2h).
 
-- P1-2 (IDOR): sessions now carry `owner_user_id` and `get_owned_session`
-  (in auth.py) wraps `session_manager.get_session` to refuse cross-tenant
-  access. Logs only emit truncated session ids (8 hex chars).
+- Acces inter-utilisateurs (IDOR) : sessions now carry `owner_user_id` and
+  `get_owned_session` (in auth.py) wraps `session_manager.get_session` to
+  refuse cross-tenant access. Logs only emit truncated session ids
+  (8 hex chars).
 """
 
 from __future__ import annotations
@@ -38,7 +40,8 @@ logger = logging.getLogger(__name__)
 
 
 def _sid_log(sid: str) -> str:
-    """Return the first 8 hex chars of a session id for log lines (P1-2)."""
+    """Return the first 8 hex chars of a session id for log lines
+    (evite d'exposer l'identifiant complet de session dans les logs)."""
     if not sid:
         return "<empty>"
     return sid[:8]
@@ -51,11 +54,12 @@ def _sid_log(sid: str) -> str:
 
 @dataclass
 class Session:
-    """One user session — bound to its owner for tenant isolation (A2)."""
+    """One user session — bound to its owner for tenant isolation."""
 
     session_id: str
     mode: str  # "TV" | "PL" | "TV+PL"
-    owner_user_id: str = ""  # empty only for legacy sessions; A2 enforces non-empty
+    owner_user_id: str = ""  # vide seulement pour les anciennes sessions ;
+    # l'isolation par proprietaire impose desormais une valeur non vide
     created_at: float = field(default_factory=time.time)
     last_accessed: float = field(default_factory=time.time)
     data: dict[str, Any] = field(default_factory=dict)
@@ -76,7 +80,8 @@ class Session:
 
 
 # ---------------------------------------------------------------------------
-# Helpers — DataFrame normalisation for safe serialisation (A3)
+# Helpers — DataFrame normalisation for safe serialisation
+# (serialisation Parquet uniquement, jamais Pickle)
 # ---------------------------------------------------------------------------
 
 
@@ -85,7 +90,8 @@ def _df_to_parquet_safe(df: pd.DataFrame) -> bytes:
 
     Parquet rejects mixed-type cells and Python dicts (e.g. GeoJSON geometry).
     We force such columns to string JSON to avoid the historical Pickle fallback
-    (audit P0-2). If a column still fails, we raise — never fall back to Pickle.
+    (vecteur d'execution de code a distance). If a column still fails, we
+    raise — never fall back to Pickle.
     """
     safe = df.copy()
     for col in safe.columns:
@@ -269,8 +275,9 @@ class _RedisDataProxy(dict):
                 self._cache[key] = val
                 return val
         except ValueError:
-            # Pickle blob refused (A3); propagate so caller knows the cache
-            # is corrupt instead of silently returning default.
+            # Blob Pickle refuse (interdit pour raison de securite) ;
+            # on propage pour que l'appelant sache que le cache est
+            # corrompu au lieu de renvoyer silencieusement la valeur par defaut.
             raise
         except Exception:
             logger.exception("Redis read failed for key=%s sid=%s", key, _sid_log(self._sid))
@@ -319,7 +326,8 @@ class _RedisDataProxy(dict):
 
 
 class RedisBackend(SessionBackend):
-    """Redis-backed session store. DataFrames serialised as Parquet only (A3)."""
+    """Redis-backed session store. DataFrames serialised as Parquet only
+    (jamais Pickle, pour eviter l'execution de code a distance)."""
 
     _PREFIX = "mdl:session:"
     _DATA_PREFIX = "mdl:sdata:"
@@ -343,15 +351,17 @@ class RedisBackend(SessionBackend):
     @staticmethod
     def _serialize_value(value: Any) -> bytes:
         if isinstance(value, pd.DataFrame):
-            # A3: no Pickle fallback. _df_to_parquet_safe casts non-Parquet
-            # columns; if it still fails we propagate the error.
+            # Aucune solution de repli vers Pickle. _df_to_parquet_safe
+            # convertit les colonnes incompatibles Parquet ; en cas d'echec
+            # on propage l'erreur.
             return b"__DF__" + _df_to_parquet_safe(value)
         return b"__JSON__" + json.dumps(value, default=str).encode("utf-8")
 
     @staticmethod
     def _deserialize_value(raw: bytes) -> Any:
         if raw.startswith(b"__DFPKL__"):
-            # A3: legacy Pickle blobs are explicitly refused (RCE vector).
+            # Les anciens blobs Pickle sont explicitement refuses
+            # (vecteur d'execution de code a distance).
             logger.error("Refused legacy pickle blob from Redis (A3, P0-2)")
             raise ValueError("legacy pickle blob refused")
         if raw.startswith(b"__DF__"):

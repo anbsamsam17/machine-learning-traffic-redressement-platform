@@ -1,20 +1,20 @@
-"""Shared rate-limiter singleton (A6).
+"""Shared rate-limiter singleton.
 
 Lives outside `main.py` so routers can import `limiter` to attach
 `@limiter.limit(...)` decorators without triggering an import cycle through
 the FastAPI app.
 
-Rate-limit policy (audit 01, P1-3):
+Politique de limitation de debit :
 
 - `/api/auth/login`     — 10/minute per IP   (brute-force window)
 - `/api/auth/register`  — 5/hour per IP      (account enumeration)
 - `/api/upload`         — 30/minute per user (CSV / shapefile flood)
-- `/api/training/start` — 5/hour per user    (CPU-heavy grid search; A9
-                          also caps via per-user threading.Lock and
-                          MAX_TRAINING_MINUTES deadline)
+- `/api/training/start` — 5/hour per user    (grille couteuse en CPU ;
+                          un verrou par utilisateur et une echeance
+                          MAX_TRAINING_MINUTES limitent aussi le cout)
 - `/api/carte/generate` — 10/minute per user (map rendering is GIS-heavy)
 
-E2 will sprinkle the decorators on the actual routes; the limiter
+Les decorateurs sont appliques sur les routes elles-memes ; the limiter
 infrastructure lives here so it is testable in isolation.
 """
 
@@ -51,7 +51,7 @@ def _user_or_ip_key(request: Request) -> str:
 # registers and logs in many users from 127.0.0.1 — without disabling we'd
 # trip the 5/hour register cap after a handful of tests. Production
 # deployments leave the var unset and never run via pytest, so the auth caps
-# (P0-6) stay effective.
+# (anti-brute-force / anti-enumeration) stay effective.
 _RATE_LIMIT_DISABLED = (
     os.environ.get("DISABLE_RATE_LIMIT", "").lower() in {"1", "true", "yes"}
     or "pytest" in sys.modules

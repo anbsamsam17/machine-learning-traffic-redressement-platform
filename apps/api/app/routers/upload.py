@@ -78,6 +78,27 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
     FCDREFGLOBAL — when present, the geometry column is converted to GeoJSON
     dicts so the rest of the pipeline (heading, map) can consume it like any
     other geojson upload.
+
+    Formats supportes (selon l'extension du fichier) :
+      * .csv             — decodage tente en utf-8, latin-1 puis cp1252.
+      * .parquet         — geo-parquet (geometrie WKB) avec repli en parquet
+                           simple si la lecture geospatiale echoue.
+      * .geojson / .json — FeatureCollection (proprietes + geometrie aplaties)
+                           ou simple liste d'objets.
+      * .zip             — archive contenant un Shapefile (.shp/.shx/.dbf),
+                           extrait dans un repertoire temporaire ephemere.
+
+    Garde-fous et volumetrie (verifies dans le code) :
+      * Tout est parse EN MEMOIRE (io.BytesIO) ; seul le .zip Shapefile est
+        extrait sur disque dans un tempfile.TemporaryDirectory auto-nettoye.
+      * Taille brute du fichier plafonnee en amont par les routes a
+        MAX_UPLOAD_MB = 500 MB (cf. config.Settings.max_upload_bytes ; HTTP 413
+        au-dela).
+      * Anti zip-bomb : _check_zip_bomb refuse toute archive dont la taille
+        DECOMPRESSEE cumulee depasse _MAX_DECOMPRESSED_BYTES = 1 Go (HTTP 400),
+        avant toute extraction.
+      * Echelle de reference Grand Lyon : ~242k brins (FCDREFGLOBAL_2025,
+        241857 segments) avec une trentaine de proprietes par brin.
     """
     suffix = Path(filename).suffix.lower()
 

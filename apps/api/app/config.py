@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # -- Training --------------------------------------------------------------
     MAX_TRAINING_MINUTES: int = 30
     # Hard cap on grid search combinations to bound CPU/memory cost. Enforced
-    # in training.py before launching the worker thread (A9).
+    # in training.py before launching the worker thread.
     MAX_GRID_COMBINATIONS: int = 100
 
     # -- TensorFlow / GPU ------------------------------------------------------
@@ -103,9 +103,9 @@ class Settings(BaseSettings):
     def _validate_jwt_secret(cls, v: str) -> str:
         """Fail-fast at boot: refuse known placeholders and short secrets.
 
-        Audit 01, P0-3: a default trivial secret enables JWT forgery and full
-        impersonation of any user. We refuse to start if the secret is empty,
-        a known placeholder, or below the 32-character minimum.
+        Securite : un secret trivial par defaut permet de forger des JWT et
+        d'usurper n'importe quel utilisateur. We refuse to start if the secret
+        is empty, a known placeholder, or below the 32-character minimum.
         """
         stripped = (v or "").strip()
         normalized = stripped.lower()

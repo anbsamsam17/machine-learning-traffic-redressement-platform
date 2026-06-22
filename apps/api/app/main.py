@@ -1,21 +1,22 @@
 """FastAPI application entry point.
 
-Bloc A wiring:
+Cablage securite de l'application :
 
-- A1  : every business router is mounted with
+- Authentification : every business router is mounted with
         `dependencies=[Depends(get_current_user)]` so JWT auth is mandatory
         without per-handler boilerplate. `/api/auth/*` and `/health` stay
         public.
-- A6  : limiter imported from `app.rate_limit` (decouples from main.py to
-        avoid an import cycle when routers attach decorators).
-- A7  : `SecurityHeadersMiddleware` injects HSTS / CSP / X-Frame-Options /
-        X-Content-Type-Options / Referrer-Policy / Permissions-Policy on
-        every response.
-- A8  : in production (`ENVIRONMENT=production`) `/docs`, `/redoc` and
-        `/openapi.json` are disabled, `/metrics` is restricted to an
-        IP allow-list, `/health` returns only `{"status": "ok"}`, and the
-        global exception handler hides Python class names / messages from
-        the response (logged server-side with the request id).
+- Rate limiting : limiter imported from `app.rate_limit` (decouples from
+        main.py to avoid an import cycle when routers attach decorators).
+- En-tetes de securite : `SecurityHeadersMiddleware` injects HSTS / CSP /
+        X-Frame-Options / X-Content-Type-Options / Referrer-Policy /
+        Permissions-Policy on every response.
+- Durcissement production : in production (`ENVIRONMENT=production`)
+        `/docs`, `/redoc` and `/openapi.json` are disabled, `/metrics` is
+        restricted to an IP allow-list, `/health` returns only
+        `{"status": "ok"}`, and the global exception handler hides Python
+        class names / messages from the response (logged server-side with
+        the request id).
 """
 
 from __future__ import annotations
@@ -74,9 +75,9 @@ def _seed_default_user() -> None:
     gets a 401 on first login post-deploy. This is a no-op if the user
     already exists.
 
-    P0-5: skipped entirely in production — a hard-coded credential pair
-    shipped in source is a critical vulnerability. Dev/staging keeps
-    the seed for the smooth onboarding flow.
+    Securite : ignore entierement en production — un couple
+    identifiant/mot de passe code en dur dans les sources est une faille
+    critique. Dev/staging keeps the seed for the smooth onboarding flow.
     """
     settings = get_settings()
     if settings.is_production:
@@ -139,7 +140,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI app — disable /docs in production (A8)
+# FastAPI app — disable /docs in production (durcissement production)
 # ---------------------------------------------------------------------------
 
 _settings = get_settings()
@@ -160,12 +161,12 @@ if _settings.is_production:
 
 app = FastAPI(**_app_kwargs)
 
-# -- Rate limiter (A6) ---------------------------------------------------------
+# -- Rate limiter --------------------------------------------------------------
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-# -- Catch-all exception handler (A8): never leak Python class / message ------
+# -- Catch-all exception handler : never leak Python class / message ----------
 def _cors_headers_for(request: Request) -> dict[str, str]:
     origin = request.headers.get("origin", "")
     if origin and origin in _settings.CORS_ORIGINS:
@@ -230,7 +231,8 @@ except ImportError:
 
 
 async def _enforce_metrics_allowlist(request: Request) -> None:
-    """A8: in production, /metrics requires an IP allow-list.
+    """Durcissement production : in production, /metrics requires an IP
+    allow-list.
 
     Attached as a route-level dependency below so the prometheus-instrumentator
     expose() keeps its default behaviour during development.
@@ -258,7 +260,7 @@ from .auth import router as auth_router
 
 app.include_router(auth_router)
 
-# -- Business routers (A1: all behind Depends(get_current_user)) --------------
+# -- Business routers (tous proteges par Depends(get_current_user)) -----------
 from .routers import (  # noqa: E402
     carte,
     compteurs,
@@ -297,7 +299,8 @@ app.include_router(sessions.router)
 
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:
-    """Liveness probe. Verbose payload only in development (A8)."""
+    """Liveness probe. Verbose payload only in development (en production,
+    le durcissement reduit la reponse au minimum)."""
     if _settings.is_production:
         return {"status": "ok"}
     return {

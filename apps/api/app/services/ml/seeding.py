@@ -83,6 +83,25 @@ def derive_seed(parent_seed: int, label: str) -> int:
 
     Useful when training multiple models in a grid and you want each
     model to be reproducibly initialised but distinct from siblings.
+
+    .. note:: Utilitaire NON cable au pipeline d'entrainement actuel.
+
+        Cette fonction est fournie comme brique de derivation de seed mais
+        n'est PAS appelee par le pipeline en production : la grid-search et la
+        validation croisee derivent leurs seeds par simple decalage entier
+        (``seed + run_idx`` / ``seed + fold_idx``, cf. ``kfold.py``), pas via
+        ``derive_seed``.
+
+    .. warning:: Dependance a ``PYTHONHASHSEED``.
+
+        ``hash(...)`` sur un tuple contenant une ``str`` utilise le hachage
+        randomise des chaines de Python. Sa valeur n'est stable d'un processus
+        a l'autre que si ``PYTHONHASHSEED`` est fige AVANT le demarrage de
+        l'interpreteur. ``seed_everything`` positionne ``PYTHONHASHSEED`` mais
+        seulement APRES le lancement du process courant : la reproductibilite
+        inter-processus de ``derive_seed`` n'est donc garantie que si la
+        variable d'environnement est exportee en amont (ex. au lancement du
+        worker). Sans cela, la valeur retournee varie d'une execution a l'autre.
     """
     h = hash((parent_seed, label)) & 0xFFFFFFFF
     return h

@@ -100,6 +100,13 @@ def _fold_metrics(
 
     # Restrict the metric scope to permanent/tournant sensors when the
     # column is available — same convention as run_evaluation(stats_scope="flag1").
+    # flag_comptage == 1 = capteurs Siredo de reference (stations permanentes /
+    # tournantes a comptage continu fiable) : ce sont les seuls points pour
+    # lesquels une "verite terrain" mesuree existe, donc les seuls sur lesquels
+    # tol_in_pct / p80 / r2 ont un sens metier. Les autres points (estimes /
+    # interpoles) sont exclus du scoring de validation croisee pour ne pas
+    # diluer la variance par-fold avec des cibles non observees. Repli sur
+    # l'ensemble des lignes si le sous-ensemble flag==1 est vide.
     if "flag_comptage" in results.columns:
         stats_df = results[results["flag_comptage"] == 1].copy()
         if stats_df.empty:

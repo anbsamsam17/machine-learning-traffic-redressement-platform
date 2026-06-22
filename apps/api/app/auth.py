@@ -1,14 +1,15 @@
 """Authentication system — JWT-based with in-memory user store (migratable to DB).
 
-Security notes (audit 01):
+Notes de securite :
 
-- The JWT secret is validated fail-fast at boot (`config.Settings`, A4).
+- The JWT secret is validated fail-fast at boot (`config.Settings`).
 - `get_current_user` is the per-request dependency that resolves a Bearer
   token to a `UserRecord`.
-- `get_owned_session` (A2) couples sessions to their owner: it loads the
+- `get_owned_session` couples sessions to their owner: it loads the
   Session via `session_manager`, then returns 404 if the caller is not the
   owner. Routers receive this via `Depends(get_owned_session)` instead of
-  calling `session_manager.get_session` directly — closes IDOR P1-2.
+  calling `session_manager.get_session` directly — empeche un utilisateur
+  d'acceder a la session d'un autre (faille de type IDOR).
 """
 
 from __future__ import annotations
@@ -230,7 +231,8 @@ async def get_current_user(
 
 
 # ---------------------------------------------------------------------------
-# Dependency: get_owned_session (A2 — closes IDOR P1-2)
+# Dependency: get_owned_session
+# (empeche l'acces aux sessions d'autrui — faille de type IDOR)
 # ---------------------------------------------------------------------------
 
 
@@ -245,7 +247,7 @@ def get_owned_session(
 
     Routers replace `session_manager.get_session(sid)` by
     `session: Session = Depends(get_owned_session)` to inherit the check
-    without per-handler boilerplate (E2 will plug it everywhere).
+    without per-handler boilerplate.
     """
     sess = session_manager.get_session(session_id)
     if sess is None:
@@ -324,13 +326,14 @@ class UserResponse(BaseModel):
 
 # Rate limits are applied at the route level in main.py via the slowapi
 # `limiter.limit(...)` decorator after the limiter exists. We expose hooks
-# here for the future router-level decorators expected by A6.
+# here for the router-level rate-limiting decorators.
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @limit_auth_register()
 async def register(request: Request, body: RegisterRequest) -> UserResponse:
-    """P0-6: 5 registrations per hour per IP — caps account enumeration."""
+    """Anti-enumeration : 5 inscriptions/heure par IP (limite la creation
+    massive de comptes pour deviner les emails existants)."""
     if len(body.password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -347,7 +350,8 @@ async def register(request: Request, body: RegisterRequest) -> UserResponse:
 @router.post("/login", response_model=TokenResponse)
 @limit_auth_login()
 async def login(request: Request, body: LoginRequest, response: Response) -> TokenResponse:
-    """P0-6: 10 logins per minute per IP — slows brute-force attacks."""
+    """Anti-brute-force : 10 connexions/minute par IP (ralentit les
+    attaques par essais de mots de passe repetes)."""
     user = user_store.authenticate(body.email, body.password)
     if user is None:
         raise HTTPException(

@@ -126,7 +126,16 @@ class ToleranceAwareLoss(keras.losses.Loss):
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         y_true = tf.cast(y_true, y_pred.dtype)
         abs_error = tf.abs(y_true - y_pred)
-        # Out-of-tolerance mask — float so it differentiates cleanly.
+        # Masque out-of-tolerance — float pour differentier proprement.
+        #
+        # NB : le masque est applique comme une PONDERATION CONSTANTE de
+        # l'erreur absolue, pas comme un seuil derivable. ``oot_mask`` est issu
+        # d'un ``>`` (indicatrice 0/1) dont le gradient est nul presque partout :
+        # il agit donc comme un poids fige par echantillon (1.0 dans la bande de
+        # tolerance, ``penalty_factor`` au-dela) et n'introduit aucune
+        # discontinuite dans le gradient propage. La perte resultante est ainsi
+        # une MAE PONDEREE (chaque |erreur| multipliee par son poids), et non une
+        # perte a seuil dur du type hinge.
         oot_mask = tf.cast(abs_error > self.tolerance, y_pred.dtype)
         extra_factor = (self.penalty_factor - 1.0) * oot_mask
         per_sample = abs_error * (1.0 + extra_factor)

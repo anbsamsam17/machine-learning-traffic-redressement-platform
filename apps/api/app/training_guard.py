@@ -1,4 +1,4 @@
-"""Per-user training concurrency + deadline guardrails (A9).
+"""Garde-fous d'entrainement : concurrence par utilisateur + echeance.
 
 Bounds the cost a single user can impose on the API:
 
@@ -6,8 +6,7 @@ Bounds the cost a single user can impose on the API:
   per-user `threading.Lock`. Concurrent starts from the same user raise
   HTTPException(409). Different users still run sequentially because a
   single `ThreadPoolExecutor(max_workers=1)` is created in the router and
-  shared via this module (E2 will plumb the executor here when it
-  refactors training.py).
+  shared via this module.
 - `enforce_grid_cap(n_combinations)` raises HTTPException(400) when the
   cartesian product exceeds `settings.MAX_GRID_COMBINATIONS` (default 100).
 - `make_deadline()` returns the absolute `datetime` at which the grid
@@ -15,7 +14,7 @@ Bounds the cost a single user can impose on the API:
   Keras `on_epoch_end` callback and sets `model.stop_training = True`
   when exceeded.
 
-The router layer (E2) plugs this in. The helpers live in `app/` so they
+The router layer plugs this in. The helpers live in `app/` so they
 can be unit-tested without importing TensorFlow.
 """
 

@@ -1,6 +1,7 @@
 """Path traversal protection — confine user-supplied paths to per-session roots.
 
-A5 (audit 01, P1-1 / P1-2):
+Contexte (protection contre la traversee de repertoire et l'acces aux
+sessions d'autres utilisateurs) :
 
 User-controlled paths (`model_dir`, `output_dir`, `dir`) used to be passed
 straight to `Path(...)` and walked with `rglob("*")`. Without ownership
@@ -18,7 +19,7 @@ Mitigation:
 
 Routes that simply need their session's root (no user-supplied path
 fragment) should call `session_root(...)` directly instead of trusting
-client input — the E2 router refacto wires this in each handler.
+client input — chaque handler de router branche ce mecanisme.
 """
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ def validate_path(user_path: str, allowed_root: str | Path | None = None) -> Pat
     *allowed_root* should normally be the result of `session_root(...)`. When
     omitted, falls back to the global ``WORKSPACE_ROOT`` for backwards
     compatibility — but callers handling session-scoped data MUST pass the
-    per-session root (A5).
+    per-session root pour garantir l'isolation entre sessions.
 
     Returns the resolved ``Path`` on success.
     Raises ``HTTPException(400)`` when the path is malformed, ``403`` when it
@@ -122,7 +123,7 @@ def validate_session_path(
 ) -> Path:
     """Shortcut: validate *user_path* against session_root(user_id, session_id).
 
-    Convenience helper for the E2 router refacto. Behaves like
+    Convenience helper pour les routers. Behaves like
     `validate_path(user_path, allowed_root=session_root(user_id, session_id))`
     but creates the root on demand so first writes succeed.
     """
