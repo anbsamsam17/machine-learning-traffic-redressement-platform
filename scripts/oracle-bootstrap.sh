@@ -258,7 +258,7 @@ cat <<EOF
 
    4. Pull the repo and start the stack:
         sudo mkdir -p /opt/mdl && sudo chown ${SAMIR_USER}: /opt/mdl
-        git clone https://github.com/anbsamsam17/Anbri-Tools-portfolio.git /opt/mdl
+        git clone https://github.com/anbsamsam17/machine-learning-traffic-redressement-platform.git /opt/mdl
         cd /opt/mdl
         cp infra/.env.prod.example infra/.env.prod
         # edit JWT_SECRET, then:
