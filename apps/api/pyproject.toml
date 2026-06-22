@@ -31,7 +31,7 @@ dependencies = [
 prod = [
     "tensorflow-cpu>=2.15,<2.22",
     "plotly>=5.18",
-    "folium>=0.15",
+    "folium>=0.20.0",
 ]
 dev = [
     "pytest>=8.0",
