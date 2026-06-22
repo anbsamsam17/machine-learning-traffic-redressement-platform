@@ -130,7 +130,7 @@ jobs:
       url: https://Trafic-Tool.anbri-tools-ia.online
     steps:
       - name: Deploy via SSH to Oracle VM
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host:     ${{ secrets.ORACLE_HOST }}
           username: ${{ secrets.ORACLE_USER }}
