@@ -81,6 +81,9 @@ export function Tooltip({
 
   // Recompute alignment when opening — uses the trigger's rect to decide
   // whether a centered, left-anchored, or right-anchored popover fits.
+  // Intentional layout-measurement effect: reads the DOM rect and stores the
+  // resolved alignment/side in state (cannot be derived during render).
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!open) return;
     const el = triggerRef.current;
@@ -117,6 +120,7 @@ export function Tooltip({
       setResolvedSide(side);
     }
   }, [open, side]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Position offsets — combine side (top/bottom/right/left) with horizontal
   // align (start/center/end) for vertical sides.

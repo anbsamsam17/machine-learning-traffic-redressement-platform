@@ -76,6 +76,7 @@ export function AppHeader() {
   // Fetch user email (single call per pathname change) — gate behind token.
   useEffect(() => {
     if (!getToken()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUserEmail(null);
       return;
     }

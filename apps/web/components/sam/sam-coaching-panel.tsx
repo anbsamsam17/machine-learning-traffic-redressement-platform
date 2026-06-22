@@ -74,6 +74,8 @@ export function SamCoachingPanel({ mode = "tv" }: SamCoachingPanelProps = {}) {
     } catch {
       // localStorage may be unavailable (private mode, SSR mismatch) — ignore.
     }
+    // Intentional: apply client-only localStorage dismissal state after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDismissed(isDismissed);
     setHydrated(true);
   }, [STORAGE_KEY]);

@@ -1176,6 +1176,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
 
   // Sync mandatory cols when input cols change
   useEffect(() => {
+    // Intentional: prune mandatory cols when the available input cols change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMandatoryCols((prev) => prev.filter((c) => inputCols.includes(c)));
   }, [inputCols]);
 
@@ -1184,6 +1186,8 @@ export function ConfigForm({ mode, availableColumns, onSubmit }: ConfigFormProps
   // D4_8643_bs128_ep1500 default of "no feature subset grid, no minimum".)
   useEffect(() => {
     const floor = mandatoryCols.length;
+    // Intentional: keep minInputCount at or above the mandatory-cols floor.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMinInputCount((prev) => Math.max(prev, floor));
   }, [mandatoryCols]);
 

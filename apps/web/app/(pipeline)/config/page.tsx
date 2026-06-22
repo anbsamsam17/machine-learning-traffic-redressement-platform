@@ -53,6 +53,9 @@ export default function ConfigPage() {
   // reported by the Playwright reviewer (PL config defaults stuck on TV).
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
+    // Intentional: flag client-side hydration completion after mount so the
+    // form re-initialises with the persisted mode (see comment above).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, []);
 

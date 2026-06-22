@@ -145,7 +145,10 @@ export function PlSaturationPanel(props: PlSaturationPanelProps) {
     onReset,
   } = props;
 
-  const sanitize = useCallback(sanitizePositive, []);
+  const sanitize = useCallback(
+    (raw: string, max: number) => sanitizePositive(raw, max),
+    [],
+  );
 
   return (
     <div className="mt-8 pt-6 border-t border-white/[0.06]">

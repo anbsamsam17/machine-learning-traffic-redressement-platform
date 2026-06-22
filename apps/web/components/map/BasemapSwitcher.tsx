@@ -73,6 +73,8 @@ export function BasemapSwitcher({
   // Hydratation : lit la preference localStorage cote client (SSR-safe).
   useEffect(() => {
     const stored = readStoredBasemap();
+    // Intentional: read client-only localStorage preference after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentBasemap(stored);
     setHydrated(true);
   }, []);

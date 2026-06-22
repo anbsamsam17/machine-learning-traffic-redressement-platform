@@ -20,6 +20,9 @@ export function SuccessBanner({
 
   useEffect(() => {
     if (!visible) return;
+    // Intentional: reset the dismiss animation state when the banner becomes
+    // visible so the auto-dismiss timer restarts cleanly.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDismissing(false);
     const timer = setTimeout(() => {
       setDismissing(true);

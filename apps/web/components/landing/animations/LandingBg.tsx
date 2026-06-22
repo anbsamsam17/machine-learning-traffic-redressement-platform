@@ -159,6 +159,9 @@ export function LandingBg({ className }: LandingBgProps): React.JSX.Element {
   const [rightGlyphs, setRightGlyphs] = useState<string>("");
 
   useEffect(() => {
+    // Intentional: fill client-only glyphs after hydration to avoid SSR
+    // mismatch (see comment above).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLeftGlyphs(makeBinaryGlyphs(GLYPH_COUNT));
     setRightGlyphs(makeBinaryGlyphs(GLYPH_COUNT));
   }, []);
