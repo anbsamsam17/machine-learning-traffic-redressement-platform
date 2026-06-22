@@ -16,7 +16,7 @@
 
 **[Démo en ligne](https://Trafic-Tool.anbri-tools-ia.online)** · **[Méthodologie discontinuités](scripts/discontinuity_methodology/00_METHODOLOGY.md)**
 
-Auteur : **Samir Anbri** — dépôt portfolio (CV technique).
+Auteur : **Samir Anbri**
 
 </div>
 
