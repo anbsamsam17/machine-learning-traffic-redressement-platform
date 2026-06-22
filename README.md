@@ -30,13 +30,17 @@ Auteur : **Samir Anbri** — dépôt portfolio (CV technique).
 
 ---
 
-## Le problème métier
+## Vision globale
 
-Les données FCD (Floating Car Data) brutes **sous-estiment systématiquement** les débits réels du réseau routier. Le redressement de ces débits — pour les Tous Véhicules (TV) comme pour les Poids Lourds (PL) — reste un travail largement artisanal : peu reproductible, peu tracé, difficile à auditer ou à comparer d'un modèle à l'autre.
+Les données FCD (Floating Car Data) brutes **sous-estiment systématiquement** les débits réels du réseau. **MDL Redressement** est une plateforme **full-stack de bout en bout** qui industrialise tout le cycle de vie du redressement de débits routiers — de la donnée brute à la décision cartographiée — avec une traçabilité ML complète. Là où le redressement reste d'ordinaire un travail artisanal, peu reproductible et difficile à auditer, un **seul outil couvre toute la chaîne** :
 
-Cette plateforme industrialise le flux complet : **fichier brut → modèle entraîné → évaluation statistique → GeoJSON cartographié**, avec un lineage ML de bout en bout. Quatre flux métier sont couverts : modèle **Tous Véhicules (TV)**, modèle **Poids Lourds (PL)**, **Carte de débits** (application des modèles sur le réseau FCD) et **Fichier Compteurs** (export standardisé).
+1. **Entraîner** des modèles ML de redressement pour **quatre familles métier** — **Tous Véhicules (TV)**, **Poids Lourds (PL)**, **Heure de Pointe Matin (HPM)** et **Heure de Pointe Soir (HPS)** — via un grid search entièrement piloté depuis l'interface.
+2. **Évaluer et comparer** les modèles sous **contraintes métier** (tolérance opérationnelle ±15 %) **et statistiques** (bootstrap CI95, test de McNemar pairé, drift temporel), pour **sélectionner le meilleur modèle** en toute confiance.
+3. **Générer la carte des débits redressés** : application du modèle retenu sur l'ensemble du réseau FCD → GeoJSON cartographié (Grand Lyon, 12-15k+ tronçons).
+4. **Analyser les discontinuités** du réseau une fois la carte produite : conservation des flux aux nœuds (GEH), détection et **attribution automatique des causes**.
+5. **Analyser les évolutions inter-années** : comparaison des débits redressés d'une année sur l'autre pour quantifier les tendances de trafic.
 
-L'objectif assumé n'est pas le R² brut, mais une métrique opérationnelle : le **taux d'échantillons dans la tolérance ±15 %** (`tol_in_pct`). Ce choix oriente l'ensemble de l'architecture, des fonctions de perte et de l'évaluation.
+S'y ajoutent l'**export Fichier Compteurs** (format standardisé) et la **visualisation des capteurs**. Le fil rouge de toute la plateforme : la **reproductibilité et le lineage ML** à chaque étape. L'objectif assumé n'est pas le R² brut mais une **métrique opérationnelle** — le taux d'échantillons dans la tolérance ±15 % (`tol_in_pct`) — qui oriente l'architecture, les fonctions de perte et l'évaluation.
 
 ---
 
@@ -54,27 +58,11 @@ Ce qu'on peut y tester en ligne :
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    U["Navigateur"]
-    subgraph Web["apps/web · Next.js 16 / React 19 / TS strict"]
-        UI["App Router · MapLibre GL · React Query · Zustand"]
-    end
-    subgraph API["apps/api · FastAPI / Python 3.11"]
-        R["12 routers typés · JWT · rate limit · headers OWASP"]
-        ML["Moteur ML · TensorFlow CPU / Keras"]
-        R --> ML
-    end
-    REDIS[("Redis<br/>sessions / état")]
-    PROXY["Nginx / Caddy<br/>reverse-proxy"]
+<p align="center">
+  <img src="docs/screenshots/architecture.gif" width="100%" alt="Architecture animée — 3-tier (Next.js / FastAPI + moteur ML / Redis) et pipeline ML : ingestion FCD → entraînement TV·PL·HPM·HPS → évaluation → carte des débits → discontinuités → évolutions inter-années">
+</p>
 
-    U --> PROXY --> Web
-    Web -->|"client API typé · Bearer JWT"| API
-    API --> REDIS
-    ML -.->|"export ZIP + meta.json · data lineage"| API
-```
-
-Monorepo **Turborepo** (`turbo.json`, workspaces `apps/*`). Conteneurisation et reverse-proxy dans `infra/` (Docker Compose, `Dockerfile.api`, `Dockerfile.web`, `nginx.conf`, `Caddyfile`).
+Monorepo **Turborepo** (`turbo.json`, workspaces `apps/*`) : un frontend **Next.js** typé strict, un backend **FastAPI** qui embarque le moteur ML **TensorFlow/Keras**, **Redis** pour les sessions, le tout conteneurisé derrière un reverse-proxy (Docker Compose, Nginx/Caddy dans `infra/`). Le diagramme ci-dessus déroule le pipeline complet, de l'ingestion FCD jusqu'aux analyses de discontinuités et d'évolutions inter-années.
 
 ### Stack technique
 
