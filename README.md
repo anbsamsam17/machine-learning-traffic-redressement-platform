@@ -48,6 +48,22 @@ S'y ajoutent l'**export Fichier Compteurs** (format standardisé) et la **visual
 
 ---
 
+## Ce que ce repo démontre
+
+Chaque brique est implémentée et vérifiable dans le code. Le tableau ci-dessous fait le lien entre les compétences mises en œuvre et les profils auxquels elles correspondent.
+
+| Brique technique | Compétence démontrée | Type de poste |
+|---|---|---|
+| Moteur MLP quantile + pertes custom (`model_builder.py`, `losses.py`) | Conception d'architectures, fonctions de perte métier, Keras 3 | **ML Engineer** |
+| `meta.json` + seed déterministe + data lineage SHA-256 (`packaging.py`, `seeding.py`) | Traçabilité, rejouabilité, packaging d'artefacts | **MLOps** |
+| Pipeline FCD → GeoJSON + map-matching inter-millésimes (`data_prep.py`, `geo.py`, `evolution/matching.py`) | Ingestion, transformations géospatiales, projections CRS | **Data Engineer (géo)** |
+| Grid search + curriculum / hard-example mining + k-fold (`grid_search.py`, `kfold.py`, `training_pipeline.py`) | Recherche d'hyperparamètres, validation croisée | **ML Engineer** |
+| CI multi-arch + Docker Compose + déploiement SSH (`.github/workflows/ci.yml`, `infra/`) | Conteneurisation, intégration et livraison continues | **DevOps / MLOps** |
+| Évaluation McNemar apparié + bootstrap CI95 + drift temporel (`stats_compare.py`, `metrics_advanced.py`) | Statistiques inférentielles, comparaison rigoureuse de modèles | **ML / Stats** |
+| Garde-fous d'entraînement + sécurité (IDOR, path-traversal, zip-bomb) (`training_guard.py`, `security.py`) | Durcissement applicatif, contraintes de production | **Backend / MLOps** |
+
+---
+
 ## Démo
 
 **[Trafic-Tool.anbri-tools-ia.online](https://Trafic-Tool.anbri-tools-ia.online)**
@@ -195,6 +211,17 @@ Chaque sonde est interrogée **défensivement** : un échec est enregistré dans
 
 Ces garde-fous vivent dans `app/` (pas dans la couche TensorFlow), donc testables sans importer TF.
 
+### Reproductibilité & idempotence
+
+Au-delà de la seed unique, plusieurs mécanismes concrets garantissent qu'un run est rejouable à l'identique et qu'une étape réexécutée ne corrompt rien :
+
+- **Re-seed déterministe par run** (`training_pipeline.py`) : avant chaque `model.fit`, le pipeline calcule `run_seed = seed + run_idx` (base-seed 1750, `run_idx` 0-based) puis appelle `seed_everything(run_seed, enable_op_determinism=False)` et `tf.keras.utils.set_random_seed(run_seed)`. Chaque candidat du grid est ainsi initialisé reproductiblement et distinctement. *(`derive_seed` dans `seeding.py` est du code mort, conservé sans être appelé par cette boucle.)*
+- **`seed_everything` multi-RNG + op-determinism** (`seeding.py:23`) : propagation à Python `random`, NumPy, TensorFlow et Keras, `PYTHONHASHSEED` fixé, et `tf.config.experimental.enable_op_determinism()` activé une seule fois en amont (idempotent).
+- **Écritures Parquet déterministes** (`session.py:83`, `_df_to_parquet_safe`) : sérialisation via `pyarrow`, casting JSON stable des cellules dict/list, **aucun fallback Pickle** — le même DataFrame produit les mêmes octets.
+- **Dérivations idempotentes** (`data_prep.py:47`, `derive_hpm_hps_columns`) : les colonnes HPM/HPS et `TxPen` ne sont (re)calculées que si absentes ; un snapshot déjà enrichi est laissé intact, donc réexécuter la préparation est sans effet de bord.
+- **Cache de reprise BAN** (`evolution/matching.py:527`) : le reverse-geocoding BAN indexe les résultats par `src_idx` dans un cache muté en place ; une génération relancée saute les points déjà résolus (reprise idempotente).
+- **JSON strict `allow_nan=False`** (`evolution/io.py:128`, `routers/evolution.py:460`) : l'export GeoJSON refuse tout `NaN`/`Infinity`, garantissant un payload conforme et reproductible.
+
 ---
 
 ## Data Engineering & cartographie géospatiale
@@ -208,6 +235,25 @@ Le réseau routier du Grand Lyon, c'est **~242 000 brins directionnels HERE** pa
 *Carte des débits redressés — 12-15k+ tronçons rendus en une seule LineLayer MapLibre, palette graduée par expression GPU, filtres et seuils édités en runtime sans rebuild de source. Le popup expose JOr (v/j), DPL (PL/j), pointes matin/soir avec intervalles de confiance, et lien Street View.*
 
 ### Pipeline de données : du FCD brut au GeoJSON servi
+
+Vue d'ensemble du flux, de la source FCD jusqu'aux trois exploitations aval (entraînement, carte, matching d'évolution). Les fonctions citées sont celles réellement appelées dans le code.
+
+```mermaid
+flowchart TD
+    A["Source HERE / FCD<br/>(~242k brins · 31 props · LineString EPSG:4326)"] --> B["Upload<br/>_parse_file_to_df<br/>(routers/upload.py)"]
+    B --> C["Mapping colonnes<br/>_auto_map (fuzzy + SYNONYMS)<br/>(routers/mapping.py)"]
+    C --> D["Préparation<br/>prepare_training_data + derive_hpm_hps_columns<br/>(services/ml/data_prep.py)"]
+    D --> E{"Exploitations<br/>aval"}
+    E --> F["Entraînement<br/>grid search → modèle + meta.json<br/>(services/ml/)"]
+    E --> G["Carte des débits<br/>GeoJSON servi<br/>(EPSG:4326, allow_nan=False)"]
+    E --> H["Matching évolution<br/>N1 clé → N2 géométrique → N3 BAN<br/>(services/evolution/matching.py)"]
+    H -. "reprojection mètres" .-> I["EPSG:2154 (Lambert-93)<br/>à la demande pour le map-matching"]
+
+    classDef store fill:#eef,stroke:#557;
+    class A,G store;
+```
+
+*Formats : tables source (CSV/GeoJSON) → DataFrame → **Parquet** déterministe pour l'état de session, **GeoJSON** strict (`allow_nan=False`) pour les exports carte/évolution. CRS : tout vit en **EPSG:4326** ; le map-matching reprojette en **EPSG:2154 (Lambert-93)** à la demande pour raisonner en mètres.*
 
 - **Jointure référentielle FCDREFGLOBAL** défensive sur les noms de colonnes : `FCD_COLUMN_MAPPING` traduit les colonnes source vers les noms canoniques internes, avec **facteur d'échelle** (km → m via ×1000), gestion des alias de clé (`segment_id`/`AgregId`/`agregId`) et **non-écrasement des endpoints graphe** déjà présents côté GeoJSON (`discontinuites.py:1108`). Un export amont renommé ne casse pas silencieusement un run.
 - **Optimisation du payload carte** (`scripts/map_2025_light/prepare_data.py`) : un GeoJSON source de **~81 MB / 98 129 LineStrings / 31 props** est réduit à 15 propriétés utiles, coordonnées **arrondies à 5 décimales (~1,1 m)**, volumes castés en entiers, valeurs par défaut omises (`RAMP/ROUNDABOUT 'Y'/'N' → 1/0` puis drop des zéros, `n_merged==1` omis, `PL==0` omis). Sortie minifiée **+ jumeau gzip compresslevel 9**. Le front reconstruit les valeurs manquantes.
