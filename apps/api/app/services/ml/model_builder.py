@@ -220,6 +220,25 @@ def _multi_quantile_loss(quantiles: list[float]):
     ``y_true`` (shape ``(batch, 1)``) over the quantile axis. The total loss
     is the mean of per-quantile pinball losses (mean-reduced per the
     standard convention).
+
+    .. warning:: Risque de croisement de quantiles (quantile crossing)
+
+        Chaque quantile est optimise independamment via sa propre perte
+        pinball, puis on en prend la moyenne. Cette somme/moyenne de pertes
+        pinball n'impose AUCUNE contrainte de monotonie entre les colonnes de
+        sortie : rien ne garantit que ``q20 <= q50 <= q80`` ligne par ligne.
+        En pratique les quantiles predits peuvent donc se croiser
+        (``q20 > q50``, etc.), surtout sur les regions a faible support ou en
+        debut d'entrainement.
+
+        Implications pour l'aval :
+        - la colonne q=0.5 est utilisee comme prediction principale ; les
+          colonnes q=0.2 / q=0.8 servent d'intervalle indicatif, qui peut
+          ponctuellement etre incoherent (borne basse > borne haute) ;
+        - aucun re-tri / isotonisation n'est applique ici. Si une monotonie
+          stricte est requise, trier les sorties par quantile en
+          post-traitement (hors de cette perte, donc sans impact sur la
+          logique d'entrainement).
     """
     qs = [float(q) for q in quantiles]
     if not qs or any(not (0.0 < q < 1.0) for q in qs):

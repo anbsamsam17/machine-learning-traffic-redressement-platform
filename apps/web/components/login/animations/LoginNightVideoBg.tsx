@@ -233,10 +233,11 @@ export function LoginNightVideoBg({ className }: LoginNightVideoBgProps) {
       )}
     >
       {/* 1. Background video — top-down nighttime intersection.
-          Production TODO : transcode login-night-bg.mp4 (~23 MB) into
-          H.264 CRF 28 + WebM VP9 + JPG poster, then add <source> tags
-          + poster below. Until those assets exist we keep the single
-          mp4 source so the browser doesn't log 404s. */}
+          Note perf (optimisation possible) : le fichier login-night-bg.mp4
+          (~23 MB) pourrait etre transcode en H.264 CRF 28 + WebM VP9 avec un
+          poster JPG, puis expose via des balises <source> multiples. Tant que
+          ces variantes n'existent pas, on garde la seule source mp4 pour eviter
+          que le navigateur ne logue des 404. Le poster JPG est deja branche. */}
       <video
         className="absolute inset-0 h-full w-full object-cover [will-change:transform]"
         autoPlay

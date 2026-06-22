@@ -2010,9 +2010,9 @@ def _find_light_geojson() -> Path | None:
       2. ``WORKSPACE_ROOT/light_geojson/2025_light.geojson`` (deploiement standard).
       3. Repo: ``scripts/map_2025_light/2025_light.min.geojson`` (dev / CI).
 
-    Le chemin absolu d'origine (poste de travail operateur) a ete retire
-    (TODO: remove hardcoded path) — desormais on s'appuie sur la
-    configuration ou le repo.
+    Le chemin absolu d'origine (poste de travail operateur) a ete retire :
+    desormais on s'appuie uniquement sur la configuration ou le repo
+    (plus aucun chemin code en dur).
     """
     candidates: list[Path] = []
 
