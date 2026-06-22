@@ -4,19 +4,23 @@
 
 ### Du Floating Car Data brut au débit routier redressé, cartographié et tracé — full-stack + moteur ML, de bout en bout.
 
-[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](#)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](#)
-[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](#)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](#)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](#)
-[![TensorFlow](https://img.shields.io/badge/TensorFlow%2FKeras-CPU-FF6F00?logo=tensorflow&logoColor=white)](#)
-[![Turborepo](https://img.shields.io/badge/Turborepo-EF4444?logo=turborepo&logoColor=white)](#)
-[![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker&logoColor=white)](#)
-[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](#)
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![TensorFlow](https://img.shields.io/badge/TensorFlow%2FKeras-CPU-FF6F00?logo=tensorflow&logoColor=white)](https://www.tensorflow.org)
+[![Turborepo](https://img.shields.io/badge/Turborepo-EF4444?logo=turborepo&logoColor=white)](https://turbo.build)
+[![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
+[![CI](https://img.shields.io/github/actions/workflow/status/anbsamsam17/machine-learning-traffic-redressement-platform/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/anbsamsam17/machine-learning-traffic-redressement-platform/actions)
+[![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 
 **[Démo en ligne](https://Trafic-Tool.anbri-tools-ia.online)** · **[Méthodologie discontinuités](scripts/discontinuity_methodology/00_METHODOLOGY.md)**
 
 Auteur : **Samir Anbri**
+
+[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
+<!-- LinkedIn: <url a ajouter> · CV: <url a ajouter> -->
 
 </div>
 
@@ -95,7 +99,7 @@ Le cœur de la démonstration : l'enchaînement **configuration du grid search �
 
 <p align="center"><img src="docs/screenshots/entrainement.png" width="90%"></p>
 
-*Suivi temps réel du grid search : modèle 1/6 en cours, meilleure `val_loss` courante (0.399858), ETA et courbe train/val loss tracée en direct. Chaque combinaison est entraînée sous seed dérivée déterministe, avec progression streamée epoch par epoch (callback Keras `on_epoch_end`). Le suivi epoch-par-epoch reflète les callbacks EarlyStopping et ReduceLROnPlateau du `training_pipeline`.*
+*Suivi temps réel du grid search : modèle 1/6 en cours, meilleure `val_loss` courante (0.399858), ETA et courbe train/val loss tracée en direct. Chaque combinaison est entraînée sous re-seed déterministe par run (`run_seed = seed + run_idx`), avec progression streamée epoch par epoch (callback Keras `on_epoch_end`). Le suivi epoch-par-epoch reflète les callbacks EarlyStopping et ReduceLROnPlateau du `training_pipeline`.*
 
 ---
 
@@ -157,7 +161,9 @@ L'enjeu n'est pas seulement d'entraîner un réseau : c'est de pouvoir **prouver
 
 ### Reproductibilité bit-exact (seed 1750)
 
-`seed_everything()` (`seeding.py`) ne se contente pas d'un `np.random.seed` : elle propage une seed unique à **tous** les générateurs aléatoires de la chaîne — Python `random`, NumPy, TensorFlow, Keras — puis active `tf.config.experimental.enable_op_determinism()` pour rendre les opérations TensorFlow elles-mêmes déterministes. `PYTHONHASHSEED` est également fixé. La seed est appelée avant **chaque `model.fit`** de la boucle de grid search, via `derive_seed(parent, label)` qui dérive de façon déterministe une sous-seed par modèle : chaque candidat est initialisé reproductiblement *et* distinctement de ses voisins.
+`seed_everything()` (`seeding.py`) ne se contente pas d'un `np.random.seed` : elle propage une seed unique à **tous** les générateurs aléatoires de la chaîne — Python `random`, NumPy, TensorFlow, Keras — fixe `PYTHONHASHSEED`, et active `tf.config.experimental.enable_op_determinism()` pour rendre les opérations TensorFlow elles-mêmes déterministes (op-determinism activé une seule fois, en amont de la boucle, car idempotent).
+
+Dans la boucle de grid search (`training_pipeline.py`), un re-seed déterministe est appliqué **avant chaque `model.fit`** : pour chaque run le pipeline calcule `run_seed = seed + run_idx` (où `seed` est la base-seed, 1750 par défaut, et `run_idx` l'index 0-based du modèle dans le grid), puis appelle `seed_everything(run_seed, enable_op_determinism=False)` et `tf.keras.utils.set_random_seed(run_seed)`. Chaque candidat est ainsi initialisé reproductiblement *et* distinctement de ses voisins, ce qui évite que le grid ne s'effondre sur quelques tuples `(tol, p80)` répétés. Cette même `run_seed` est embarquée dans le `meta.json` du modèle, garantissant la rejouabilité exacte run par run.
 
 ### Packaging traçable & data lineage (`meta.json`)
 
@@ -258,7 +264,7 @@ Points vérifiés dans le code :
 
 ## Tests & CI
 
-- **pytest** (`apps/api/tests/`, ~30 fichiers) : fixtures métier, transformations de données (`test_data_prep`, `test_normalize`, `test_mapping`), ML (`test_losses`, `test_seeding`, `test_packaging`, `test_grid_search`, `test_stats_compare`), sécurité (`test_ownership` IDOR + path-traversal, `test_security_headers`, `test_auth_flow`), et tous les routers.
+- **pytest** (`apps/api/tests/`, 451 tests — `cd apps/api && python -m pytest -q --co` → `451 tests collected in 7.64s`) : fixtures métier, transformations de données (`test_data_prep`, `test_normalize`, `test_mapping`), ML (`test_losses`, `test_seeding`, `test_packaging`, `test_grid_search`, `test_stats_compare`), sécurité (`test_ownership` IDOR + path-traversal, `test_security_headers`, `test_auth_flow`), et tous les routers.
 - **CI GitHub Actions** (`.github/workflows/ci.yml`) : `ruff` + `black --check` (backend), `eslint` (frontend), `pytest` avec service Redis, puis build d'images Docker **multi-arch (amd64/arm64)** poussées sur GHCR et déploiement SSH (avec approbation manuelle via environnement `production`).
 
 ---
@@ -337,3 +343,9 @@ npm run docker:down
 ├── turbo.json                # pipeline Turborepo
 └── .env.example
 ```
+
+---
+
+## Contact
+
+**Samir Anbri** — [samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)

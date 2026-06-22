@@ -1,6 +1,13 @@
 {
-  "name": "mdl-redressement-v2",
+  "name": "machine-learning-traffic-redressement-platform",
+  "description": "Plateforme ML full-stack de redressement de debits routiers.",
   "private": true,
+  "license": "MIT",
+  "homepage": "https://Trafic-Tool.anbri-tools-ia.online",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anbsamsam17/machine-learning-traffic-redressement-platform.git"
+  },
   "workspaces": ["apps/*"],
   "scripts": {
     "dev": "turbo dev",
