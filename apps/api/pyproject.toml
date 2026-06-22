@@ -21,7 +21,7 @@ dependencies = [
     # par app.auth (hash_password / verify_password).
     # T2 cleanup: email-validator retire — couvert transitivement par
     # pydantic.EmailStr (FastAPI ramene pydantic[email] via fastapi[standard]).
-    "slowapi>=0.1.9",
+    "slowapi>=0.1.10",
     "sentry-sdk[fastapi]>=1.40",
     "prometheus-fastapi-instrumentator>=6.1",
     "bcrypt>=4.0",
