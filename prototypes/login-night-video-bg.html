@@ -1,0 +1,871 @@
+<!doctype html>
+<!--
+  Prototype : écran de connexion sur fond vidéo nocturne (ambiance calme et
+  cinématique). Démontre une mise en page 60/40 (présentation à gauche, carte
+  de formulaire à droite), des couches d'assombrissement / teinte / vignette,
+  24 particules en dérive (SVG + GSAP) et un état prefers-reduced-motion.
+  Le formulaire est inerte (preventDefault). Source vidéo relative
+  (video/login-night-bg.mp4).
+-->
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MDL Login Night Video BG — Prototype</title>
+
+  <style>
+    /* ------------------------------------------------------------------
+       Palette & base
+       ------------------------------------------------------------------ */
+    :root {
+      --bg:           #09090b;
+      --indigo:       #6366f1;
+      --indigo-300:   #a5b4fc;
+      --cyan:         #22d3ee;
+      --cyan-300:     #67e8f9;
+      --violet:       #8b5cf6;
+      --text:         #fafafa;
+      --muted:        #a1a1aa;
+      --zinc-200:     #e4e4e7;
+      --zinc-300:     #d4d4d8;
+      --zinc-400:     #a1a1aa;
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      margin: 0; padding: 0; height: 100%;
+      background: transparent; color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+
+    /* ------------------------------------------------------------------
+       Scene wrapper — fullscreen layered composition
+       ------------------------------------------------------------------ */
+    .scene {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .bg-video {
+      position: fixed;
+      inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      pointer-events: none;
+      will-change: transform;
+    }
+
+    /* Darken : plus marqué que la landing (0.20 → 0.70) */
+    .lnvb-darken {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: linear-gradient(
+        180deg,
+        rgba(9, 9, 11, 0.20) 0%,
+        rgba(9, 9, 11, 0.35) 35%,
+        rgba(9, 9, 11, 0.55) 75%,
+        rgba(9, 9, 11, 0.70) 100%
+      );
+    }
+
+    /* Tint cyan/indigo radial — mix-blend overlay */
+    .lnvb-tint {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: radial-gradient(
+        ellipse at 50% 40%,
+        rgba(34, 211, 238, 0.06) 0%,
+        rgba(99, 102, 241, 0.04) 40%,
+        rgba(9, 9, 11, 0.20) 100%
+      );
+      mix-blend-mode: overlay;
+    }
+
+    .lnvb-particles {
+      position: fixed;
+      inset: 0;
+      width: 100%; height: 100%;
+      z-index: 2;
+      pointer-events: none;
+      display: block;
+    }
+
+    /* Vignette plus fermée (0.35 → 0.75) */
+    .lnvb-vignette {
+      position: fixed;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      background: radial-gradient(
+        ellipse at center,
+        rgba(9, 9, 11, 0) 25%,
+        rgba(9, 9, 11, 0.35) 70%,
+        rgba(9, 9, 11, 0.75) 100%
+      );
+    }
+
+    /* ------------------------------------------------------------------
+       Login layout — grid 60/40 (présentation gauche / form droite)
+       ------------------------------------------------------------------ */
+    .login-layout {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+      align-items: center;
+      gap: 48px;
+      padding: 56px clamp(48px, 7vw, 120px);
+      pointer-events: none;
+    }
+
+    /* ------------------------------------------------------------------
+       Présentation gauche — flottante, text-shadow (pas de card wrapper)
+       ------------------------------------------------------------------ */
+    .presentation {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      max-width: 640px;
+      pointer-events: auto;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.02em;
+      color: #fafafa;
+      text-shadow:
+        0 1px 8px rgba(0, 0, 0, 0.9),
+        0 0 16px rgba(0, 0, 0, 0.5);
+    }
+    .logo .logo-mark {
+      width: 28px; height: 28px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--indigo) 0%, var(--cyan) 100%);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.10) inset,
+        0 8px 24px -8px rgba(99, 102, 241, 0.55);
+      display: grid; place-items: center;
+      color: #fafafa;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+    }
+    .logo .logo-text-muted { color: var(--zinc-300); font-weight: 500; }
+
+    .title-shadow {
+      text-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.95),
+        0 2px 10px rgba(0, 0, 0, 0.75),
+        0 0 24px rgba(0, 0, 0, 0.45);
+    }
+    .text-shadow {
+      text-shadow:
+        0 1px 8px rgba(0, 0, 0, 0.9),
+        0 0 16px rgba(0, 0, 0, 0.5);
+    }
+
+    .presentation h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4.5vw, 3.25rem);
+      font-weight: 600;
+      letter-spacing: -0.025em;
+      line-height: 1.05;
+      color: #fafafa;
+      /* ShimmerText-like : halo blanc 22% + lavende 10% */
+      text-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.95),
+        0 2px 10px rgba(0, 0, 0, 0.75),
+        0 0 24px rgba(255, 255, 255, 0.22),
+        0 0 40px rgba(165, 180, 252, 0.10);
+    }
+    .presentation .subheading {
+      margin: 0;
+      font-size: clamp(0.95rem, 1.35vw, 1.0625rem);
+      color: var(--zinc-200);
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      line-height: 1.5;
+    }
+    .presentation .tagline {
+      margin: 0;
+      font-size: clamp(0.875rem, 1.15vw, 0.95rem);
+      color: var(--zinc-300);
+      line-height: 1.6;
+      max-width: 520px;
+    }
+
+    /* Features grid 2x2 — mini cards FeaturesPills */
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .feature-pill {
+      background: rgba(9, 9, 11, 0.40);
+      backdrop-filter: blur(12px) saturate(140%);
+      -webkit-backdrop-filter: blur(12px) saturate(140%);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .feature-pill .icon {
+      flex: 0 0 28px;
+      width: 28px; height: 28px;
+      border-radius: 7px;
+      background: rgba(99, 102, 241, 0.16);
+      border: 1px solid rgba(99, 102, 241, 0.28);
+      display: grid; place-items: center;
+      color: var(--cyan-300);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .feature-pill .body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .feature-pill .title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #fafafa;
+      letter-spacing: -0.005em;
+    }
+    .feature-pill .desc {
+      font-size: 11px;
+      color: var(--zinc-300);
+      line-height: 1.4;
+    }
+
+    /* Stats horizontales — séparateurs */
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 20px;
+      margin-top: 6px;
+      align-items: center;
+    }
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      font-size: 11.5px;
+      color: var(--zinc-200);
+      line-height: 1.35;
+      text-shadow:
+        0 1px 6px rgba(0, 0, 0, 0.85),
+        0 0 14px rgba(0, 0, 0, 0.45);
+    }
+    .stat strong {
+      color: var(--cyan-300);
+      font-weight: 700;
+      font-size: 12.5px;
+      letter-spacing: 0.01em;
+    }
+    .stat span { color: var(--zinc-300); font-size: 11px; }
+    .stat + .stat::before {
+      content: "";
+      display: inline-block;
+      width: 1px;
+      height: 18px;
+      background: rgba(255, 255, 255, 0.12);
+      margin-right: 14px;
+      align-self: center;
+    }
+
+    /* ------------------------------------------------------------------
+       Form container droite — wrapper qui centre la card
+       ------------------------------------------------------------------ */
+    .form-container {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      pointer-events: auto;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 448px;
+      background: rgba(9, 9, 11, 0.55);
+      backdrop-filter: blur(24px) saturate(150%);
+      -webkit-backdrop-filter: blur(24px) saturate(150%);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 14px;
+      padding: 32px 36px;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.08) inset,
+        0 0 0 1px rgba(99, 102, 241, 0.12),
+        0 28px 80px -20px rgba(0, 0, 0, 0.7),
+        0 0 60px -10px rgba(34, 211, 238, 0.18);
+    }
+
+    .login-card h2 {
+      margin: 0 0 6px 0;
+      font-size: 1.625rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: #fafafa;
+      /* ShimmerText neon-white : halo blanc 22% + lavende 10% */
+      text-shadow:
+        0 0 14px rgba(255, 255, 255, 0.22),
+        0 0 28px rgba(165, 180, 252, 0.10);
+    }
+    .login-card .card-sub {
+      margin: 0 0 24px 0;
+      font-size: 13px;
+      color: var(--zinc-300);
+      line-height: 1.5;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .field label {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--zinc-200);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .field input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      color: #fafafa;
+      font-family: inherit;
+      transition:
+        border-color 180ms ease,
+        background-color 180ms ease,
+        box-shadow 180ms ease;
+    }
+    .field input::placeholder {
+      color: rgba(228, 228, 231, 0.40);
+    }
+    .field input:focus {
+      outline: none;
+      border-color: rgba(34, 211, 238, 0.6);
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow:
+        0 0 0 3px rgba(34, 211, 238, 0.08),
+        0 0 24px rgba(6, 182, 212, 0.25);
+    }
+
+    .submit {
+      width: 100%;
+      margin-top: 8px;
+      padding: 13px 20px;
+      background: var(--indigo);
+      color: #fafafa;
+      border: none;
+      border-radius: 9px;
+      font-size: 12.5px;
+      font-weight: 700;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      font-family: inherit;
+      cursor: pointer;
+      transition:
+        background-color 200ms ease,
+        transform 200ms ease,
+        box-shadow 200ms ease;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.10) inset,
+        0 8px 24px -8px rgba(99, 102, 241, 0.55),
+        0 0 0 1px rgba(99, 102, 241, 0.35);
+    }
+    .submit:hover {
+      background: #7c7ff5;
+      transform: translateY(-1px);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.10) inset,
+        0 12px 32px -8px rgba(99, 102, 241, 0.70),
+        0 0 0 1px rgba(99, 102, 241, 0.50);
+    }
+    .submit:active {
+      transform: translateY(0);
+    }
+
+    .link-row {
+      margin: 16px 0 0 0;
+      text-align: center;
+      font-size: 12.5px;
+      color: var(--zinc-300);
+    }
+    .link-row a {
+      color: var(--cyan-300);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 150ms ease;
+    }
+    .link-row a:hover { color: #a5f3fc; text-decoration: underline; }
+
+    /* ------------------------------------------------------------------
+       Debug panel
+       ------------------------------------------------------------------ */
+    .debug-panel {
+      position: fixed;
+      bottom: 16px; left: 16px;
+      z-index: 100;
+      background: rgba(24, 24, 27, 0.85);
+      border: 1px solid rgba(99, 102, 241, 0.28);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+      color: #e4e4e7;
+      backdrop-filter: blur(8px);
+      min-width: 260px;
+      pointer-events: auto;
+    }
+    .debug-panel h3 {
+      margin: 0 0 8px 0;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      font-weight: 600;
+    }
+    .debug-panel .row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 0; gap: 10px;
+    }
+    .debug-panel .row label { color: var(--muted); font-size: 11px; }
+    .debug-panel input[type="range"] { width: 110px; accent-color: var(--cyan); }
+    .debug-panel input[type="checkbox"] { accent-color: var(--cyan); }
+    .debug-panel .sep { height: 1px; background: rgba(99, 102, 241, 0.18); margin: 6px 0; }
+    .debug-panel .metric { color: var(--cyan); }
+    .debug-panel .val { color: #fafafa; font-weight: 500; }
+
+    /* ------------------------------------------------------------------
+       Responsive
+       ------------------------------------------------------------------ */
+    @media (max-width: 1024px) {
+      .login-layout {
+        grid-template-columns: 1fr;
+        align-items: start;
+        padding: 40px 32px;
+        gap: 32px;
+        overflow-y: auto;
+      }
+      .form-container { justify-content: stretch; }
+      .login-card { max-width: 100%; }
+    }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+</head>
+<body>
+
+  <div class="scene" id="scene">
+
+    <video class="bg-video" id="bgVideo"
+           src="video/login-night-bg.mp4"
+           autoplay loop muted playsinline preload="auto"></video>
+
+    <div class="lnvb-darken" id="bgDarken"></div>
+    <div class="lnvb-tint"></div>
+
+    <svg class="lnvb-particles" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+      <g class="layer-particles" id="layerParticles">
+        <!-- 24 circles populated by JS -->
+      </g>
+    </svg>
+
+    <div class="lnvb-vignette"></div>
+  </div>
+
+  <main class="login-layout">
+
+    <!-- Présentation gauche (flottante, text-shadow) -->
+    <section class="presentation" aria-label="Présentation MDL">
+      <div class="logo">
+        <span class="logo-mark">M</span>
+        <span>MDL Trafic <span class="logo-text-muted">· Engineering</span></span>
+      </div>
+
+      <h1>Outils — Engineering Trafic</h1>
+      <p class="subheading text-shadow">Machine Learning · Analyse capteurs · FCD · Modélisation</p>
+      <p class="tagline text-shadow">
+        Plateforme interne d'analyse et de redressement des données de trafic routier
+        — calibrée pour les études régionales et autoroutières.
+      </p>
+
+      <div class="features-grid" aria-label="Modules disponibles">
+        <div class="feature-pill">
+          <span class="icon" aria-hidden="true">ML</span>
+          <div class="body">
+            <span class="title">Brain · ML pipeline</span>
+            <span class="desc">Réseau neuronal TensorFlow, grid search 11 axes.</span>
+          </div>
+        </div>
+        <div class="feature-pill">
+          <span class="icon" aria-hidden="true">FCD</span>
+          <div class="body">
+            <span class="title">Radio · FCD HERE</span>
+            <span class="desc">Traces véhicules flottants + fusion compteurs terrain.</span>
+          </div>
+        </div>
+        <div class="feature-pill">
+          <span class="icon" aria-hidden="true">VL</span>
+          <div class="body">
+            <span class="title">Route · Réseaux</span>
+            <span class="desc">Modèles TV / PL séparés. Routes nationales &amp; autoroutes.</span>
+          </div>
+        </div>
+        <div class="feature-pill">
+          <span class="icon" aria-hidden="true">CT</span>
+          <div class="body">
+            <span class="title">Activity · Capteurs</span>
+            <span class="desc">SIREDO permanents pondérés ×4. GEH &lt; 5 bootstrap CI95.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats" aria-label="Statistiques plateforme">
+        <div class="stat">
+          <strong>4 modes</strong>
+          <span>TV · PL · Carte · Compteurs</span>
+        </div>
+        <div class="stat">
+          <strong>95% précision</strong>
+          <span>moyenne · GEH &lt; 5</span>
+        </div>
+        <div class="stat">
+          <strong>12K+ segments</strong>
+          <span>traités par jour</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Form container droite -->
+    <section class="form-container" aria-label="Connexion">
+      <form class="login-card" id="loginForm" autocomplete="off">
+        <h2>Connexion</h2>
+        <p class="card-sub">Accédez à votre espace de travail.</p>
+
+        <div class="field">
+          <label for="email">Adresse email</label>
+          <input type="email" id="email" name="email"
+                 placeholder="email@exemple.com" autocomplete="email" />
+        </div>
+
+        <div class="field">
+          <label for="password">Mot de passe</label>
+          <input type="password" id="password" name="password"
+                 placeholder="••••••••" autocomplete="current-password" />
+        </div>
+
+        <button type="submit" class="submit">Se connecter</button>
+
+        <p class="link-row">
+          Pas encore de compte ? <a href="#">Créer un compte</a>
+        </p>
+      </form>
+    </section>
+
+  </main>
+
+  <aside class="debug-panel" aria-label="Prototype debug">
+    <h3>Prototype debug</h3>
+    <div class="row">
+      <label for="pause">Pause animations</label>
+      <input type="checkbox" id="pause"/>
+    </div>
+    <div class="row">
+      <label for="reduced">Reduced motion sim.</label>
+      <input type="checkbox" id="reduced"/>
+    </div>
+    <div class="row">
+      <label for="opacity">Opacité darken</label>
+      <input type="range" id="opacity" min="0" max="1" step="0.01" value="0.70"/>
+      <span class="val" id="opacityVal">0.70</span>
+    </div>
+    <div class="sep"></div>
+    <div class="row"><label>Vidéo (currentTime)</label><span class="metric" id="videoTime">--</span></div>
+    <div class="row"><label>Loops observés</label><span class="metric" id="loopCount">0</span></div>
+    <div class="row"><label>Particules actives</label><span class="metric" id="particlesCount">0</span></div>
+    <div class="row"><label>FPS</label><span class="metric" id="fpsCount">--</span></div>
+  </aside>
+
+  <script>
+  /* ====================================================================
+     MDL Login Night Video Background — vanilla GSAP prototype
+     Quiet · secure · cinematic.
+     24 drift particles only — NO nodes / packets / transmissions.
+     ==================================================================== */
+  (function () {
+    const VB_W = 1920, VB_H = 1080;
+    const svgNS = "http://www.w3.org/2000/svg";
+
+    const rand = (a, b) => a + Math.random() * (b - a);
+
+    // ----------------------------------------------------------------
+    // Particle pool
+    // ----------------------------------------------------------------
+    const PARTICLE_COUNT = 24;
+    const LAYER_PARTICLES = document.getElementById('layerParticles');
+    const particles = [];
+
+    function createParticle(i) {
+      const kind  = i < 18 ? 'cyan' : 'indigo';
+      const color = kind === 'cyan' ? '#22d3ee' : '#6366f1';
+
+      const r       = rand(1.2, 2.4);
+      const opacity = rand(0.15, 0.35);
+      const cx      = rand(0, VB_W);
+      const cy      = rand(-50, VB_H);
+
+      // 38-72 px/s vertical, traversée 1130 px (entrée 50 px au-dessus → bas)
+      const speed_y_per_s   = rand(38, 72);
+      const drift_x_amp     = rand(0, 8);
+      const drift_x_period  = rand(6, 14);
+
+      const circle = document.createElementNS(svgNS, 'circle');
+      circle.setAttribute('cx', cx);
+      circle.setAttribute('cy', cy);
+      circle.setAttribute('r', r);
+      circle.setAttribute('fill', color);
+      circle.setAttribute('opacity', opacity);
+      // No filter, no glow — flat fill only
+      LAYER_PARTICLES.appendChild(circle);
+
+      return {
+        circle,
+        kind, color, r, opacity, cx, cy,
+        speed_y_per_s, drift_x_amp, drift_x_period,
+        yTween: null, xTween: null
+      };
+    }
+
+    function startParticleAnim(p) {
+      // Vertical loop using attr cy. Distance = 1130 (top -50 to bottom 1080+).
+      const distance = 1130;
+      const duration = distance / p.speed_y_per_s;
+
+      // Pre-set start
+      p.circle.setAttribute('cx', p.cx);
+      p.circle.setAttribute('cy', p.cy);
+      p.circle.setAttribute('opacity', p.opacity);
+
+      p.yTween = gsap.to(p.circle, {
+        attr: { cy: VB_H + 50 },
+        duration: duration,
+        ease: 'none',
+        repeat: -1,
+        delay: rand(0, 8),
+        onRepeat: () => {
+          // Randomize on each wrap for organic feel
+          const newCx     = rand(0, VB_W);
+          const newCy     = -50;
+          const newOpac   = rand(0.15, 0.35);
+          const newSpeed  = rand(38, 72);
+          p.cx = newCx; p.cy = newCy; p.opacity = newOpac;
+          p.speed_y_per_s = newSpeed;
+
+          p.circle.setAttribute('cx', newCx);
+          p.circle.setAttribute('cy', newCy);
+          p.circle.setAttribute('opacity', newOpac);
+
+          // Recompute duration from new speed
+          if (p.yTween) {
+            p.yTween.duration(distance / newSpeed);
+            p.yTween.invalidate();
+          }
+          // Restart x-sway from new base
+          restartXSway(p);
+        }
+      });
+
+      restartXSway(p);
+    }
+
+    function restartXSway(p) {
+      if (p.xTween) { p.xTween.kill(); p.xTween = null; }
+      if (p.drift_x_amp < 0.1) return; // skip if amp is ~0
+      // Micro sway around cx, sine.inOut, yoyo
+      // Implemented via a phase object so we can stop/restart cleanly
+      const phase = { v: 0 };
+      const base = p.cx;
+      const amp  = p.drift_x_amp;
+      p.xTween = gsap.to(phase, {
+        v: Math.PI * 2,
+        duration: p.drift_x_period,
+        ease: 'sine.inOut',
+        repeat: -1,
+        onUpdate: () => {
+          const offset = Math.sin(phase.v) * amp;
+          p.circle.setAttribute('cx', (base + offset).toFixed(2));
+        }
+      });
+    }
+
+    function initParticles() {
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        particles.push(createParticle(i));
+      }
+    }
+
+    function startAllParticles() {
+      particles.forEach(startParticleAnim);
+    }
+
+    function stopAllParticles() {
+      particles.forEach(p => {
+        if (p.yTween) { p.yTween.kill(); p.yTween = null; }
+        if (p.xTween) { p.xTween.kill(); p.xTween = null; }
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // Init
+    // ----------------------------------------------------------------
+    initParticles();
+
+    let paused = false;
+    let prefersReduced = window.matchMedia &&
+                         window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    function boot(reduceMotion) {
+      stopAllParticles();
+
+      if (reduceMotion) {
+        // Static snapshot: particles distributed but no motion
+        particles.forEach((p) => {
+          const staticCy = rand(100, 980);
+          const staticCx = rand(0, VB_W);
+          p.cx = staticCx; p.cy = staticCy;
+          p.circle.setAttribute('cx', staticCx);
+          p.circle.setAttribute('cy', staticCy);
+          p.circle.setAttribute('opacity', p.opacity);
+        });
+      } else {
+        startAllParticles();
+      }
+    }
+
+    boot(prefersReduced);
+
+    // matchMedia change listener — runtime support
+    if (window.matchMedia) {
+      const mql = window.matchMedia('(prefers-reduced-motion: reduce)');
+      mql.addEventListener('change', (e) => {
+        prefersReduced = e.matches;
+        boot(prefersReduced || document.getElementById('reduced').checked);
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // Debug + FPS
+    // ----------------------------------------------------------------
+    const video    = document.getElementById('bgVideo');
+    const bgDarken = document.getElementById('bgDarken');
+
+    // Loop detection
+    let lastVideoT = 0, loopCount = 0;
+    function refreshDebug() {
+      if (video) {
+        const ct = video.currentTime;
+        if (ct + 0.5 < lastVideoT) loopCount++;
+        lastVideoT = ct;
+        document.getElementById('videoTime').textContent =
+          ct.toFixed(2) + ' / ' + (video.duration || 0).toFixed(2);
+        document.getElementById('loopCount').textContent = String(loopCount);
+      }
+      // Particles considered "active" if they have a non-paused yTween.
+      // GSAP's isActive() returns false on infinite-repeat tweens between
+      // iterations, so we check for live tween presence + not paused instead.
+      const active = particles.reduce((s, p) => {
+        if (!p.yTween) return s;
+        if (p.yTween.paused()) return s;
+        return s + 1;
+      }, 0);
+      document.getElementById('particlesCount').textContent = String(active);
+    }
+    setInterval(refreshDebug, 250);
+
+    // FPS
+    let lastT = performance.now();
+    const fpsSamples = [];
+    function fpsTick() {
+      const now = performance.now();
+      const dt = (now - lastT) / 1000;
+      lastT = now;
+      if (dt > 0 && dt < 0.5) {
+        fpsSamples.push(1 / dt);
+        if (fpsSamples.length > 30) fpsSamples.shift();
+      }
+      requestAnimationFrame(fpsTick);
+    }
+    setInterval(() => {
+      if (fpsSamples.length > 5) {
+        const avg = fpsSamples.reduce((a, b) => a + b, 0) / fpsSamples.length;
+        document.getElementById('fpsCount').textContent = Math.round(avg);
+      }
+    }, 400);
+    requestAnimationFrame(fpsTick);
+
+    // Pause toggle
+    document.getElementById('pause').addEventListener('change', (e) => {
+      paused = e.target.checked;
+      if (paused) {
+        gsap.globalTimeline.pause();
+        video.pause();
+      } else {
+        gsap.globalTimeline.play();
+        video.play().catch(() => {});
+      }
+    });
+
+    // Reduced motion toggle
+    document.getElementById('reduced').addEventListener('change', (e) => {
+      boot(prefersReduced || e.target.checked);
+    });
+
+    // Darken opacity slider — rescale gradient stops proportionally
+    const opacitySlider = document.getElementById('opacity');
+    const opacityVal    = document.getElementById('opacityVal');
+    opacitySlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      bgDarken.style.background =
+        `linear-gradient(180deg,
+            rgba(9, 9, 11, ${(v * 0.286).toFixed(3)}) 0%,
+            rgba(9, 9, 11, ${(v * 0.500).toFixed(3)}) 35%,
+            rgba(9, 9, 11, ${(v * 0.786).toFixed(3)}) 75%,
+            rgba(9, 9, 11, ${v.toFixed(3)}) 100%)`;
+      opacityVal.textContent = v.toFixed(2);
+    });
+
+    // Prevent form actually submitting (prototype only)
+    const form = document.getElementById('loginForm');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+      });
+    }
+
+    // Expose for console debugging
+    window.__mdlLoginScene = { particles, boot, video };
+  })();
+  </script>
+</body>
+</html>

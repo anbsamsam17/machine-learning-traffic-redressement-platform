@@ -75,3 +75,56 @@ logs/
 # Temp
 tmp/
 *.tmp
+
+# ─────────────────────────────────────────────────────────────
+# Portfolio hygiene — test artefacts, captures & local scratch.
+# The code is versioned; derived data, screenshots and media are not.
+# ─────────────────────────────────────────────────────────────
+
+# Playwright / MCP capture artefacts
+.playwright-mcp/
+
+# Visual-QA screenshots & scratch dumps at the repo root
+/*.png
+/*.jpg
+/*.jpeg
+/*.yml
+/*.txt
+/*.json
+!/package.json
+!/package-lock.json
+/snapshot*.md
+/snap*.md
+
+# Local QA working directories
+Audit_Reports/
+.review_scripts/
+
+# Runtime workspace (derived data)
+tmp_workdir/
+
+# Heavy media projects (demo video hosted externally — see README)
+video-portfolio/
+presentation/
+
+# Prototype media — keep the .html, drop the heavy captures/clips
+prototypes/*.png
+prototypes/*.jpg
+prototypes/*.jpeg
+prototypes/video/
+
+# Generated script outputs & fixtures (methodology code is versioned, outputs are not)
+scripts/**/outputs/
+scripts/map_2025_light/carte_2025.html
+scripts/**/_test_sensors/
+scripts/**/*.gz
+scripts/**/*.csv
+
+# Claude Code — keep shared config (agents/commands/rules/hooks/settings.json),
+# exclude local & machine-specific state
+.claude/settings.local.json
+.claude/memory/
+.claude/worktrees/
+
+# Misc
+bun.lock

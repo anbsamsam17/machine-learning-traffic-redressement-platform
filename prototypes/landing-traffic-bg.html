@@ -1,0 +1,896 @@
+<!doctype html>
+<!--
+  Prototype : fond animé "Traffic City" pour la landing (SVG + GSAP, sans vidéo).
+  Démontre une scène générative — véhicules circulant sur une grille de routes,
+  intersections intelligentes et paquets de données V2V/V2I — avec gestion du
+  prefers-reduced-motion et un panneau de debug. Standalone, aucune dépendance
+  hors GSAP (CDN). Destiné à valider le rendu avant intégration Next.js.
+-->
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MDL Traffic City BG — Prototype v1</title>
+
+  <style>
+    /* ------------------------------------------------------------------
+       Palette & base
+       ------------------------------------------------------------------ */
+    :root {
+      --bg:        #09090b;
+      --indigo:    #6366f1;
+      --cyan:      #22d3ee;
+      --vl-fill:   rgba(161,161,170,0.55);
+      --vl-stroke: rgba(250,250,250,0.25);
+      --pl-fill:   rgba(139,92,246,0.45);
+      --pl-stroke: rgba(250,250,250,0.30);
+      --road:      rgba(99,102,241,0.04);
+      --road-x:    rgba(99,102,241,0.08);
+      --grid-line: rgba(99,102,241,0.05);
+    }
+
+    * { box-sizing: border-box; }
+    /* Body kept transparent so the .scene layer beneath shows through.
+       Actual page bg is provided by the html element. */
+    html { background: var(--bg); }
+    body { margin: 0; padding: 0; height: 100%; background: transparent; color: #fafafa;
+           font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+
+    /* ------------------------------------------------------------------
+       Scene — fixed background layer (mimics future Next.js layout).
+       z-index: 0 here (instead of -10) so it stays visible inside the
+       standalone prototype. In Next.js integration, switch back to -z-10
+       and let the page content sit above it.
+       ------------------------------------------------------------------ */
+    .scene-traffic-city {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.42;
+      overflow: hidden;
+    }
+    .hero { z-index: 2; }
+    .debug { z-index: 100; }
+
+    /* ---------- Aurora blobs (static ambient color) ---------- */
+    .layer-aurora { position: absolute; inset: 0; }
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      will-change: transform, opacity;
+    }
+    .blob-indigo {
+      width: 1200px; height: 800px;
+      top: -200px; left: -300px;
+      background: radial-gradient(circle at center, var(--indigo) 0%, transparent 70%);
+      opacity: 0.06;
+    }
+    .blob-cyan {
+      width: 900px; height: 600px;
+      bottom: -200px; right: -250px;
+      background: radial-gradient(circle at center, var(--cyan) 0%, transparent 70%);
+      opacity: 0.05;
+    }
+
+    /* ---------- SVG scene ---------- */
+    .layer-scene {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .layer-grid { opacity: 0.06; }
+
+    .road { fill: var(--road); }
+    .intersection { fill: var(--road-x); }
+
+    .vehicle-body  { will-change: transform, opacity; }
+    .vehicle-antenna { fill: var(--cyan); will-change: transform, opacity; }
+    .packet { will-change: transform, opacity; }
+
+    .node-halo { will-change: transform, opacity; }
+
+    /* ---------- Vignette overlay ---------- */
+    .layer-vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center,
+                  transparent 0%,
+                  rgba(9,9,11,0) 50%,
+                  rgba(9,9,11,0.55) 100%);
+      pointer-events: none;
+    }
+
+    /* ------------------------------------------------------------------
+       Placeholder hero (will be removed when integrated)
+       ------------------------------------------------------------------ */
+    .hero {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      gap: 14px;
+      padding: 0 24px;
+      text-align: center;
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(2rem, 5.5vw, 4.25rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: #fafafa;
+      text-shadow: 0 0 38px rgba(99, 102, 241, 0.35),
+                   0 0 16px rgba(34, 211, 238, 0.20);
+      background: linear-gradient(90deg, #fafafa 0%, #e0e7ff 50%, #fafafa 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero p {
+      margin: 0;
+      color: rgba(228, 228, 231, 0.72);
+      font-size: clamp(0.95rem, 1.5vw, 1.125rem);
+      max-width: 560px;
+      line-height: 1.5;
+    }
+    .hero .eyebrow {
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      opacity: 0.8;
+      font-weight: 500;
+    }
+
+    /* ------------------------------------------------------------------
+       Debug panel (validation only)
+       ------------------------------------------------------------------ */
+    .debug {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      z-index: 100;
+      background: rgba(24, 24, 27, 0.85);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+      color: #e4e4e7;
+      backdrop-filter: blur(8px);
+      min-width: 240px;
+      pointer-events: auto;
+    }
+    .debug h3 {
+      margin: 0 0 8px 0;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      font-weight: 600;
+    }
+    .debug .row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; gap: 10px; }
+    .debug .row label { color: #a1a1aa; font-size: 11px; }
+    .debug .row .val { color: #fafafa; font-weight: 500; }
+    .debug input[type="range"] { width: 100px; accent-color: var(--cyan); }
+    .debug input[type="checkbox"] { accent-color: var(--cyan); }
+    .debug .sep { height: 1px; background: rgba(99,102,241,0.18); margin: 6px 0; }
+    .debug .metric { color: #22d3ee; }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+</head>
+<body>
+
+  <!-- ============================================================
+       Background scene
+       ============================================================ -->
+  <div class="scene-traffic-city" id="scene">
+    <div class="layer-aurora">
+      <div class="blob blob-indigo"></div>
+      <div class="blob blob-cyan"></div>
+    </div>
+
+    <svg class="layer-scene" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" id="svgScene">
+      <defs>
+        <!-- 64px grid pattern -->
+        <pattern id="grid-fine" x="0" y="0" width="64" height="64" patternUnits="userSpaceOnUse">
+          <path d="M 64 0 L 0 0 0 64" fill="none" stroke="rgba(99,102,241,0.05)" stroke-width="0.5"/>
+        </pattern>
+        <!-- Halo for smart intersection nodes -->
+        <radialGradient id="halo-cyan" cx="50%" cy="50%" r="50%">
+          <stop offset="0%"   stop-color="#22d3ee" stop-opacity="0.55"/>
+          <stop offset="60%"  stop-color="#22d3ee" stop-opacity="0.18"/>
+          <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+        </radialGradient>
+        <!-- Packet halo (cyan) -->
+        <radialGradient id="packet-glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%"   stop-color="#22d3ee" stop-opacity="0.95"/>
+          <stop offset="40%"  stop-color="#22d3ee" stop-opacity="0.45"/>
+          <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+        </radialGradient>
+        <!-- Packet halo (indigo) -->
+        <radialGradient id="packet-indigo" cx="50%" cy="50%" r="50%">
+          <stop offset="0%"   stop-color="#a5b4fc" stop-opacity="0.95"/>
+          <stop offset="40%"  stop-color="#6366f1" stop-opacity="0.50"/>
+          <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <!-- Background grid -->
+      <rect class="layer-grid" fill="url(#grid-fine)" width="1440" height="900"/>
+
+      <!-- Roads -->
+      <g class="layer-roads" id="layerRoads">
+        <!-- H roads at y=35% (315) and y=70% (630) -->
+        <rect class="road road-h" x="0"  y="301" width="1440" height="28"/>
+        <rect class="road road-h" x="0"  y="616" width="1440" height="28"/>
+        <!-- V roads at x=22% (316.8), x=50% (720), x=78% (1123.2) -->
+        <rect class="road road-v" x="303" y="0" width="28" height="900"/>
+        <rect class="road road-v" x="706" y="0" width="28" height="900"/>
+        <rect class="road road-v" x="1109" y="0" width="28" height="900"/>
+
+        <!-- 6 intersections -->
+        <circle class="intersection" cx="317"  cy="315" r="8"/>
+        <circle class="intersection" cx="720"  cy="315" r="8"/>
+        <circle class="intersection" cx="1123" cy="315" r="8"/>
+        <circle class="intersection" cx="317"  cy="630" r="8"/>
+        <circle class="intersection" cx="720"  cy="630" r="8"/>
+        <circle class="intersection" cx="1123" cy="630" r="8"/>
+      </g>
+
+      <!-- Smart intersection halo nodes -->
+      <g class="layer-nodes" id="layerNodes">
+        <!-- Node 1 : (720, 630) -->
+        <g class="node" data-id="n1" transform="translate(720 630)">
+          <circle class="node-halo" r="90" fill="url(#halo-cyan)"/>
+          <circle class="node-core" r="4"  fill="#22d3ee" opacity="0.85"/>
+        </g>
+        <!-- Node 2 : (1123, 315) -->
+        <g class="node" data-id="n2" transform="translate(1123 315)">
+          <circle class="node-halo" r="90" fill="url(#halo-cyan)"/>
+          <circle class="node-core" r="4"  fill="#22d3ee" opacity="0.85"/>
+        </g>
+      </g>
+
+      <!-- Vehicles (12 VL + 4 PL) — created dynamically -->
+      <g class="layer-vehicles" id="layerVehicles"></g>
+
+      <!-- Data packets (10 cyan + 2 indigo) — created dynamically -->
+      <g class="layer-data" id="layerData"></g>
+    </svg>
+
+    <div class="layer-vignette"></div>
+  </div>
+
+  <!-- ============================================================
+       Hero placeholder (for visual validation only)
+       ============================================================ -->
+  <div class="hero">
+    <span class="eyebrow">MDL Redressement Tool</span>
+    <h1>Outils Data Engineering — MDL Redressement</h1>
+    <p>Estimation des trafics véhicules légers et poids lourds par redressement statistique des comptages routiers.</p>
+  </div>
+
+  <!-- ============================================================
+       Debug panel
+       ============================================================ -->
+  <div class="debug">
+    <h3>Prototype debug</h3>
+    <div class="row">
+      <label for="pause">Pause animations</label>
+      <input type="checkbox" id="pause"/>
+    </div>
+    <div class="row">
+      <label for="reduced">Reduced motion sim.</label>
+      <input type="checkbox" id="reduced"/>
+    </div>
+    <div class="row">
+      <label for="opacity">Opacité wrapper</label>
+      <input type="range" id="opacity" min="0" max="1" step="0.01" value="0.42"/>
+      <span class="val" id="opacityVal">0.42</span>
+    </div>
+    <div class="sep"></div>
+    <div class="row"><label>Packets en vol</label><span class="metric" id="packetsCount">0</span></div>
+    <div class="row"><label>FPS</label><span class="metric" id="fpsCount">--</span></div>
+    <div class="row"><label>Véhicules actifs</label><span class="metric" id="vehiclesCount">16</span></div>
+  </div>
+
+  <script>
+  /* ====================================================================
+     MDL Traffic City Background — vanilla GSAP prototype
+     ==================================================================== */
+  (function () {
+
+    // ----------------------------------------------------------------
+    // Layout constants (viewBox 1440 x 900)
+    // ----------------------------------------------------------------
+    const VB_W = 1440, VB_H = 900;
+    const ROAD_W = 28;
+    const H_YS  = [315, 630];                  // horizontal roads centerlines
+    const V_XS  = [317, 720, 1123];            // vertical roads centerlines
+
+    // 6 intersections as grid points
+    const INTERSECTIONS = [];
+    H_YS.forEach(y => V_XS.forEach(x => INTERSECTIONS.push({ x, y })));
+
+    // Smart nodes (subset of intersections)
+    const SMART_NODES = [
+      { x: 720, y: 630 },
+      { x: 1123, y: 315 }
+    ];
+
+    // ----------------------------------------------------------------
+    // Helpers
+    // ----------------------------------------------------------------
+    const rand   = (a, b) => a + Math.random() * (b - a);
+    const choice = arr => arr[Math.floor(Math.random() * arr.length)];
+    const svgNS  = "http://www.w3.org/2000/svg";
+
+    function bezierPoint(t, p0, ctrl, p1) {
+      const u = 1 - t;
+      return {
+        x: u * u * p0.x + 2 * u * t * ctrl.x + t * t * p1.x,
+        y: u * u * p0.y + 2 * u * t * ctrl.y + t * t * p1.y
+      };
+    }
+
+    function dist2(ax, ay, bx, by) {
+      const dx = ax - bx, dy = ay - by;
+      return dx * dx + dy * dy;
+    }
+
+    // ----------------------------------------------------------------
+    // Vehicle data model
+    //   axis: 'h' or 'v'
+    //   line: index in H_YS or V_XS (the road it follows)
+    //   pos:  position along the road (0..1440 if h, 0..900 if v)
+    //   dir:  +1 or -1 (forward / backward)
+    //   type: 'vl' or 'pl'
+    //   speed: px / s (current). cruise = base speed.
+    //   cruise: base px/s
+    // ----------------------------------------------------------------
+    const VEHICLES = [];
+    const LAYER_VEHICLES = document.getElementById("layerVehicles");
+
+    function createVehicleEl(type) {
+      const g = document.createElementNS(svgNS, "g");
+      g.classList.add("vehicle", type === "pl" ? "vehicle-pl" : "vehicle-vl");
+      g.setAttribute("data-type", type);
+
+      const body = document.createElementNS(svgNS, "rect");
+      body.classList.add("vehicle-body");
+      if (type === "pl") {
+        body.setAttribute("width", 10);  body.setAttribute("height", 24);
+        body.setAttribute("x", -5);      body.setAttribute("y", -12);
+        body.setAttribute("rx", 1);
+        body.setAttribute("fill", "rgba(139,92,246,0.45)");
+        body.setAttribute("stroke", "rgba(250,250,250,0.30)");
+      } else {
+        body.setAttribute("width", 8);   body.setAttribute("height", 14);
+        body.setAttribute("x", -4);      body.setAttribute("y", -7);
+        body.setAttribute("rx", 2);
+        body.setAttribute("fill", "rgba(161,161,170,0.55)");
+        body.setAttribute("stroke", "rgba(250,250,250,0.25)");
+      }
+      body.setAttribute("stroke-width", 0.5);
+      g.appendChild(body);
+
+      const ant = document.createElementNS(svgNS, "circle");
+      ant.classList.add("vehicle-antenna");
+      ant.setAttribute("cx", 0);
+      ant.setAttribute("cy", type === "pl" ? -12 : -7);  // capot
+      ant.setAttribute("r", type === "pl" ? 1.6 : 1.2);
+      ant.setAttribute("fill", "#22d3ee");
+      ant.setAttribute("opacity", type === "pl" ? 0.7 : 0.6);
+      g.appendChild(ant);
+
+      LAYER_VEHICLES.appendChild(g);
+      return { g, body, ant };
+    }
+
+    function spawnVehicle(type) {
+      // Pick a random road
+      const axis = Math.random() < 0.5 ? "h" : "v";
+      const line = Math.floor(Math.random() * (axis === "h" ? H_YS.length : V_XS.length));
+      const pos  = rand(0, axis === "h" ? VB_W : VB_H);
+      const dir  = Math.random() < 0.5 ? 1 : -1;
+
+      const cruiseBase = type === "vl" ? 45 : 28;
+      const cruise = cruiseBase * (1 + (Math.random() * 0.30 - 0.15)); // +-15%
+
+      const el = createVehicleEl(type);
+      const v = {
+        id: VEHICLES.length,
+        type, axis, line, pos, dir,
+        cruise, speed: cruise,
+        targetSpeed: cruise,
+        accelStartT: 0, accelEndT: 0, accelFromS: cruise, accelToS: cruise,
+        rotating: false,
+        lastEmit: performance.now() + rand(800, 5000),  // initial desync
+        decelLockUntil: 0,
+        ...el,
+      };
+      VEHICLES.push(v);
+      placeVehicle(v);
+      return v;
+    }
+
+    function placeVehicle(v) {
+      let x, y, rot;
+      if (v.axis === "h") {
+        x = v.pos;
+        y = H_YS[v.line];
+        rot = v.dir === 1 ? 90 : -90; // body is vertical by default, rotate to face direction
+      } else {
+        x = V_XS[v.line];
+        y = v.pos;
+        rot = v.dir === 1 ? 180 : 0;
+      }
+      v.x = x; v.y = y; v.rot = rot;
+      v.g.setAttribute("transform", `translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(${rot.toFixed(1)})`);
+    }
+
+    // Update vehicle position each frame
+    function tickVehicles(dt /* seconds */, now /* ms */) {
+      for (const v of VEHICLES) {
+
+        // smooth speed easing (manual power2.in / power2.out)
+        if (v.accelEndT > now) {
+          const t = (now - v.accelStartT) / (v.accelEndT - v.accelStartT);
+          // ease in/out — use a 1-(1-t)^2 for "out" feel (good enough vs gsap.ticker on speed)
+          const e = 1 - Math.pow(1 - t, 2);
+          v.speed = v.accelFromS + (v.accelToS - v.accelFromS) * e;
+        } else {
+          v.speed = v.targetSpeed;
+        }
+
+        // Check distance to next intersection along its direction → trigger decel
+        const upcoming = nextIntersection(v);
+        if (upcoming && !v.rotating) {
+          if (upcoming.dist < 40 && v.targetSpeed > v.cruise * 0.71) {
+            startAccel(v, v.cruise * 0.70, 600, now);
+          } else if (upcoming.dist > 70 && v.targetSpeed < v.cruise * 0.95) {
+            startAccel(v, v.cruise, 800, now);
+          }
+          // Decision to turn at the intersection (within 6px window)
+          if (upcoming.dist < 6 && !v.justTurnedAt) {
+            v.justTurnedAt = upcoming;
+            if (Math.random() < 0.30) {
+              turnAt(v, upcoming, now);
+            }
+          } else if (upcoming.dist > 30) {
+            v.justTurnedAt = null;
+          }
+        }
+
+        // Advance position
+        v.pos += v.speed * v.dir * dt;
+
+        // Out of viewport → recycle
+        const out = (v.axis === "h" && (v.pos < -30 || v.pos > VB_W + 30))
+                 || (v.axis === "v" && (v.pos < -30 || v.pos > VB_H + 30));
+        if (out) {
+          recycleVehicle(v, now);
+          continue;
+        }
+
+        placeVehicle(v);
+      }
+    }
+
+    function nextIntersection(v) {
+      let best = null;
+      for (const it of INTERSECTIONS) {
+        let onRoad, ahead, d;
+        if (v.axis === "h" && it.y === H_YS[v.line]) {
+          onRoad = true;
+          ahead  = v.dir === 1 ? (it.x - v.pos) : (v.pos - it.x);
+          d = ahead;
+        } else if (v.axis === "v" && it.x === V_XS[v.line]) {
+          onRoad = true;
+          ahead  = v.dir === 1 ? (it.y - v.pos) : (v.pos - it.y);
+          d = ahead;
+        }
+        if (onRoad && ahead > 0 && (!best || ahead < best.ahead)) {
+          best = { ...it, ahead, dist: ahead };
+        }
+      }
+      return best;
+    }
+
+    function startAccel(v, toSpeed, durMs, now) {
+      v.accelStartT = now;
+      v.accelEndT = now + durMs;
+      v.accelFromS = v.speed;
+      v.accelToS = toSpeed;
+      v.targetSpeed = toSpeed;
+      if (toSpeed < v.cruise) {
+        v.decelLockUntil = now + 600; // block emissions while decelerating + 600ms after
+      }
+    }
+
+    function turnAt(v, it, now) {
+      v.rotating = true;
+      // Switch axis
+      const newAxis = v.axis === "h" ? "v" : "h";
+      let newLine;
+      if (newAxis === "h") {
+        newLine = H_YS.indexOf(it.y);
+        v.pos = it.x;
+      } else {
+        newLine = V_XS.indexOf(it.x);
+        v.pos = it.y;
+      }
+      const newDir = Math.random() < 0.5 ? 1 : -1;
+      v.axis = newAxis; v.line = newLine; v.dir = newDir;
+
+      // Rotate visually 400ms power3.inOut via GSAP
+      const currentRot = v.rot;
+      const targetRot  = v.axis === "h" ? (v.dir === 1 ? 90 : -90) : (v.dir === 1 ? 180 : 0);
+      gsap.to(v, {
+        rot: targetRot,
+        duration: 0.4,
+        ease: "power3.inOut",
+        onUpdate: () => placeVehicle(v),
+        onComplete: () => { v.rotating = false; }
+      });
+      // Restart acceleration after turn
+      startAccel(v, v.cruise, 800, now);
+    }
+
+    function recycleVehicle(v, now) {
+      // delay 1-3s in hidden state, then re-spawn on a random road extremity
+      gsap.set(v.g, { opacity: 0 });
+      gsap.delayedCall(rand(1, 3), () => {
+        v.axis = Math.random() < 0.5 ? "h" : "v";
+        v.line = Math.floor(Math.random() * (v.axis === "h" ? H_YS.length : V_XS.length));
+        v.dir  = Math.random() < 0.5 ? 1 : -1;
+        // Spawn at the extremity opposite to direction
+        v.pos  = v.dir === 1 ? -20 : (v.axis === "h" ? VB_W + 20 : VB_H + 20);
+        v.speed = v.targetSpeed = v.cruise;
+        v.rotating = false;
+        v.justTurnedAt = null;
+        v.decelLockUntil = 0;
+        placeVehicle(v);
+        gsap.to(v.g, { opacity: 1, duration: 0.4 });
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // Packets pool
+    // ----------------------------------------------------------------
+    const PACKETS = [];
+    const LAYER_DATA = document.getElementById("layerData");
+
+    function createPacket(kind /* 'cyan' | 'indigo' */) {
+      const g = document.createElementNS(svgNS, "g");
+      g.classList.add("packet", "packet-" + kind);
+      g.setAttribute("opacity", 0);
+
+      const halo = document.createElementNS(svgNS, "circle");
+      halo.classList.add("packet-halo");
+      halo.setAttribute("r", 8);
+      halo.setAttribute("fill", kind === "cyan" ? "url(#packet-glow)" : "url(#packet-indigo)");
+      g.appendChild(halo);
+
+      const core = document.createElementNS(svgNS, "circle");
+      core.classList.add("packet-core");
+      core.setAttribute("r", 2);
+      core.setAttribute("fill", kind === "cyan" ? "#22d3ee" : "#6366f1");
+      g.appendChild(core);
+
+      LAYER_DATA.appendChild(g);
+      return { g, halo, core, kind, active: false, tween: null };
+    }
+
+    function initPacketPool() {
+      for (let i = 0; i < 10; i++) PACKETS.push(createPacket("cyan"));
+      for (let i = 0; i < 2;  i++) PACKETS.push(createPacket("indigo"));
+    }
+
+    function getFreePacket(kind) {
+      for (const p of PACKETS) if (!p.active && p.kind === kind) return p;
+      // fallback: any free packet
+      for (const p of PACKETS) if (!p.active) return p;
+      return null;
+    }
+
+    // ----------------------------------------------------------------
+    // V2V / V2I packet emission
+    // ----------------------------------------------------------------
+    const V2V_RANGE_SQ = 220 * 220;
+    let neighborsByVehicle = new Map(); // recomputed every 400ms
+
+    function recomputeNeighbors() {
+      neighborsByVehicle.clear();
+      for (let i = 0; i < VEHICLES.length; i++) {
+        const a = VEHICLES[i];
+        const list = [];
+        for (let j = 0; j < VEHICLES.length; j++) {
+          if (i === j) continue;
+          const b = VEHICLES[j];
+          if (dist2(a.x, a.y, b.x, b.y) < V2V_RANGE_SQ) list.push(b);
+        }
+        neighborsByVehicle.set(a.id, list);
+      }
+    }
+
+    function emitFromVehicle(v, now) {
+      if (v.decelLockUntil > now) return;
+      if (v.rotating) return;
+
+      const neighbors = neighborsByVehicle.get(v.id) || [];
+      // 20% to a smart node (V2I) — pick closest
+      let target, isV2I = false, isIndigo = Math.random() < 0.20;
+      if (Math.random() < 0.20) {
+        // V2I
+        let bestNode = null, bestD = Infinity;
+        for (const n of SMART_NODES) {
+          const d = dist2(v.x, v.y, n.x, n.y);
+          if (d < bestD) { bestD = d; bestNode = n; }
+        }
+        if (!bestNode) return;
+        target = { x: bestNode.x, y: bestNode.y, isNode: true };
+        isV2I = true;
+      } else {
+        if (neighbors.length === 0) return;
+        const peer = choice(neighbors);
+        target = { x: peer.x, y: peer.y, vehicle: peer };
+      }
+
+      const packet = getFreePacket(isIndigo ? "indigo" : "cyan");
+      if (!packet) return;
+
+      // Build bezier ctrl point — perpendicular offset
+      const offset = isV2I ? 60 : 40;
+      const mid = { x: (v.x + target.x) / 2, y: (v.y + target.y) / 2 };
+      const dx = target.x - v.x, dy = target.y - v.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      // perp = (-dy, dx)/len
+      const perpSign = Math.random() < 0.5 ? 1 : -1;
+      const ctrl = {
+        x: mid.x + (-dy / len) * offset * perpSign,
+        y: mid.y + ( dx / len) * offset * perpSign
+      };
+
+      const p0 = { x: v.x, y: v.y };
+      const p1 = { x: target.x, y: target.y };
+
+      packet.active = true;
+      gsap.set(packet.g, { opacity: 0 });
+      gsap.set(packet.halo, { attr: { r: 12 } });
+
+      const ease = packet.kind === "indigo" ? "expo.out" : "power2.inOut";
+
+      // departure flash on halo : 12 -> 4 in 200ms
+      gsap.to(packet.halo, {
+        attr: { r: 4 },
+        duration: 0.2,
+        ease: "expo.out"
+      });
+
+      const t = { v: 0 };
+      packet.tween = gsap.to(t, {
+        v: 1,
+        duration: 0.48,
+        ease,
+        onStart: () => gsap.to(packet.g, { opacity: 1, duration: 0.08 }),
+        onUpdate: () => {
+          const p = bezierPoint(t.v, p0, ctrl, p1);
+          packet.g.setAttribute("transform", `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)})`);
+          // grow halo gently during flight
+          packet.halo.setAttribute("r", (4 + t.v * 4).toFixed(2));
+        },
+        onComplete: () => {
+          // arrival : if receiver has antenna, pulse it
+          if (target.vehicle && target.vehicle.ant) {
+            gsap.fromTo(target.vehicle.ant,
+              { opacity: 1, transformOrigin: "center" },
+              { opacity: target.vehicle.type === "pl" ? 0.7 : 0.6, duration: 0.3, ease: "power2.out" }
+            );
+            gsap.fromTo(target.vehicle.ant,
+              { attr: { r: (target.vehicle.type === "pl" ? 1.6 : 1.2) * 1.6 } },
+              { attr: { r: (target.vehicle.type === "pl" ? 1.6 : 1.2) }, duration: 0.3, ease: "power2.out" }
+            );
+          }
+          gsap.to(packet.g, {
+            opacity: 0,
+            duration: 0.18,
+            onComplete: () => { packet.active = false; }
+          });
+        }
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // Scheduler — desynchronized per-vehicle emission timers
+    // ----------------------------------------------------------------
+    function tickEmissions(now) {
+      // throttle: cap at 10 packets simultaneously
+      const activeCount = PACKETS.reduce((s, p) => s + (p.active ? 1 : 0), 0);
+      if (activeCount >= 10) return;
+      for (const v of VEHICLES) {
+        if (now >= v.lastEmit) {
+          emitFromVehicle(v, now);
+          v.lastEmit = now + rand(1800, 4600);
+        }
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // Setup ambient timelines + initial spawn
+    // ----------------------------------------------------------------
+    function setupAmbient() {
+      // Smart node halos respiration
+      const nodes = document.querySelectorAll(".node");
+      nodes.forEach((node, i) => {
+        const halo = node.querySelector(".node-halo");
+        gsap.to(halo, {
+          scale: 1.12,
+          opacity: 0.55,
+          transformOrigin: "center",
+          duration: 4.2,
+          ease: "sine.inOut",
+          repeat: -1,
+          yoyo: true,
+          delay: i * 1.3
+        });
+        gsap.fromTo(halo, { opacity: 0.18 }, {
+          opacity: 0.32,
+          duration: 4.2,
+          ease: "sine.inOut",
+          repeat: -1,
+          yoyo: true,
+          delay: i * 1.3
+        });
+      });
+
+      // Grid glow (subtle)
+      const grid = document.querySelector(".layer-grid");
+      gsap.to(grid, {
+        opacity: 0.10,
+        duration: 8,
+        ease: "sine.inOut",
+        repeat: -1,
+        yoyo: true
+      });
+    }
+
+    function spawnInitialVehicles() {
+      for (let i = 0; i < 12; i++) spawnVehicle("vl");
+      for (let i = 0; i < 4;  i++) spawnVehicle("pl");
+    }
+
+    // ----------------------------------------------------------------
+    // Static snapshot (reduced motion)
+    // ----------------------------------------------------------------
+    function applyStaticSnapshot() {
+      gsap.globalTimeline.clear();
+      gsap.killTweensOf("*");
+      gsap.ticker.remove(mainTick);
+      // ensure halos visible
+      document.querySelectorAll(".node-halo").forEach(h => {
+        h.setAttribute("opacity", 0.25);
+      });
+      // spread vehicles uniformly
+      VEHICLES.forEach((v, idx) => {
+        if (v.axis === "h") v.pos = (idx + 1) / (VEHICLES.length + 1) * VB_W;
+        else                v.pos = (idx + 1) / (VEHICLES.length + 1) * VB_H;
+        placeVehicle(v);
+        v.g.setAttribute("opacity", 1);
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // Main loop
+    // ----------------------------------------------------------------
+    let lastT = performance.now();
+    let lastNeighbors = 0;
+    let paused = false;
+
+    // FPS calculation
+    let fpsSamples = [], lastFpsLog = 0;
+
+    function mainTick(time) {
+      const now = time * 1000; // gsap ticker passes seconds? actually it's ms via callback. We'll use performance.now.
+      const tNow = performance.now();
+      const dt = Math.min(0.05, (tNow - lastT) / 1000);
+      lastT = tNow;
+
+      if (paused) return;
+
+      tickVehicles(dt, tNow);
+
+      if (tNow - lastNeighbors > 400) {
+        recomputeNeighbors();
+        lastNeighbors = tNow;
+      }
+      tickEmissions(tNow);
+
+      // FPS sampling
+      fpsSamples.push(1 / dt);
+      if (fpsSamples.length > 30) fpsSamples.shift();
+      if (tNow - lastFpsLog > 250) {
+        const avg = fpsSamples.reduce((a, b) => a + b, 0) / fpsSamples.length;
+        document.getElementById("fpsCount").textContent = Math.round(avg);
+        document.getElementById("packetsCount").textContent =
+          PACKETS.filter(p => p.active).length;
+        lastFpsLog = tNow;
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // Init + Reduced motion via matchMedia
+    // ----------------------------------------------------------------
+    let mm = gsap.matchMedia();
+
+    function bootScene(reducedMotion) {
+      // Clean previous state
+      LAYER_VEHICLES.innerHTML = "";
+      LAYER_DATA.innerHTML = "";
+      VEHICLES.length = 0;
+      PACKETS.length = 0;
+      gsap.ticker.remove(mainTick);
+      gsap.globalTimeline.getChildren().forEach(t => t.kill());
+
+      initPacketPool();
+      spawnInitialVehicles();
+      setupAmbient();
+
+      if (reducedMotion) {
+        applyStaticSnapshot();
+      } else {
+        lastT = performance.now();
+        gsap.ticker.add(mainTick);
+      }
+    }
+
+    // Detect prefers-reduced-motion once at boot
+    const prefersReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    bootScene(!!prefersReduced);
+
+    // matchMedia listens for dynamic changes (e.g. OS-level toggle)
+    mm.add({
+      reduceMotion: "(prefers-reduced-motion: reduce)"
+    }, (ctx) => {
+      if (ctx.conditions.reduceMotion) bootScene(true);
+      return () => { /* will be reverted to normal motion below */ };
+    });
+
+    // ----------------------------------------------------------------
+    // Debug panel interactions
+    // ----------------------------------------------------------------
+    const scene = document.getElementById("scene");
+
+    document.getElementById("pause").addEventListener("change", e => {
+      paused = e.target.checked;
+      if (paused) gsap.globalTimeline.pause();
+      else { gsap.globalTimeline.play(); lastT = performance.now(); }
+    });
+
+    document.getElementById("reduced").addEventListener("change", e => {
+      bootScene(e.target.checked);
+    });
+
+    const opacitySlider = document.getElementById("opacity");
+    const opacityVal = document.getElementById("opacityVal");
+    opacitySlider.addEventListener("input", e => {
+      const v = parseFloat(e.target.value);
+      scene.style.opacity = String(v);
+      opacityVal.textContent = v.toFixed(2);
+    });
+
+    // expose for quick debugging in console
+    window.__mdlScene = { VEHICLES, PACKETS, mm, bootScene };
+  })();
+  </script>
+</body>
+</html>

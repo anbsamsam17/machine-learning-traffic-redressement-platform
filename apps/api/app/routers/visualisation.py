@@ -113,6 +113,70 @@ _LON_ALIASES: tuple[str, ...] = (
     "lon", "long", "longitude", "lng", "x", "xcoord", "x_coord", "coord_x", "wgs84_lon",
 )
 
+#: Canonical frontend keys — the map circle layers (apps/web/lib/map/setup.ts,
+#: installSensorLayers) filter on EXACTLY these property names:
+#:   TV : ["to-number", ["get", "TMJA Tous Vehicules (veh/jour)"], 0] > 0
+#:   PL : ["to-number", ["get", "TMJA Poids Lourds (veh/jour)"], 0] > 0
+#: We must therefore emit these keys in each feature's properties, otherwise
+#: the filter evaluates to 0 everywhere and no circle is drawn.
+CANONICAL_TV_KEY: str = "TMJA Tous Vehicules (veh/jour)"
+CANONICAL_PL_KEY: str = "TMJA Poids Lourds (veh/jour)"
+
+#: Aliases accepted for the TV (tous vehicules) debit column (lowercased
+#: compare). The canonical name comes first, then the build_counting_loops
+#: output name, then a few reasonable shorthand variants. NOTE: none of these
+#: may contain "poids lourds" — that would collide with the PL detection.
+_TV_DEBIT_ALIASES: tuple[str, ...] = (
+    "tmja tous vehicules (veh/jour)",          # canonique
+    "moyenne jours ouvrable (veh/jour)",        # counting-loops.geojson
+    "tmjobctv",
+    "tmjatv",
+    "tmja tv",
+    "tmja_tv",
+)
+
+#: Aliases accepted for the PL (poids lourds) debit column (lowercased compare).
+_PL_DEBIT_ALIASES: tuple[str, ...] = (
+    "tmja poids lourds (veh/jour)",                       # canonique
+    "moyenne poids lourds jours ouvrable (veh/jour)",      # counting-loops-pl.geojson
+    "tmjobcpl",
+    "tmjapl",
+    "tmja pl",
+    "tmja_pl",
+)
+
+
+def _detect_debit_columns(columns: Any) -> tuple[str | None, str | None]:
+    """Detect the source TV / PL debit columns among *columns* via aliases.
+
+    Returns ``(tv_col, pl_col)`` as the real (original-cased) column names, or
+    ``None`` when no alias matched. Matching is case-insensitive. The PL guard
+    is applied first so a column containing "poids lourds" can never be picked
+    as the TV column even if it also matched a looser TV alias.
+    """
+    lower_to_real: dict[str, str] = {}
+    for c in columns:
+        key = str(c).lower()
+        # First occurrence wins (stable wrt column order).
+        lower_to_real.setdefault(key, c)
+
+    pl_col = next(
+        (lower_to_real[a] for a in _PL_DEBIT_ALIASES if a in lower_to_real),
+        None,
+    )
+    tv_col = next(
+        (
+            lower_to_real[a]
+            for a in _TV_DEBIT_ALIASES
+            if a in lower_to_real and "poids lourds" not in a
+        ),
+        None,
+    )
+    # Defensive: never let the same physical column be claimed by both.
+    if tv_col is not None and tv_col == pl_col:
+        tv_col = None
+    return tv_col, pl_col
+
 
 # ---------------------------------------------------------------------------
 # Pydantic response models
@@ -452,23 +516,46 @@ def _normalise_sensor_props(raw_props: dict) -> dict:
     return props
 
 
-def _count_tv_pl_from_features(features: list[dict]) -> tuple[int, int]:
-    """Count features whose properties contain TMJA TV > 0 / TMJA PL > 0.
+def _inject_canonical_debit_keys(props: dict) -> dict:
+    """Add the canonical TV / PL debit keys to *props* (in place) if absent.
 
-    Accepts the same case-insensitive lookup as the dataframe path so the
-    operator files with shifted casing keep working.
+    The frontend circle layers filter on the EXACT property names
+    ``"TMJA Tous Vehicules (veh/jour)"`` / ``"TMJA Poids Lourds (veh/jour)"``.
+    counting-loops files name the debit column differently, so we detect the
+    source column via aliases and copy its coerced numeric value under the
+    canonical key — only when the canonical key is not already present (to
+    avoid clobbering files that already follow the canonical schema). The
+    original column is kept untouched (used by the popup).
+    """
+    tv_col, pl_col = _detect_debit_columns(props.keys())
+    if tv_col is not None and CANONICAL_TV_KEY not in props:
+        v_tv = _coerce_numeric(props.get(tv_col))
+        if v_tv is not None:
+            props[CANONICAL_TV_KEY] = v_tv
+    if pl_col is not None and CANONICAL_PL_KEY not in props:
+        v_pl = _coerce_numeric(props.get(pl_col))
+        if v_pl is not None:
+            props[CANONICAL_PL_KEY] = v_pl
+    return props
+
+
+def _count_tv_pl_from_features(features: list[dict]) -> tuple[int, int]:
+    """Count features whose TV / PL debit is > 0.
+
+    Detection goes through ``_detect_debit_columns`` (alias-based,
+    case-insensitive) so counting-loops files — which name the debit column
+    ``Moyenne jours ouvrable (veh/jour)`` (TV) or
+    ``Moyenne Poids Lourds jours ouvrable (veh/jour)`` (PL) — are counted, not
+    just the canonical ``TMJA …`` names. Per-feature detection is used because
+    geojson features may carry heterogeneous property sets.
     """
     n_tv = 0
     n_pl = 0
-    tv_key_lower = "tmja tous vehicules (veh/jour)"
-    pl_key_lower = "tmja poids lourds (veh/jour)"
     for feat in features:
         props = feat.get("properties") or {}
         if not isinstance(props, dict):
             continue
-        lower_to_real = {str(k).lower(): k for k in props.keys()}
-        tv_col = lower_to_real.get(tv_key_lower)
-        pl_col = lower_to_real.get(pl_key_lower)
+        tv_col, pl_col = _detect_debit_columns(props.keys())
         if tv_col is not None:
             v_tv = _coerce_numeric(props.get(tv_col))
             if v_tv is not None and v_tv > 0:
@@ -550,6 +637,8 @@ def _build_point_fc_from_geojson(parsed: dict) -> tuple[dict, int, int, int, lis
         if not isinstance(raw_props, dict):
             raw_props = {}
         props = _normalise_sensor_props(raw_props)
+        # Emit canonical TV/PL keys so the frontend circle filter matches.
+        props = _inject_canonical_debit_keys(props)
         features.append({
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [lon, lat]},
@@ -668,14 +757,9 @@ def _build_sensors_geojson(
     n_tv = 0
     n_pl = 0
 
-    # Pre-locate TMJA columns case-insensitively (operator files are messy).
-    lower_to_real = {c.lower(): c for c in df.columns}
-    tmja_tv_col = lower_to_real.get("tmja tous vehicules (veh/jour)") or (
-        "TMJA Tous Vehicules (veh/jour)" if "TMJA Tous Vehicules (veh/jour)" in df.columns else None
-    )
-    tmja_pl_col = lower_to_real.get("tmja poids lourds (veh/jour)") or (
-        "TMJA Poids Lourds (veh/jour)" if "TMJA Poids Lourds (veh/jour)" in df.columns else None
-    )
+    # Pre-locate the TV / PL debit columns via aliases (operator + counting-
+    # loops files name them differently — see _TV_DEBIT_ALIASES / _PL_…).
+    tmja_tv_col, tmja_pl_col = _detect_debit_columns(df.columns)
 
     for _, row in df.iterrows():
         lon = _coerce_numeric(row.get(lon_col))
@@ -709,10 +793,16 @@ def _build_sensors_geojson(
 
         if tmja_tv_col is not None:
             v_tv = _coerce_numeric(row.get(tmja_tv_col))
+            # Emit the canonical TV key so the frontend circle filter matches.
+            if v_tv is not None and CANONICAL_TV_KEY not in props:
+                props[CANONICAL_TV_KEY] = v_tv
             if v_tv is not None and v_tv > 0:
                 n_tv += 1
         if tmja_pl_col is not None:
             v_pl = _coerce_numeric(row.get(tmja_pl_col))
+            # Emit the canonical PL key so the frontend circle filter matches.
+            if v_pl is not None and CANONICAL_PL_KEY not in props:
+                props[CANONICAL_PL_KEY] = v_pl
             if v_pl is not None and v_pl > 0:
                 n_pl += 1
 
@@ -907,10 +997,21 @@ async def upload_sensors(
                 ),
             )
 
-        # Warn (don't fail) on missing optional schema columns — operator files vary.
+        # Warn (don't fail) on missing optional schema columns — operator files
+        # vary. The two canonical TMJA columns are considered present whenever
+        # an alias is detected (counting-loops files name them differently), so
+        # a valid counting-loops upload is NOT flagged as missing its debit col.
         present_lower = {c.lower() for c in df.columns}
+        tv_col_alias, pl_col_alias = _detect_debit_columns(df.columns)
+        alias_satisfied: set[str] = set()
+        if tv_col_alias is not None:
+            alias_satisfied.add(CANONICAL_TV_KEY.lower())
+        if pl_col_alias is not None:
+            alias_satisfied.add(CANONICAL_PL_KEY.lower())
         missing_optional = [
-            c for c in SENSOR_REQUIRED_COLUMNS if c.lower() not in present_lower
+            c
+            for c in SENSOR_REQUIRED_COLUMNS
+            if c.lower() not in present_lower and c.lower() not in alias_satisfied
         ]
         if missing_optional:
             logger.warning(

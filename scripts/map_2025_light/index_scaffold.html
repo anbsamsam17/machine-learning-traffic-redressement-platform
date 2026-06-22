@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Flux 2025 — Lyon</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<!-- MapLibre GL JS via CDN (single dependency, ~250 KB gzipped) -->
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  /* ---- DARK THEME ---- */
+  html,body{margin:0;height:100%;background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif}
+  #map{position:absolute;inset:0}
+
+  /* ---- LEGEND (top-left) ---- */
+  #legend{
+    position:absolute;top:16px;left:16px;z-index:2;
+    background:rgba(13,17,23,.88);border:1px solid #30363d;border-radius:8px;
+    padding:12px 14px;min-width:180px;backdrop-filter:blur(6px);
+    font-size:12px;line-height:1.4;
+  }
+  #legend h3{margin:0 0 8px;font-size:13px;font-weight:600;color:#f0f6fc}
+  #legend .row{display:flex;align-items:center;gap:8px;margin:3px 0}
+  #legend .swatch{width:18px;height:4px;border-radius:2px}
+
+  /* ---- MODE TOGGLE ---- */
+  #mode-toggle{
+    margin-top:10px;display:flex;background:#161b22;border-radius:6px;
+    padding:2px;border:1px solid #30363d;
+  }
+  #mode-toggle button{
+    flex:1;background:transparent;border:0;color:#7d8590;padding:6px 10px;
+    font-size:12px;border-radius:4px;cursor:pointer;font-weight:500;
+  }
+  #mode-toggle button.active{background:#1f6feb;color:#fff}
+
+  /* ---- POPUP (overrides maplibre default for dark) ---- */
+  .maplibregl-popup-content{
+    background:#161b22;color:#e6edf3;border:1px solid #30363d;
+    border-radius:6px;font-size:12px;padding:10px 12px;
+  }
+  .maplibregl-popup-tip{border-top-color:#161b22!important;border-bottom-color:#161b22!important}
+  .popup-title{font-weight:600;margin-bottom:6px;color:#58a6ff}
+  .popup-row{display:flex;justify-content:space-between;gap:18px}
+  .popup-row span:last-child{color:#f0f6fc;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<aside id="legend">
+  <h3 id="legend-title">Trafic TVr (véh/j)</h3>
+  <div id="legend-rows"><!-- filled at runtime --></div>
+  <div id="mode-toggle">
+    <button data-mode="TVr" class="active">TV</button>
+    <button data-mode="DPL">PL</button>
+  </div>
+</aside>
+
+<script>
+/* ============================================================
+   CONFIG — fill from design spec
+   ============================================================ */
+const DATA_URL = './2025_light.min.geojson';   // produced by prepare_data.py
+
+// 7-class breaks + colors per mode. PALETTE — to be supplied by design.
+const STYLES = {
+  TVr: {
+    label: 'Trafic TVr (véh/j)',
+    breaks: [500, 2000, 5000, 10000, 20000, 40000],          // 7 classes (<b0, b0..b1, …, >b5)
+    colors: ['#1a9850','#66bd63','#a6d96a','#fee08b','#fdae61','#f46d43','#d73027'],
+  },
+  DPL: {
+    label: 'Trafic PL — DPL (véh/j)',
+    breaks: [25, 75, 150, 300, 600, 1000],
+    colors: ['#2c7fb8','#7fcdbb','#c7e9b4','#ffffcc','#fdae61','#e34a33','#b30000'],
+  },
+};
+let currentMode = 'TVr';
+
+/* ============================================================
+   MAP — dark style is inline (no external tile server required)
+   ============================================================ */
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {},
+    layers: [{ id:'bg', type:'background', paint:{ 'background-color':'#0d1117' } }],
+  },
+  center: [4.85, 45.75],
+  zoom: 10,
+  maxZoom: 17,
+});
+map.addControl(new maplibregl.NavigationControl({ visualizePitch:false }), 'top-right');
+
+/* ============================================================
+   STYLE BUILDER — data-driven step expression
+   ============================================================ */
+function paintExpr(mode){
+  const s = STYLES[mode];
+  // ['step', input, c0, b0, c1, b1, c2, …, c6]
+  const expr = ['step', ['coalesce', ['get', mode], 0], s.colors[0]];
+  s.breaks.forEach((b, i) => { expr.push(b, s.colors[i+1]); });
+  return expr;
+}
+
+function renderLegend(mode){
+  const s = STYLES[mode];
+  document.getElementById('legend-title').textContent = s.label;
+  const fmt = n => n>=1000 ? (n/1000)+'k' : n;
+  const rows = s.colors.map((c,i) => {
+    const lo = i === 0 ? 0 : s.breaks[i-1];
+    const hi = i === s.colors.length-1 ? '∞' : s.breaks[i];
+    return `<div class="row"><span class="swatch" style="background:${c}"></span>
+              <span>${fmt(lo)} – ${hi === '∞' ? '∞' : fmt(hi)}</span></div>`;
+  }).join('');
+  document.getElementById('legend-rows').innerHTML = rows;
+}
+
+/* ============================================================
+   LOAD DATA + LAYER
+   ============================================================ */
+map.on('load', async () => {
+  // fetch supports gzip transparently when served as .geojson.gz with proper Content-Encoding
+  const res  = await fetch(DATA_URL);
+  const data = await res.json();
+
+  map.addSource('flow', { type:'geojson', data, tolerance:0.5, buffer:32, lineMetrics:false });
+  map.addLayer({
+    id:'flow-lines', type:'line', source:'flow',
+    layout:{ 'line-cap':'round', 'line-join':'round' },
+    paint:{
+      'line-color': paintExpr(currentMode),
+      'line-width': ['interpolate',['linear'],['zoom'], 9,0.6, 13,1.6, 17,3.2],
+      'line-opacity': 0.95,
+    },
+  });
+
+  renderLegend(currentMode);
+});
+
+/* ============================================================
+   CLICK POPUP — KPIs (design spec drives the exact rows)
+   ============================================================ */
+map.on('click', 'flow-lines', e => {
+  const p = e.features[0].properties;
+  const row = (k, v, unit='') =>
+    `<div class="popup-row"><span>${k}</span><span>${v ?? '–'}${unit}</span></div>`;
+  const html = `
+    <div class="popup-title">${p.agregId ?? 'Segment'}</div>
+    ${row('TVr',    p.TVr,    ' véh/j')}
+    ${row('TVr min',p.TVrmin, ' véh/j')}
+    ${row('TVr max',p.TVrmax, ' véh/j')}
+    ${row('DPL',    p.DPL,    ' véh/j')}
+    ${row('DPL min',p.DPLmin, ' véh/j')}
+    ${row('DPL max',p.DPLmax, ' véh/j')}
+    ${row('Longueur', p.length_m, ' m')}
+  `;
+  new maplibregl.Popup({ closeButton:true, maxWidth:'260px' })
+    .setLngLat(e.lngLat).setHTML(html).addTo(map);
+});
+map.on('mouseenter','flow-lines', () => map.getCanvas().style.cursor='pointer');
+map.on('mouseleave','flow-lines', () => map.getCanvas().style.cursor='');
+
+/* ============================================================
+   MODE SWITCH — instant: only repaint colors, no geometry reload
+   ============================================================ */
+document.querySelectorAll('#mode-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.mode === currentMode) return;
+    currentMode = btn.dataset.mode;
+    document.querySelectorAll('#mode-toggle button')
+      .forEach(b => b.classList.toggle('active', b === btn));
+    map.setPaintProperty('flow-lines','line-color', paintExpr(currentMode));
+    renderLegend(currentMode);
+  });
+});
+</script>
+</body>
+</html>

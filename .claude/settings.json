@@ -1,0 +1,75 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**)",
+      "Edit(**)",
+      "Write(app/**)",
+      "Write(memory/**)",
+      "Write(scripts/**)",
+      "Write(tests/**)",
+      "Bash(python -m streamlit run *)",
+      "Bash(pip install *)",
+      "Bash(pip freeze *)",
+      "Bash(python -m pytest *)",
+      "Bash(python -m ruff *)",
+      "Bash(ruff *)",
+      "Bash(git *)"
+    ],
+    "deny": [
+      "Edit(xData/**)",
+      "Edit(xDataLearning/**)",
+      "Edit(xMDL/**/*.h5)",
+      "Edit(xMDL/**/*.mat)",
+      "Edit(xMDL_PL/**/*.h5)",
+      "Edit(xMDL_PL/**/*.mat)",
+      "Bash(rm -rf xMDL*)",
+      "Bash(rm -rf xData*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-critical-files.sh\"",
+            "timeout": 5,
+            "statusMessage": "Verification fichiers critiques..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-imports.sh\"",
+            "timeout": 10,
+            "statusMessage": "Verification syntaxe Python..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-hardcoded-paths.sh\"",
+            "timeout": 5,
+            "statusMessage": "Verification chemins hardcodes..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint-after-edit.sh\"",
+            "timeout": 30,
+            "statusMessage": "Lint ruff en cours..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/run-tests.sh\"",
+            "timeout": 120,
+            "statusMessage": "Tests de non-regression..."
+          }
+        ]
+      }
+    ]
+  }
+}

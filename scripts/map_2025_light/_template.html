@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Carte des volumes de trafic 2025 - Grand Lyon</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<style>
+  /* ---------- Reset & base ---------- */
+  html, body { margin: 0; height: 100%; background: #0d1117; color: #e6edf3;
+    font-family: 'Inter', -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  #map { position: absolute; inset: 0; }
+
+  /* ---------- Title bar ---------- */
+  #title {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 3; padding: 8px 18px;
+    background: rgba(255,255,255,.92); color: #0f1424;
+    font-size: 16px; font-weight: 600; letter-spacing: .2px;
+    border-radius: 999px; box-shadow: 0 4px 18px rgba(0,0,0,.25);
+    pointer-events: none; user-select: none;
+  }
+
+  /* ---------- Legend ---------- */
+  #legend {
+    position: absolute; top: 16px; left: 16px; z-index: 2;
+    width: 280px; background: rgba(15,20,36,.92);
+    border: 1px solid #1f2740; border-radius: 12px;
+    padding: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.35);
+    backdrop-filter: blur(8px); color: #cdd3df;
+    font-size: 12px; line-height: 1.4;
+  }
+  #legend h3 { margin: 0 0 4px; font-size: 16px; font-weight: 700; color: #ffffff; }
+  #legend .subtitle { margin: 0 0 12px; font-size: 12px; color: #9aa3b2; font-style: italic; }
+
+  /* Mode toggle */
+  #mode-toggle {
+    display: flex; background: #161c2c; border-radius: 8px; padding: 3px;
+    border: 1px solid #1f2740; margin-bottom: 14px;
+  }
+  #mode-toggle button {
+    flex: 1; background: transparent; border: 0; color: #9aa3b2;
+    padding: 8px 12px; font-size: 13px; font-weight: 600; letter-spacing: .3px;
+    border-radius: 6px; cursor: pointer; transition: background .2s, color .2s;
+  }
+  #mode-toggle button.active { background: #22d3ee; color: #0d1117; }
+  #mode-toggle button:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+
+  /* Color rows */
+  #legend-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .lg-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 6px; border-radius: 6px; cursor: pointer;
+    transition: background .15s;
+    user-select: none;
+  }
+  .lg-row:hover { background: rgba(255,255,255,.04); }
+  .lg-row.off { opacity: .35; text-decoration: line-through; }
+  .lg-row .swatch { flex: 0 0 28px; height: 8px; border-radius: 3px; }
+  .lg-row .lbl { flex: 1; color: #cdd3df; font-size: 12px; }
+  .lg-row:focus-visible { outline: 2px solid #22d3ee; outline-offset: 1px; }
+
+  /* Bottom of legend */
+  #legend .note { margin-top: 8px; font-size: 11px; color: #9aa3b2; font-style: italic; }
+  #legend .actions { margin-top: 10px; display: flex; gap: 8px; }
+  #legend button.action {
+    flex: 1; background: #161c2c; color: #cdd3df; border: 1px solid #1f2740;
+    padding: 6px 8px; font-size: 11px; border-radius: 6px; cursor: pointer;
+    transition: background .2s;
+  }
+  #legend button.action:hover { background: #1f2740; color: #fff; }
+  #legend .source { margin-top: 10px; font-size: 10px; color: #6b7280; text-align: right; }
+
+  /* ---------- Fit-to-data ---------- */
+  #fit-btn {
+    position: absolute; right: 16px; bottom: 28px; z-index: 2;
+    background: rgba(15,20,36,.92); color: #cdd3df;
+    border: 1px solid #1f2740; border-radius: 8px;
+    padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 4px 18px rgba(0,0,0,.35);
+    transition: background .2s, color .2s;
+  }
+  #fit-btn:hover { background: #1f2740; color: #fff; }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #22d3ee; color: #0d1117; font-weight: 600;
+    padding: 8px 16px; border-radius: 999px; font-size: 13px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.3); z-index: 5;
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ---------- Popup (light card) ---------- */
+  .maplibregl-popup-content {
+    background: #ffffff; color: #0f1424;
+    border-radius: 10px; padding: 14px; min-width: 280px; max-width: 320px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.25); font-size: 12px;
+  }
+  .maplibregl-popup-close-button {
+    color: #6b7280; font-size: 18px; padding: 4px 8px; right: 4px; top: 2px;
+  }
+  .popup-id {
+    font-weight: 700; font-size: 13px; color: #0f1424;
+    margin-bottom: 8px; padding-bottom: 8px;
+    border-bottom: 1px solid #e5e7eb;
+    word-break: break-all;
+  }
+  .popup-row { margin: 4px 0; color: #374151; }
+  .popup-row b { color: #0f1424; font-variant-numeric: tabular-nums; }
+  .popup-kpi {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin: 6px 0;
+  }
+  .popup-kpi .lbl { font-size: 11px; color: #6b7280; text-transform: uppercase;
+    letter-spacing: .5px; }
+  .popup-kpi .val { font-size: 16px; font-weight: 700; color: #0f1424;
+    font-variant-numeric: tabular-nums; }
+  .popup-kpi .range { font-size: 11px; color: #6b7280; margin-left: 6px; }
+  .popup-meta {
+    margin-top: 10px; padding-top: 8px; border-top: 1px solid #e5e7eb;
+    font-size: 11px; color: #6b7280;
+  }
+  .popup-meta div { margin: 2px 0; }
+  .popup-copy {
+    margin-top: 10px; width: 100%; padding: 8px 12px;
+    background: #0f1424; color: #ffffff; border: 0; border-radius: 6px;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background .2s;
+  }
+  .popup-copy:hover { background: #22d3ee; color: #0d1117; }
+
+  /* ---------- Loader ---------- */
+  #loader {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; background: #0d1117; z-index: 10;
+    color: #9aa3b2; font-size: 14px; letter-spacing: .3px;
+  }
+  #loader.hidden { display: none; }
+
+  /* ---------- Reduced motion ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    #mode-toggle button, .lg-row, #fit-btn, #legend button.action,
+    .popup-copy, #toast { transition: none; }
+  }
+
+  /* ---------- Compact at narrow widths ---------- */
+  @media (max-width: 640px) {
+    #legend { width: calc(100vw - 32px); max-width: 320px; }
+    #title { font-size: 13px; padding: 6px 12px; max-width: 80vw; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="title">Carte des volumes de trafic 2025 - Grand Lyon</div>
+
+<aside id="legend" role="region" aria-label="Legende des flux">
+  <h3 id="legend-title">TVr (TV) en veh/j</h3>
+  <p class="subtitle" id="legend-subtitle">par sens</p>
+  <div id="mode-toggle" role="tablist">
+    <button data-mode="TVr" class="active" role="tab" aria-selected="true">TVr</button>
+    <button data-mode="DPL" role="tab" aria-selected="false">DPL</button>
+  </div>
+  <div id="legend-rows"><!-- filled at runtime --></div>
+  <p class="note">par sens</p>
+  <div class="actions">
+    <button class="action" id="reset-filter">Reinitialiser</button>
+  </div>
+  <div class="source">Source : MDL 2026</div>
+</aside>
+
+<button id="fit-btn" title="Recadrer sur les donnees">Recentrer</button>
+<div id="toast">Copie</div>
+
+<div id="loader">Chargement des donnees...</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+/* ============================================================
+   INLINE GEOJSON DATA
+   Generated by prepare_data.py from 2025_light.geojson.
+   ============================================================ */
+const GEOJSON = __GEOJSON_PLACEHOLDER__;
+
+/* ============================================================
+   STYLE CONFIG (frozen)
+   ============================================================ */
+// 7 colors from lightest (low traffic) to darkest (high traffic).
+const COLORS = [
+  '#fff4a3', // class 0 - lowest
+  '#fdd97c', // class 1
+  '#fbb444', // class 2
+  '#f08a3a', // class 3
+  '#dd5a35', // class 4
+  '#a32c1e', // class 5
+  '#7a1f0f', // class 6 - highest
+];
+const WIDTHS = [0.6, 0.9, 1.3, 1.8, 2.4, 3.2, 4.0];
+
+// 6 break points => 7 classes.
+const TVR_BREAKS = [500, 1000, 2000, 4000, 6000, 10000];
+const DPL_BREAKS = [50, 100, 200, 400, 600, 1000];
+
+const TVR_LABELS = [
+  'Inferieur a 500',
+  'Entre 500 et 1 000',
+  'Entre 1 000 et 2 000',
+  'Entre 2 000 et 4 000',
+  'Entre 4 000 et 6 000',
+  'Entre 6 000 et 10 000',
+  'Superieur a 10 000',
+];
+const DPL_LABELS = [
+  'Inferieur a 50',
+  'Entre 50 et 100',
+  'Entre 100 et 200',
+  'Entre 200 et 400',
+  'Entre 400 et 600',
+  'Entre 600 et 1 000',
+  'Superieur a 1 000',
+];
+
+const MODES = {
+  TVr: { prop: 'TVr', breaks: TVR_BREAKS, labels: TVR_LABELS,
+         title: 'TVr (TV) en veh/j' },
+  DPL: { prop: 'DPL', breaks: DPL_BREAKS, labels: DPL_LABELS,
+         title: 'DPL (PL) en veh/j' },
+};
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let currentMode = 'TVr';
+// Boolean per class index (0..6). false = hidden.
+let activeClasses = [true, true, true, true, true, true, true];
+const fmtFR = new Intl.NumberFormat('fr-FR');
+
+/* Read URL hash (#mode=TVr or #mode=DPL). */
+function readHash() {
+  const m = window.location.hash.match(/mode=(TVr|DPL)/);
+  if (m) currentMode = m[1];
+}
+function writeHash() {
+  history.replaceState(null, '', '#mode=' + currentMode);
+}
+readHash();
+
+/* ============================================================
+   MAP
+   CartoDB Positron raster basemap (no API key, OpenStreetMap data).
+   ============================================================ */
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      'carto-positron': {
+        type: 'raster',
+        tiles: [
+          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+      }
+    },
+    layers: [
+      { id: 'bg', type: 'background', paint: { 'background-color': '#f5f5f0' } },
+      { id: 'carto-positron', type: 'raster', source: 'carto-positron' }
+    ]
+  },
+  center: [4.85, 45.75],
+  zoom: 11,
+  maxZoom: 17,
+  maxBounds: [[4.55, 45.55], [5.15, 45.95]]
+});
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
+map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+
+/* ============================================================
+   PAINT EXPRESSIONS
+   ============================================================ */
+function colorExpr(mode) {
+  const { prop, breaks } = MODES[mode];
+  // step(value, fallback, b0, c1, b1, c2, ...)
+  // value < breaks[0] -> COLORS[0]
+  const expr = ['step', ['coalesce', ['to-number', ['get', prop]], 0], COLORS[0]];
+  for (let i = 0; i < breaks.length; i++) {
+    expr.push(breaks[i], COLORS[i + 1]);
+  }
+  return expr;
+}
+
+function widthExpr(mode) {
+  const { prop, breaks } = MODES[mode];
+  // Width grows by class; gently scaled with zoom so links stay readable.
+  // We use a step expression for the class-base width.
+  const stepExpr = ['step', ['coalesce', ['to-number', ['get', prop]], 0], WIDTHS[0]];
+  for (let i = 0; i < breaks.length; i++) {
+    stepExpr.push(breaks[i], WIDTHS[i + 1]);
+  }
+  // Multiply by a zoom-based factor.
+  return ['interpolate', ['linear'], ['zoom'],
+    9, ['*', stepExpr, 0.55],
+    13, stepExpr,
+    17, ['*', stepExpr, 1.8]
+  ];
+}
+
+/* Class-filter expression: ! (value falls in a hidden class). */
+function classFilterExpr(mode) {
+  const { prop, breaks } = MODES[mode];
+  // Returns a filter expression equivalent to:
+  //   class(value) is active
+  // We test each break range and require the matching class to be active.
+  // Easiest: chain "any" of (value >= bi-1 && value < bi && activeClasses[i]).
+  const v = ['coalesce', ['to-number', ['get', prop]], 0];
+  const conditions = [];
+  for (let i = 0; i < 7; i++) {
+    const lo = i === 0 ? -Infinity : breaks[i - 1];
+    const hi = i === 6 ? Infinity : breaks[i];
+    const range = [];
+    range.push(['>=', v, lo === -Infinity ? -1 : lo]);
+    if (hi !== Infinity) range.push(['<', v, hi]);
+    let cond;
+    if (range.length === 1) cond = range[0];
+    else cond = ['all', ...range];
+    // Only include classes that are visible.
+    if (activeClasses[i]) conditions.push(cond);
+  }
+  if (conditions.length === 0) return ['==', 1, 0]; // hide everything
+  if (conditions.length === 1) return conditions[0];
+  return ['any', ...conditions];
+}
+
+/* ============================================================
+   LEGEND RENDERING
+   ============================================================ */
+function renderLegend() {
+  const m = MODES[currentMode];
+  document.getElementById('legend-title').textContent = m.title;
+  const root = document.getElementById('legend-rows');
+  root.innerHTML = '';
+  // Show darkest (highest class) on top.
+  for (let displayIdx = 6; displayIdx >= 0; displayIdx--) {
+    const i = displayIdx;
+    const row = document.createElement('div');
+    row.className = 'lg-row' + (activeClasses[i] ? '' : ' off');
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-pressed', activeClasses[i] ? 'true' : 'false');
+    row.dataset.cls = i;
+    row.innerHTML =
+      '<span class="swatch" style="background:' + COLORS[i] + ';"></span>' +
+      '<span class="lbl">' + m.labels[i] + '</span>';
+    row.addEventListener('click', () => toggleClass(i));
+    row.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleClass(i); }
+    });
+    root.appendChild(row);
+  }
+}
+
+function toggleClass(i) {
+  activeClasses[i] = !activeClasses[i];
+  renderLegend();
+  applyFilter();
+}
+
+function resetClasses() {
+  activeClasses = [true, true, true, true, true, true, true];
+  renderLegend();
+  applyFilter();
+}
+
+function applyFilter() {
+  if (!map.getLayer('flow-lines')) return;
+  map.setFilter('flow-lines', classFilterExpr(currentMode));
+  map.setFilter('flow-hover', ['all',
+    classFilterExpr(currentMode),
+    ['==', ['id'], hoveredId == null ? -1 : hoveredId]
+  ]);
+}
+
+/* ============================================================
+   LOAD LAYER
+   ============================================================ */
+let hoveredId = null;
+const dataBounds = [[180, 90], [-180, -90]];
+
+function computeBounds() {
+  for (const f of GEOJSON.features) {
+    for (const c of f.geometry.coordinates) {
+      if (c[0] < dataBounds[0][0]) dataBounds[0][0] = c[0];
+      if (c[1] < dataBounds[0][1]) dataBounds[0][1] = c[1];
+      if (c[0] > dataBounds[1][0]) dataBounds[1][0] = c[0];
+      if (c[1] > dataBounds[1][1]) dataBounds[1][1] = c[1];
+    }
+  }
+}
+computeBounds();
+
+map.on('load', () => {
+  // Assign numeric id for hover feature-state.
+  for (let i = 0; i < GEOJSON.features.length; i++) {
+    GEOJSON.features[i].id = i;
+  }
+
+  map.addSource('flow', {
+    type: 'geojson',
+    data: GEOJSON,
+    tolerance: 0.5,
+    buffer: 32,
+    promoteId: undefined // we set .id directly above
+  });
+
+  // Base layer.
+  map.addLayer({
+    id: 'flow-lines',
+    type: 'line',
+    source: 'flow',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': colorExpr(currentMode),
+      'line-width': widthExpr(currentMode),
+      'line-opacity': 0.75,
+      'line-color-transition': { duration: 250, delay: 0 },
+      'line-width-transition': { duration: 250, delay: 0 }
+    },
+    filter: classFilterExpr(currentMode)
+  });
+
+  // Highlight layer (drawn on top of hovered/selected feature).
+  map.addLayer({
+    id: 'flow-hover',
+    type: 'line',
+    source: 'flow',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': colorExpr(currentMode),
+      'line-width': ['+', widthExpr(currentMode), 1.5],
+      'line-opacity': 1.0
+    },
+    filter: ['==', ['id'], -1]
+  });
+
+  renderLegend();
+  document.getElementById('loader').classList.add('hidden');
+});
+
+/* ============================================================
+   HOVER
+   ============================================================ */
+map.on('mousemove', 'flow-lines', (e) => {
+  if (!e.features || !e.features.length) return;
+  const id = e.features[0].id;
+  if (id === hoveredId) return;
+  hoveredId = id;
+  map.getCanvas().style.cursor = 'pointer';
+  map.setFilter('flow-hover', ['all',
+    classFilterExpr(currentMode),
+    ['==', ['id'], id]
+  ]);
+});
+map.on('mouseleave', 'flow-lines', () => {
+  if (hoveredId == null) return;
+  hoveredId = null;
+  map.getCanvas().style.cursor = '';
+  map.setFilter('flow-hover', ['==', ['id'], -1]);
+});
+
+/* ============================================================
+   POPUP
+   ============================================================ */
+function yesNo(v) { return v === 1 || v === '1' || v === 'Y' ? 'oui' : 'non'; }
+
+function popupHtml(p) {
+  const get = (k, dflt) => (p[k] == null ? dflt : p[k]);
+  const tvr = get('TVr', 0), tvmin = get('TVrmin', 0), tvmax = get('TVrmax', 0);
+  const dpl = get('DPL', 0), dpmin = get('DPLmin', 0), dpmax = get('DPLmax', 0);
+  const pl  = get('PL', 0),  plr   = get('PLr', 0);
+  const fc  = get('FC', '-'), fcl  = get('FUNC_CLASS', '-');
+  const len = get('length_m', 0), nm = get('n_merged', 1);
+  const ramp = yesNo(get('RAMP', 0));
+  const rdpt = yesNo(get('ROUNDABOUT', 0));
+  const aid = get('agregId', '-');
+  return (
+    '<div class="popup-id" title="' + aid + '">' + aid + '</div>' +
+    '<div class="popup-kpi">' +
+      '<div><div class="lbl">TVr (TV)</div>' +
+        '<div class="val">' + fmtFR.format(tvr) + ' <span class="range">veh/j</span></div>' +
+        '<div class="range">(' + fmtFR.format(tvmin) + ' - ' + fmtFR.format(tvmax) + ')</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="popup-kpi">' +
+      '<div><div class="lbl">DPL (PL)</div>' +
+        '<div class="val">' + fmtFR.format(dpl) + ' <span class="range">veh/j</span></div>' +
+        '<div class="range">(' + fmtFR.format(dpmin) + ' - ' + fmtFR.format(dpmax) + ')</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="popup-row">PL absolu : <b>' + fmtFR.format(pl) +
+      '</b> veh/j &middot; Ratio PLr : <b>' + plr + ' %</b></div>' +
+    '<div class="popup-meta">' +
+      '<div>FC ' + fc + ' &middot; FUNC_CLASS ' + fcl + '</div>' +
+      '<div>Longueur : ' + fmtFR.format(len) + ' m &middot; Segments fusionnes : ' + nm + '</div>' +
+      '<div>Bretelle : ' + ramp + ' &middot; Rond-point : ' + rdpt + '</div>' +
+    '</div>' +
+    '<button class="popup-copy" data-aid="' + aid.replace(/"/g, '&quot;') + '">Copier l’ID</button>'
+  );
+}
+
+let openPopup = null;
+
+map.on('click', 'flow-lines', (e) => {
+  if (!e.features || !e.features.length) return;
+  const f = e.features[0];
+  const html = popupHtml(f.properties);
+  if (openPopup) openPopup.remove();
+  openPopup = new maplibregl.Popup({
+    closeButton: true, closeOnClick: true, maxWidth: '340px', offset: 12
+  })
+    .setLngLat(e.lngLat)
+    .setHTML(html)
+    .addTo(map);
+  // Wire copy button.
+  setTimeout(() => {
+    const btn = openPopup.getElement().querySelector('.popup-copy');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const aid = btn.getAttribute('data-aid');
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(aid).then(() => showToast('Copie'));
+        } else {
+          showToast('Copie indisponible');
+        }
+      });
+    }
+  }, 0);
+});
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1200);
+}
+
+/* ============================================================
+   MODE SWITCH
+   ============================================================ */
+function setMode(newMode) {
+  if (newMode === currentMode) return;
+  if (!MODES[newMode]) return;
+  currentMode = newMode;
+  document.querySelectorAll('#mode-toggle button').forEach((b) => {
+    const active = b.dataset.mode === newMode;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  if (map.getLayer('flow-lines')) {
+    map.setPaintProperty('flow-lines', 'line-color', colorExpr(currentMode));
+    map.setPaintProperty('flow-lines', 'line-width', widthExpr(currentMode));
+    map.setPaintProperty('flow-hover', 'line-color', colorExpr(currentMode));
+    map.setPaintProperty('flow-hover', 'line-width', ['+', widthExpr(currentMode), 1.5]);
+    applyFilter();
+  }
+  renderLegend();
+  writeHash();
+}
+
+document.querySelectorAll('#mode-toggle button').forEach((btn) => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+
+/* Keyboard shortcuts T = TVr, P = DPL. */
+window.addEventListener('keydown', (ev) => {
+  if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'TEXTAREA') return;
+  if (ev.key === 't' || ev.key === 'T') setMode('TVr');
+  if (ev.key === 'p' || ev.key === 'P') setMode('DPL');
+});
+
+window.addEventListener('hashchange', () => {
+  const m = window.location.hash.match(/mode=(TVr|DPL)/);
+  if (m) setMode(m[1]);
+});
+
+/* ============================================================
+   FIT + RESET
+   ============================================================ */
+document.getElementById('reset-filter').addEventListener('click', resetClasses);
+document.getElementById('fit-btn').addEventListener('click', () => {
+  map.fitBounds(dataBounds, { padding: 60, duration: 800 });
+});
+
+/* Initial mode sync (covers boot from hash). */
+writeHash();
+</script>
+</body>
+</html>

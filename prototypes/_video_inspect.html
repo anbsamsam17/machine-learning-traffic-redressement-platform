@@ -1,0 +1,72 @@
+<!doctype html>
+<!--
+  Outil interne d'inspection vidéo : superpose une grille et des étiquettes de
+  coordonnées (viewBox 1920x1080) sur une vidéo, avec des boutons de seek
+  (0/5/10/15/20/25s). Sert à relever les positions d'éléments pour caler la
+  surcouche SVG des prototypes de fond. Source vidéo relative
+  (video/traffic-bg.mp4).
+-->
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Video Inspect</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  .wrap { position: relative; width: 1920px; height: 1080px; }
+  video { width: 1920px; height: 1080px; display: block; object-fit: cover; }
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.18) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.18) 1px, transparent 1px);
+    background-size: 96px 108px; /* 20 cols x 10 rows in viewBox 1920x1080 */
+    pointer-events: none;
+  }
+  .labels { position: absolute; inset: 0; color: rgba(34,211,238,1); font-family: monospace; font-size: 12px; pointer-events: none; }
+  .label { position: absolute; padding: 1px 4px; background: rgba(0,0,0,0.55); border: 1px solid rgba(34,211,238,0.55); }
+  .controls { position: fixed; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); color: #fff; padding: 8px; font-family: monospace; font-size: 12px; }
+  .controls button { margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <button id="p0">0s</button>
+  <button id="p5">5s</button>
+  <button id="p10">10s</button>
+  <button id="p15">15s</button>
+  <button id="p20">20s</button>
+  <button id="p25">25s</button>
+  <span id="time">--</span>
+</div>
+<div class="wrap">
+  <video id="v" src="video/traffic-bg.mp4" autoplay muted loop playsinline preload="auto"></video>
+  <div class="grid"></div>
+  <div class="labels" id="labels"></div>
+</div>
+<script>
+const v = document.getElementById('v');
+const labels = document.getElementById('labels');
+// Add coordinate labels every 192px X x 216px Y (10 cols x 5 rows reading)
+for (let x = 0; x <= 1920; x += 192) {
+  for (let y = 0; y <= 1080; y += 216) {
+    const d = document.createElement('div');
+    d.className = 'label';
+    d.textContent = `${x},${y}`;
+    d.style.left = (x + 2) + 'px';
+    d.style.top = (y + 2) + 'px';
+    labels.appendChild(d);
+  }
+}
+function seek(t) { v.currentTime = t; v.pause(); }
+document.getElementById('p0').onclick = () => seek(0.1);
+document.getElementById('p5').onclick = () => seek(5);
+document.getElementById('p10').onclick = () => seek(10);
+document.getElementById('p15').onclick = () => seek(15);
+document.getElementById('p20').onclick = () => seek(20);
+document.getElementById('p25').onclick = () => seek(25);
+v.addEventListener('timeupdate', () => {
+  document.getElementById('time').textContent = v.currentTime.toFixed(2) + 's / ' + (v.duration||0).toFixed(2);
+});
+</script>
+</body>
+</html>
