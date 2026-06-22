@@ -1,13 +1,11 @@
 /**
  * apiClient: client HTTP préféré pour les nouveaux endpoints.
- * TODO: migration progressive depuis fetchWithAuth (lib/auth.ts).
- * Voir audit T3 — unification recommandée P1.
  *
  * Centralized typed API client.
  *
  * - Injects `Authorization: Bearer ${token}` on every request.
  * - Handles 401 globally by clearing the token and redirecting to /login.
- * - Generic JSON helpers (get/post/postForm) + SSE stream helper.
+ * - Generic JSON helpers (get/post/postForm).
  * - Backwards-compatible top-level helpers `fetchJSON` / `uploadFile`
  *   are kept so existing call sites keep working while migration completes.
  */
@@ -196,30 +194,6 @@ export const apiClient = {
     );
   },
 
-  /** Open an SSE stream. Caller is responsible for closing the returned EventSource. */
-  stream(
-    path: string,
-    handlers: {
-      onMessage?: (data: unknown) => void;
-      onError?: (e: Event) => void;
-      onOpen?: () => void;
-    }
-  ): EventSource {
-    const url = fullUrl(path);
-    const es = new EventSource(url);
-    if (handlers.onOpen) es.onopen = handlers.onOpen;
-    es.onmessage = (event) => {
-      if (!handlers.onMessage) return;
-      try {
-        handlers.onMessage(JSON.parse(event.data));
-      } catch {
-        handlers.onMessage(event.data);
-      }
-    };
-    es.onerror = (e) => handlers.onError?.(e);
-    return es;
-  },
-
   /** Trigger a file download in the browser. Adds auth via temp link. */
   async download(path: string, filename: string): Promise<void> {
     const res = await fetch(fullUrl(path), { headers: buildHeaders(undefined, false) });
@@ -265,15 +239,4 @@ export async function uploadFile<T = unknown>(
     for (const [k, v] of Object.entries(extraFields)) form.append(k, v);
   }
   return apiClient.postForm<T>(path, form);
-}
-
-export function streamSSE(
-  path: string,
-  onMessage: (data: Record<string, unknown>) => void,
-  onError?: (err: Event) => void
-): EventSource {
-  return apiClient.stream(path, {
-    onMessage: (d) => onMessage(d as Record<string, unknown>),
-    onError,
-  });
 }
