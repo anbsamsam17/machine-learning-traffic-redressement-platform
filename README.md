@@ -9,10 +9,27 @@ Démo : <https://Trafic-Tool.anbri-tools-ia.online>
 
 ## Aperçu / Démo
 
-_Captures : voir `docs/` — à venir_
-_Vidéo démo : `<lien à ajouter>`_
+**Démo en ligne :** <https://Trafic-Tool.anbri-tools-ia.online>
+
+**Vidéo de démonstration :** _à intégrer._
+<!--
+  Pour une vidéo lisible directement dans ce README, deux options :
+  1. (Recommandé) Sur github.com, éditer ce README et GLISSER-DÉPOSER le .mp4
+     dans la zone d'édition : GitHub héberge le fichier et insère un lecteur
+     vidéo inline. Coller ici l'URL générée (https://github.com/user-attachments/assets/…).
+  2. GIF court : placer le fichier en docs/screenshots/demo.gif puis décommenter :
+       ![Démo](docs/screenshots/demo.gif)
+-->
 
 L'outil couvre quatre flux métier : modèle **Tous Véhicules (TV)**, modèle **Poids Lourds (PL)**, **Carte de débits** (application des modèles sur réseau FCD → GeoJSON) et **Fichier Compteurs** (export standardisé).
+
+### Aperçu animé
+
+| Écran de connexion | Écran d'accueil |
+|:---:|:---:|
+| ![Écran de connexion](docs/screenshots/connexion.gif) | ![Écran d'accueil](docs/screenshots/accueil.gif) |
+
+_Captures des autres modules en cours d'intégration — voir [`docs/screenshots/`](docs/screenshots/) pour la convention de nommage._
 
 ---
 
