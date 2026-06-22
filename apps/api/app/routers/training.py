@@ -18,12 +18,13 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
+from ..rate_limit import limit_training_start
 from ..session import session_manager
 from ..training_guard import (
     _get_user_lock,
@@ -520,10 +521,15 @@ def _training_worker(task: TrainingTask) -> None:
 
 
 @router.post("/start", response_model=TrainingStartResponse)
+@limit_training_start()
 async def start_training(
+    request: Request,
     body: TrainingConfig,
     current_user: UserRecord = Depends(get_current_user),
 ) -> TrainingStartResponse:
+    # A6/P1-3 : 5/hour par utilisateur (grid search lourd CPU). Complemente
+    # le lock per-user (A9) et la deadline MAX_TRAINING_MINUTES. La suite de
+    # tests desactive le limiter (DISABLE_RATE_LIMIT / pytest auto-detect).
     session = require_owned_session(body.session_id, current_user)
     if session.data.get("learning_df") is None:
         raise HTTPException(

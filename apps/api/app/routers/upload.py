@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
 from ..error_messages import user_message
+from ..rate_limit import limit_upload
 from ..session import session_manager
 from .sessions import get_current_user_optional
 
@@ -162,13 +163,18 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=UploadResponse)
+@limit_upload()
 async def upload_data(
     request: Request,
     file: UploadFile = File(...),
     mode: str = Form("TV"),
     current_user: UserRecord = Depends(get_current_user),
 ) -> UploadResponse:
-    """Upload a raw data file (GeoJSON, CSV, or zipped Shapefile), parse it in memory."""
+    """Upload a raw data file (GeoJSON, CSV, or zipped Shapefile), parse it in memory.
+
+    A6/P1-3 : limite a 30/minute par utilisateur (anti-flood CSV/shapefile).
+    Genereuse pour l'usage legitime ; la suite de tests desactive le limiter.
+    """
     settings = get_settings()
 
     content = await file.read()

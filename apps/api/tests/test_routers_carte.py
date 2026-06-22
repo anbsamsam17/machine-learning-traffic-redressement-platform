@@ -10,10 +10,20 @@ import pytest
 
 class TestValidateModel:
     @pytest.mark.asyncio
-    async def test_missing_dir_returns_invalid(self, authenticated_client, tmp_path):
+    async def test_missing_dir_returns_invalid(self, authenticated_client, tmp_workspace, csv_content):
+        # A5/SECURITY : le model_dir est confine au workspace de la session.
+        # On cree une vraie session puis on cible un sous-dossier inexistant
+        # SOUS son workspace (WORKSPACE_ROOT/{session_id}/...).
+        r0 = await authenticated_client.post(
+            "/api/upload",
+            files={"file": ("data.csv", csv_content, "text/csv")},
+            data={"mode": "TV"},
+        )
+        sid = r0.json()["session_id"]
+        model_dir = tmp_workspace / sid / "carte_models" / "tv"
         r = await authenticated_client.post(
             "/api/carte/validate-model",
-            json={"model_dir": str(tmp_path / "does_not_exist")},
+            json={"model_dir": str(model_dir), "session_id": sid},
         )
         assert r.status_code == 200
         data = r.json()
@@ -21,18 +31,51 @@ class TestValidateModel:
         assert data["missing_files"]
 
     @pytest.mark.asyncio
-    async def test_empty_dir_missing_files(self, authenticated_client, tmp_path):
-        empty = tmp_path / "empty"
-        empty.mkdir()
+    async def test_empty_dir_missing_files(self, authenticated_client, tmp_workspace, csv_content):
+        r0 = await authenticated_client.post(
+            "/api/upload",
+            files={"file": ("data.csv", csv_content, "text/csv")},
+            data={"mode": "TV"},
+        )
+        sid = r0.json()["session_id"]
+        empty = tmp_workspace / sid / "carte_models" / "empty"
+        empty.mkdir(parents=True)
         r = await authenticated_client.post(
             "/api/carte/validate-model",
-            json={"model_dir": str(empty)},
+            json={"model_dir": str(empty), "session_id": sid},
         )
         assert r.status_code == 200
         data = r.json()
         assert data["valid"] is False
         # Should report missing weights + arch (legacy) + norm
         assert any("NN" in m for m in data["missing_files"])
+
+    @pytest.mark.asyncio
+    async def test_path_traversal_outside_session_rejected(
+        self, authenticated_client, tmp_workspace, csv_content
+    ):
+        """A5/SECURITY : un model_dir hors du workspace de la session -> 403."""
+        r0 = await authenticated_client.post(
+            "/api/upload",
+            files={"file": ("data.csv", csv_content, "text/csv")},
+            data={"mode": "TV"},
+        )
+        sid = r0.json()["session_id"]
+        # Chemin absolu arbitraire hors WORKSPACE_ROOT/{session_id}.
+        r = await authenticated_client.post(
+            "/api/carte/validate-model",
+            json={"model_dir": "/etc", "session_id": sid},
+        )
+        assert r.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_requires_auth(self, client):
+        """A1 : l'endpoint exige une authentification."""
+        r = await client.post(
+            "/api/carte/validate-model",
+            json={"model_dir": "/tmp/x"},
+        )
+        assert r.status_code in (401, 403)
 
 
 class TestUploadCarteModel:

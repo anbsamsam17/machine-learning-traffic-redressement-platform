@@ -14,7 +14,10 @@ import os
 from datetime import datetime
 from pathlib import Path
 import threading  # noqa: F401 -- used in type hint string
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from ...training_guard import TrainingDeadline
 
 _logger = logging.getLogger(__name__)
 
@@ -203,6 +206,7 @@ def _train_single(
     year_column_name: str | None = None,
     year_value_mapping: dict[str, float] | None = None,
     cancel_event: "threading.Event | None" = None,
+    deadline: "TrainingDeadline | None" = None,
     reduce_lr_patience: int = 10,
     reduce_lr_factor: float = 0.5,
     reduce_lr_min: float = 1e-5,
@@ -314,6 +318,20 @@ def _train_single(
                 if cancel_event.is_set():
                     self.model.stop_training = True
         callbacks_list.append(_CancelCallback())
+    # A9 (training_guard) — wall-clock deadline. Aborts the run cleanly at
+    # MAX_TRAINING_MINUTES so a single grid cannot monopolise the (2-core ARM)
+    # API indefinitely. No-op for short/test trainings (default 30-60 min).
+    if deadline is not None:
+        class _DeadlineCallback(keras.callbacks.Callback):
+            def on_epoch_end(self, epoch, logs=None):
+                if deadline.should_stop():
+                    self.model.stop_training = True
+                    _logger.warning(
+                        "Training deadline reached (max %d min) — stopping "
+                        "run %s at epoch %d.",
+                        deadline.max_minutes, run_name_effective, epoch,
+                    )
+        callbacks_list.append(_DeadlineCallback())
     if progress_callback is not None:
         callbacks_list.append(
             TrainingProgressCallback(
@@ -645,6 +663,18 @@ def run_training(
 
     seed: int = int(config.get("seed", SEED))
     seed_everything(seed)
+
+    # A9 (training_guard) — wall-clock deadline for the WHOLE grid search.
+    # Instantiated once at the start so the per-run _DeadlineCallback aborts
+    # cleanly when MAX_TRAINING_MINUTES is exceeded (cumulative across the
+    # grid, not reset per model). Lazy import keeps the heavy TF module free
+    # of a hard FastAPI dependency at import time. Callers may inject their
+    # own via ``config["_deadline"]`` (e.g. tests with max_minutes=0).
+    deadline = config.get("_deadline")
+    if deadline is None:
+        from ...training_guard import make_deadline
+        deadline = make_deadline()
+
     # Enable TF op-level determinism once for the whole grid. Idempotent —
     # safe to call again per run, but doing it here avoids any redundant
     # overhead per training. Combined with per-run set_random_seed below,
@@ -1067,6 +1097,7 @@ def run_training(
                     year_column_name=str(config.get("year_column_name") or ""),
                     year_value_mapping=dict(config.get("year_value_mapping") or {}),
                     cancel_event=cancel_event,
+                    deadline=deadline,
                     reduce_lr_patience=int(config.get("reduce_lr_patience", 10)),
                     reduce_lr_factor=float(config.get("reduce_lr_factor", 0.5)),
                     reduce_lr_min=float(config.get("reduce_lr_min", 1e-5)),

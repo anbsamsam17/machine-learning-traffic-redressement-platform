@@ -84,6 +84,83 @@ class TestStartTraining:
         assert r2.status_code in (400, 422)
 
 
+@pytest.mark.skipif(not TF_INSTALLED, reason="tensorflow not installed")
+class TestTrainingDeadlineWiring:
+    """A9 (training_guard) — the wall-clock deadline must abort _train_single.
+
+    Verifie le branchement REEL du ``_DeadlineCallback`` dans _train_single :
+    avec une deadline deja depassee (max_minutes=0), le model.fit doit
+    s'arreter des la premiere epoch (stop_training=True via on_epoch_end),
+    meme si max_epochs > 1. Modele minuscule (2 inputs, 1 output, 2 epochs),
+    aucun GPU ni donnee reelle (cf testing.md).
+    """
+
+    def test_deadline_stops_training_after_first_epoch(self):
+        from datetime import datetime, timezone
+
+        import numpy as np
+
+        from app.services.ml.grid_search import GridCombination
+        from app.services.ml.training_pipeline import _train_single
+        from app.training_guard import TrainingDeadline
+
+        rng = np.random.default_rng(1750)
+        x = rng.standard_normal((10, 2)).astype("float32")
+        y = rng.standard_normal((10, 1)).astype("float32")
+        mu_x = np.zeros(2)
+        sigma_x = np.ones(2)
+        mu_y = np.zeros(1)
+        sigma_y = np.ones(1)
+
+        combo = GridCombination(
+            feature_cols=["a", "b"],
+            feature_mask="ab",
+            activation="elu",
+            learning_rate=0.01,
+            min_nb_epochs=1,
+            loss="mse",
+            dropout=0.0,
+            neurons_factors=[1.0, 1.0],
+            batch_size=4,
+            run_name="deadline_test",
+        )
+
+        # Deadline already in the past (max_minutes=0 -> should_stop() True now).
+        past_deadline = TrainingDeadline(
+            started_at=datetime.now(timezone.utc), max_minutes=0,
+        )
+        assert past_deadline.should_stop()
+
+        artifact = _train_single(
+            x_train_norm=x, y_train_norm=y,
+            x_valid_norm=None, y_valid_norm=None,
+            x_all_norm=x, y_all_norm=y,
+            mu_x=mu_x, sigma_x=sigma_x, mu_y=mu_y, sigma_y=sigma_y,
+            combo=combo,
+            max_epochs=5,  # would run 5 epochs absent the deadline
+            analysis_scope="all",
+            output_cols=["TxPen"],
+            on_off_subset=np.array([True, True], dtype=bool),
+            seed=1750,
+            train_sample_weight=None,
+            valid_sample_weight=None,
+            use_flag_permanent_weighting=False,
+            flag_permanent_col="flag_permanent",
+            flag_priority_weight=1.0,
+            use_flag_recent_year_weighting=False,
+            recent_year_priority_weight=1.0,
+            use_batch_norm=False,
+            progress_callback=None,
+            total_models=1,
+            model_idx=1,
+            test_size=0.0,
+            deadline=past_deadline,
+        )
+        # The deadline callback sets stop_training after epoch 0 -> exactly 1
+        # epoch trained (vs the requested 5).
+        assert artifact.training_config["epochs_trained"] == 1
+
+
 class TestTrainingStatus:
     @pytest.mark.asyncio
     async def test_unknown_task_returns_404(self, authenticated_client):

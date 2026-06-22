@@ -23,11 +23,13 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from pydantic import BaseModel, Field, model_validator
 
 from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
+from ..rate_limit import limit_carte_generate
+from ..security import validate_path
 
 from ..session import session_manager
 
@@ -353,6 +355,13 @@ class CarteGenerateResponse(BaseModel):
 
 class ModelValidateRequest(BaseModel):
     model_dir: str
+    # A5/SECURITY : confiner ``model_dir`` a un workspace autorise. Le flux UI
+    # normal passe un model_dir situe sous WORKSPACE_ROOT/{session_id}/
+    # (cf upload-model). Quand ``session_id`` est fourni, on verifie la
+    # propriete de la session puis on refuse tout chemin qui sort de ce
+    # workspace (path traversal / lecture FS arbitraire). Sans session_id
+    # (legacy), on confine au WORKSPACE_ROOT global via validate_path.
+    session_id: str | None = None
 
 
 class ModelValidateResponse(BaseModel):
@@ -546,13 +555,34 @@ async def _predict_peak_hour(
 # ---------------------------------------------------------------------------
 
 @router.post("/validate-model", response_model=ModelValidateResponse)
-async def validate_model(body: ModelValidateRequest) -> ModelValidateResponse:
-    """Validate that a model directory contains all required files."""
-    p = Path(body.model_dir)
-    if not p.exists() or not p.is_dir():
+async def validate_model(
+    body: ModelValidateRequest,
+    current_user: UserRecord = Depends(get_current_user),
+) -> ModelValidateResponse:
+    """Validate that a model directory contains all required files.
+
+    A5/SECURITY : ``model_dir`` est confine au workspace autorise. Quand
+    ``session_id`` est fourni, le chemin doit vivre sous
+    WORKSPACE_ROOT/{session_id}/ (et la session doit appartenir au caller) ;
+    sinon on confine au WORKSPACE_ROOT global. Un chemin qui sort du root
+    autorise leve une 403 (cf validate_path) — empeche la lecture FS
+    arbitraire (ex: model_dir=/etc).
+    """
+    settings = get_settings()
+    if body.session_id:
+        # Verifie la propriete de la session AVANT de toucher au FS.
+        require_owned_session(body.session_id, current_user)
+        allowed_root = Path(settings.WORKSPACE_ROOT) / body.session_id
+    else:
+        allowed_root = Path(settings.WORKSPACE_ROOT)
+
+    # Leve 400 (chemin malforme) / 403 (sort du root autorise).
+    resolved = validate_path(body.model_dir, allowed_root=allowed_root)
+
+    if not resolved.exists() or not resolved.is_dir():
         return ModelValidateResponse(valid=False, missing_files=["(dossier introuvable)"])
 
-    valid, missing, config = _verify_model_structure(body.model_dir)
+    valid, missing, config = _verify_model_structure(str(resolved))
     return ModelValidateResponse(valid=valid, missing_files=missing, training_config=config)
 
 
@@ -823,11 +853,17 @@ async def upload_capteurs_pl(
 
 
 @router.post("/generate", response_model=CarteGenerateResponse)
+@limit_carte_generate()
 async def generate_carte(
+    request: Request,
     body: CarteGenerateRequest,
     current_user: UserRecord = Depends(get_current_user),
 ) -> CarteGenerateResponse:
-    """Apply TV + PL models on FCD data to produce a carte de debits GeoJSON."""
+    """Apply TV + PL models on FCD data to produce a carte de debits GeoJSON.
+
+    A6/P1-3 : 10/minute par utilisateur (rendu carte SIG lourd). La suite de
+    tests desactive le limiter (DISABLE_RATE_LIMIT / pytest auto-detect).
+    """
 
     # 1. Validate session ownership
     session = require_owned_session(body.session_id, current_user)
