@@ -52,10 +52,10 @@ __all__ = [
 # v/j 0-1000/1000-2000/... ne s'appliquent PAS aux donnees horaires).
 # Validation visuelle attendue sur dataset Lyon en aval ; baseline raisonnable.
 _HPM_HPS_TOL_BINS: list[tuple[float, float, float]] = [
-    (0.0,    100.0, 0.25),   # zones calmes
-    (100.0,  300.0, 0.18),
-    (300.0,  600.0, 0.18),
-    (600.0, 1200.0, 0.14),   # axes structurants
+    (0.0, 100.0, 0.25),  # zones calmes
+    (100.0, 300.0, 0.18),
+    (300.0, 600.0, 0.18),
+    (600.0, 1200.0, 0.14),  # axes structurants
     (1200.0, float("inf"), 0.14),  # autoroutes / peri en pointe
 ]
 
@@ -64,7 +64,8 @@ _HPM_HPS_BARPLOT_BINS_VH: list[float] = [0.0, 50.0, 100.0, 200.0, 400.0, 800.0, 
 
 
 def _add_tolerance_columns_HPM_HPS(
-    df: pd.DataFrame, type_config: Any,
+    df: pd.DataFrame,
+    type_config: Any,
 ) -> pd.DataFrame:
     """HPM/HPS dynamic tolerance bands — recalibrated for v/h scale.
 
@@ -73,8 +74,8 @@ def _add_tolerance_columns_HPM_HPS(
     tolerance that was tuned for daily TV (where 60 v/j is noise).
     """
     out = df.copy()
-    pred_col = type_config.eval_predicted_col      # HPM_FCDr / HPS_FCDr
-    ref_col = type_config.eval_reference_col        # TMJOBCTV_HPM / TMJOBCTV_HPS
+    pred_col = type_config.eval_predicted_col  # HPM_FCDr / HPS_FCDr
+    ref_col = type_config.eval_reference_col  # TMJOBCTV_HPM / TMJOBCTV_HPS
 
     out[pred_col] = pd.to_numeric(out[pred_col], errors="coerce")
 
@@ -132,7 +133,8 @@ def _add_tolerance_columns_HPM_HPS(
 
 
 def _compute_flow_metrics_HPM_HPS(
-    df: pd.DataFrame, type_config: Any,
+    df: pd.DataFrame,
+    type_config: Any,
 ) -> dict:
     """Same shape as compute_flow_metrics (TV/PL) but reads HPM_FCDr / HPS_FCDr
     against TMJOBCTV_HPM / TMJOBCTV_HPS. GEH uses the raw hourly volumes (no
@@ -151,9 +153,12 @@ def _compute_flow_metrics_HPM_HPS(
     if d.empty:
         return {
             "n": 0,
-            "err_rel_med": np.nan, "err_abs_med": np.nan,
-            "err_rel_p80": np.nan, "err_abs_p80": np.nan,
-            "geh_lt5_pct": np.nan, "geh_le10_pct": np.nan,
+            "err_rel_med": np.nan,
+            "err_abs_med": np.nan,
+            "err_rel_p80": np.nan,
+            "err_abs_p80": np.nan,
+            "geh_lt5_pct": np.nan,
+            "geh_le10_pct": np.nan,
         }
 
     err_abs = (d[pred_col] - d[ref_col]).abs().astype(float)
@@ -178,7 +183,9 @@ def _compute_flow_metrics_HPM_HPS(
 
 
 def _make_barplot_html_HPM_HPS(
-    df: pd.DataFrame, title: str, type_config: Any,
+    df: pd.DataFrame,
+    title: str,
+    type_config: Any,
 ) -> str:
     """Grouped bar chart REF vs PRED for HPM/HPS (echelle v/h).
 
@@ -203,20 +210,37 @@ def _make_barplot_html_HPM_HPS(
     d = d.sample(n=n_sample, random_state=42).reset_index(drop=True)
 
     labels = (
-        d["PTM_ID"].astype(str).tolist() if "PTM_ID" in d.columns
+        d["PTM_ID"].astype(str).tolist()
+        if "PTM_ID" in d.columns
         else [str(i) for i in range(len(d))]
     )
 
     hover_cols = [
-        c for c in [
-            "PTM_ID", "Identifiant", "STA", "Type", "Commune", "Route",
-            type_config.fcd_col, "TMJOFCDPL",
-            "avg_speed_kmh", "avg_distance_m",
-            "truck_avg_speed_kmh", "truck_avg_min_distance_m",
-            ref_col, pred_col, "TP_redressement",
-            "Erreur %", "Erreur absolue", "GEH",
-            f"{pred_col}min", f"{pred_col}max", "Tolerance_IN_OUT",
-        ] if c in d.columns
+        c
+        for c in [
+            "PTM_ID",
+            "Identifiant",
+            "STA",
+            "Type",
+            "Commune",
+            "Route",
+            type_config.fcd_col,
+            "TMJOFCDPL",
+            "avg_speed_kmh",
+            "avg_distance_m",
+            "truck_avg_speed_kmh",
+            "truck_avg_min_distance_m",
+            ref_col,
+            pred_col,
+            "TP_redressement",
+            "Erreur %",
+            "Erreur absolue",
+            "GEH",
+            f"{pred_col}min",
+            f"{pred_col}max",
+            "Tolerance_IN_OUT",
+        ]
+        if c in d.columns
     ]
 
     def _fmtv(v):
@@ -233,28 +257,37 @@ def _make_barplot_html_HPM_HPS(
 
     customdata = [[_fmtv(row.get(c)) for c in hover_cols] for _, row in d.iterrows()]
     hover_lines = "".join(
-        f"<b>{c}</b> : %{{customdata[{i}]}}<br>"
-        for i, c in enumerate(hover_cols)
+        f"<b>{c}</b> : %{{customdata[{i}]}}<br>" for i, c in enumerate(hover_cols)
     )
     hover_template = hover_lines + "<extra></extra>"
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=labels, y=d[ref_col].tolist(),
-        name=f"{ref_col} (validation)", marker_color="#1f77b4",
-        customdata=customdata, hovertemplate=hover_template,
-    ))
-    fig.add_trace(go.Bar(
-        x=labels, y=d[pred_col].tolist(),
-        name=f"{pred_col} (predit)", marker_color="#00b894",
-        customdata=customdata, hovertemplate=hover_template,
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=d[ref_col].tolist(),
+            name=f"{ref_col} (validation)",
+            marker_color="#1f77b4",
+            customdata=customdata,
+            hovertemplate=hover_template,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=d[pred_col].tolist(),
+            name=f"{pred_col} (predit)",
+            marker_color="#00b894",
+            customdata=customdata,
+            hovertemplate=hover_template,
+        )
+    )
     fig.update_layout(
         barmode="group",
         template="plotly_white",
         title=title,
         xaxis_title="Capteurs",
-        yaxis_title=f"Debit ({unit})",   # v/h (jamais v/j)
+        yaxis_title=f"Debit ({unit})",  # v/h (jamais v/j)
         margin=dict(l=40, r=40, t=60, b=60),
         hoverlabel=dict(bgcolor="white", font_size=12, font_family="Manrope,sans-serif"),
     )
@@ -262,7 +295,8 @@ def _make_barplot_html_HPM_HPS(
 
 
 def _make_distribution_barplot_html_HPM_HPS(
-    df: pd.DataFrame, type_config: Any,
+    df: pd.DataFrame,
+    type_config: Any,
 ) -> str:
     """Histogramme de repartition des capteurs par tranche de debit (v/h).
 
@@ -286,11 +320,16 @@ def _make_distribution_barplot_html_HPM_HPS(
     labels = [f"{int(edges[i])}-{int(edges[i+1])}" for i in range(len(edges) - 1)]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=labels, y=counts.tolist(),
-        marker_color="#0057b7",
-        hovertemplate="<b>Tranche</b> : %{x} " + unit + "<br><b>N capteurs</b> : %{y}<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=counts.tolist(),
+            marker_color="#0057b7",
+            hovertemplate="<b>Tranche</b> : %{x} "
+            + unit
+            + "<br><b>N capteurs</b> : %{y}<extra></extra>",
+        )
+    )
     fig.update_layout(
         template="plotly_white",
         title=f"Repartition des capteurs par tranche de {ref_col} ({unit})",
@@ -303,7 +342,9 @@ def _make_distribution_barplot_html_HPM_HPS(
 
 
 def _make_folium_map_html_HPM_HPS(
-    stats_df: pd.DataFrame, model_name: str, type_config: Any,
+    stats_df: pd.DataFrame,
+    model_name: str,
+    type_config: Any,
 ) -> str:
     """Folium map for HPM/HPS — coloured by Tolerance_IN_OUT, sized by ref (v/h)."""
     import folium
@@ -367,16 +408,32 @@ def _make_folium_map_html_HPM_HPS(
     layer.add_to(m)
 
     info_cols = [
-        c for c in [
-            "PTM_ID", "Identifiant", "STA", "Type", "Commune", "Route",
-            type_config.fcd_col, "TMJOFCDPL",
-            "avg_speed_kmh", "avg_distance_m",
-            "truck_avg_speed_kmh", "truck_avg_min_distance_m",
-            ref_col, pred_col, "TP_redressement",
-            "Erreur %", "Erreur absolue", "GEH",
-            f"{pred_col}min", f"{pred_col}max", "Tolerance_IN_OUT",
+        c
+        for c in [
+            "PTM_ID",
+            "Identifiant",
+            "STA",
+            "Type",
+            "Commune",
+            "Route",
+            type_config.fcd_col,
+            "TMJOFCDPL",
+            "avg_speed_kmh",
+            "avg_distance_m",
+            "truck_avg_speed_kmh",
+            "truck_avg_min_distance_m",
+            ref_col,
+            pred_col,
+            "TP_redressement",
+            "Erreur %",
+            "Erreur absolue",
+            "GEH",
+            f"{pred_col}min",
+            f"{pred_col}max",
+            "Tolerance_IN_OUT",
             "flag_comptage",
-        ] if c in valid.columns
+        ]
+        if c in valid.columns
     ]
 
     for _, row in valid.iterrows():
@@ -396,18 +453,24 @@ def _make_folium_map_html_HPM_HPS(
             location=(row["lat"], row["lon"]),
             radius=_radius(row.get(ref_col)),
             color=_color(row.get("Tolerance_IN_OUT")),
-            fill=True, fill_opacity=0.85, weight=1.2,
+            fill=True,
+            fill_opacity=0.85,
+            weight=1.2,
             popup=folium.Popup(popup_html, max_width=360),
             tooltip=tooltip_txt,
         ).add_to(layer)
 
     folium.LayerControl(collapsed=False).add_to(m)
-    m.fit_bounds([
-        [float(valid["lat"].min()), float(valid["lon"].min())],
-        [float(valid["lat"].max()), float(valid["lon"].max())],
-    ])
+    m.fit_bounds(
+        [
+            [float(valid["lat"].min()), float(valid["lon"].min())],
+            [float(valid["lat"].max()), float(valid["lon"].max())],
+        ]
+    )
 
-    pct = lambda n: (100.0 * n / n_valid) if n_valid > 0 else 0.0
+    def pct(n):
+        return (100.0 * n / n_valid) if n_valid > 0 else 0.0
+
     legend_html = f"""
     <div style="position:fixed;bottom:20px;left:20px;z-index:9999;background:white;
             padding:10px 14px;border:1px solid #ccc;border-radius:10px;
@@ -427,13 +490,13 @@ def _make_folium_map_html_HPM_HPS(
         f'<iframe id="folium-map-frame" width="100%" height="600" '
         f'style="border:none;border-radius:12px;display:block;" '
         f'sandbox="allow-scripts allow-same-origin"></iframe>\n'
-        f'<script>\n'
-        f'(function(){{\n'
+        f"<script>\n"
+        f"(function(){{\n"
         f'  var iframe = document.getElementById("folium-map-frame");\n'
         f'  var html = atob("{encoded}");\n'
-        f'  iframe.srcdoc = html;\n'
-        f'}})();\n'
-        f'</script>'
+        f"  iframe.srcdoc = html;\n"
+        f"}})();\n"
+        f"</script>"
     )
 
 
@@ -455,9 +518,10 @@ def _build_sensitivity_section_html_HPM_HPS(
     """
     import plotly.graph_objects as go
     import plotly.io as pio
-    _pred_label = type_config.eval_predicted_col          # HPM_FCDr / HPS_FCDr
-    _numerator_main = type_config.eval_numerator_fcd      # FCD_HPM_TV / FCD_HPS_TV
-    unit = type_config.unit_label                          # "v/h"
+
+    _pred_label = type_config.eval_predicted_col  # HPM_FCDr / HPS_FCDr
+    _numerator_main = type_config.eval_numerator_fcd  # FCD_HPM_TV / FCD_HPS_TV
+    unit = type_config.unit_label  # "v/h"
     _numerator_candidates = [_numerator_main]
 
     n_inputs = len(input_cols)
@@ -478,9 +542,9 @@ def _build_sensitivity_section_html_HPM_HPS(
         df_num[c] = pd.to_numeric(df_num[c], errors="coerce")
 
     q_baselines = {
-        "Q1":  df_num.quantile(0.25),
+        "Q1": df_num.quantile(0.25),
         "Med": df_num.quantile(0.50),
-        "Q3":  df_num.quantile(0.75),
+        "Q3": df_num.quantile(0.75),
     }
 
     _numerator_col: str | None = None
@@ -531,18 +595,19 @@ def _build_sensitivity_section_html_HPM_HPS(
                 f"<b>{feat}</b> : %{{x:.2f}}<br>",
                 f"<b>{_pred_label}</b> : %{{y:.1f}} {unit}<br>",
                 f"<i>Autres features fig&#233;es &#224; {bl_label} :</i><br>",
-            ] + [
-                f"&nbsp;&nbsp;{c} = {q_vec[c]:.2f}<br>"
-                for c in other_feats
-            ]
+            ] + [f"&nbsp;&nbsp;{c} = {q_vec[c]:.2f}<br>" for c in other_feats]
             hover_tmpl = "".join(hover_lines) + "<extra></extra>"
 
-            fig.add_trace(go.Scatter(
-                x=x_vals.tolist(), y=pred_y.tolist(),
-                mode="lines", name=bl_label,
-                line=dict(color=_COLORS[bl_label], dash=_DASHES[bl_label], width=2),
-                hovertemplate=hover_tmpl,
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=x_vals.tolist(),
+                    y=pred_y.tolist(),
+                    mode="lines",
+                    name=bl_label,
+                    line=dict(color=_COLORS[bl_label], dash=_DASHES[bl_label], width=2),
+                    hovertemplate=hover_tmpl,
+                )
+            )
 
         fig.update_layout(
             title=f"{_pred_label} ~ {feat}",
@@ -551,16 +616,23 @@ def _build_sensitivity_section_html_HPM_HPS(
             template="plotly_white",
             margin=dict(l=50, r=40, t=60, b=60),
             hoverlabel=dict(bgcolor="white", font_size=12, font_family="Manrope,sans-serif"),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, title_text="Baseline"),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="left",
+                x=0,
+                title_text="Baseline",
+            ),
         )
         plots_dict[feat] = pio.to_html(fig, include_plotlyjs=False, full_html=False)
         rendered_cols.append(feat)
 
     if not rendered_cols:
         return (
-            '  <h2>Analyse de sensibilit&#233; &#8211; mod&#232;le</h2>\n'
+            "  <h2>Analyse de sensibilit&#233; &#8211; mod&#232;le</h2>\n"
             '  <p class="hint">Mod&#232;le ou colonnes d&#8217;entr&#233;e non disponibles '
-            'pour l&#8217;analyse de sensibilit&#233;.</p>'
+            "pour l&#8217;analyse de sensibilit&#233;.</p>"
         )
 
     pills_html = "\n        ".join(
@@ -572,7 +644,7 @@ def _build_sensitivity_section_html_HPM_HPS(
     plot_divs_html = "\n".join(
         f'<div id="sens-plot-{feat}" class="sens-plot-slot" '
         f'style="display:{"block" if i == 0 else "none"};">'
-        f'{plots_dict[feat]}</div>'
+        f"{plots_dict[feat]}</div>"
         for i, feat in enumerate(rendered_cols)
     )
 
@@ -686,16 +758,13 @@ def generate_html_report_peak(
     Predit    = HPM_FCDr / HPS_FCDr (jamais TVr, jamais TV).
     Pas de variante PL pour ces kinds.
     """
-    pred_col = type_config.eval_predicted_col          # HPM_FCDr / HPS_FCDr
-    ref_col = type_config.eval_reference_col            # TMJOBCTV_HPM / TMJOBCTV_HPS
-    unit = type_config.unit_label                        # "v/h"
+    pred_col = type_config.eval_predicted_col  # HPM_FCDr / HPS_FCDr
+    ref_col = type_config.eval_reference_col  # TMJOBCTV_HPM / TMJOBCTV_HPS
+    unit = type_config.unit_label  # "v/h"
     full_label = type_config.label or type_config.name  # "Heure de Pointe Matin"
-    kind_name = type_config.name                          # "HPM" / "HPS"
-    hour_window = type_config.hour_window                # (8,9) or (17,18)
-    hw_text = (
-        f"{hour_window[0]:02d}h00-{hour_window[1]:02d}h00"
-        if hour_window else ""
-    )
+    kind_name = type_config.name  # "HPM" / "HPS"
+    hour_window = type_config.hour_window  # (8,9) or (17,18)
+    hw_text = f"{hour_window[0]:02d}h00-{hour_window[1]:02d}h00" if hour_window else ""
 
     # --- Build stats row from HPM/HPS columns ---
     if df is not None and pred_col in df.columns and ref_col in df.columns:
@@ -745,19 +814,34 @@ def generate_html_report_peak(
         row = {
             "model": model_name,
             "n": len(y_true),
-            "err_rel_med": float(metrics.median_relative_error) if metrics.median_relative_error is not None else float("nan"),
+            "err_rel_med": (
+                float(metrics.median_relative_error)
+                if metrics.median_relative_error is not None
+                else float("nan")
+            ),
             "err_abs_med": float(metrics.mae),
             "err_rel_p80": float("nan"),
             "err_abs_p80": float("nan"),
-            "geh_lt5_pct": float(np.nanmean(geh_vals < 5) * 100) if np.isfinite(geh_vals).any() else float("nan"),
-            "geh_le10_pct": float(np.nanmean(geh_vals < 10) * 100) if np.isfinite(geh_vals).any() else float("nan"),
+            "geh_lt5_pct": (
+                float(np.nanmean(geh_vals < 5) * 100)
+                if np.isfinite(geh_vals).any()
+                else float("nan")
+            ),
+            "geh_le10_pct": (
+                float(np.nanmean(geh_vals < 10) * 100)
+                if np.isfinite(geh_vals).any()
+                else float("nan")
+            ),
             "n_err_lt10": n_err_lt10,
             "pct_err_lt10": 100.0 * n_err_lt10 / n_total_pct if n_total_pct > 0 else float("nan"),
             "n_err_lt15": n_err_lt15,
             "pct_err_lt15": 100.0 * n_err_lt15 / n_total_pct if n_total_pct > 0 else float("nan"),
             "n_err_lt20": n_err_lt20,
             "pct_err_lt20": 100.0 * n_err_lt20 / n_total_pct if n_total_pct > 0 else float("nan"),
-            "tol_total": 0, "tol_in": 0, "tol_near": 0, "tol_out": 0,
+            "tol_total": 0,
+            "tol_in": 0,
+            "tol_near": 0,
+            "tol_out": 0,
         }
 
     # --- Card styling ---
@@ -802,15 +886,19 @@ def generate_html_report_peak(
             return ""
         return (
             f' <small style="font-size:11px;color:#56637a;font-weight:600;">'
-            f'(CI95 [{lo:.{digits}f}{suffix}, {hi:.{digits}f}{suffix}])</small>'
+            f"(CI95 [{lo:.{digits}f}{suffix}, {hi:.{digits}f}{suffix}])</small>"
         )
 
-    tol_in_pct_val = (100.0 * row["tol_in"] / row["tol_total"]) if row.get("tol_total") else float("nan")
+    tol_in_pct_val = (
+        (100.0 * row["tol_in"] / row["tol_total"]) if row.get("tol_total") else float("nan")
+    )
     r2_val = metrics.r_squared
 
     # --- Barplot ---
     if df is not None and pred_col in df.columns and ref_col in df.columns:
-        bar_html = _make_barplot_html_HPM_HPS(df, title=f"{model_name} - validation", type_config=type_config)
+        bar_html = _make_barplot_html_HPM_HPS(
+            df, title=f"{model_name} - validation", type_config=type_config
+        )
         dist_html = _make_distribution_barplot_html_HPM_HPS(df, type_config)
     else:
         bar_html = "<p>Aucune donnee disponible.</p>"
@@ -820,7 +908,9 @@ def generate_html_report_peak(
     if df is not None and "lat" in df.columns and "lon" in df.columns:
         map_html = _make_folium_map_html_HPM_HPS(df, model_name, type_config)
     else:
-        map_html = "<p style='color:#888;font-style:italic;'>Donnees non disponibles pour la carte.</p>"
+        map_html = (
+            "<p style='color:#888;font-style:italic;'>Donnees non disponibles pour la carte.</p>"
+        )
 
     # --- Outlier table ---
     if df is not None and "Erreur %" in df.columns:
@@ -848,9 +938,9 @@ def generate_html_report_peak(
                 _otrows.append(f"<tr{style}>" + "".join(cells) + "</tr>")
             outlier_html = (
                 f'<table id="outlierTable" class="display" style="width:100%">'
-                f'<thead>{_oth}</thead>'
+                f"<thead>{_oth}</thead>"
                 f'<tbody>{"".join(_otrows)}</tbody>'
-                f'</table>'
+                f"</table>"
             )
             outlier_count = len(out_df)
         else:
@@ -862,10 +952,24 @@ def generate_html_report_peak(
 
     # --- Comparison table ---
     header_cells = [
-        f"Modele {kind_name}", "N", "Err.rel med (%)", f"Err.abs med ({unit})",
-        "Err.rel p80 (%)", f"Err.abs p80 ({unit})", "GEH<5 (%)", "GEH<=10 (%)",
-        "Err<10% N", "Err<10% %", "Err<15% N", "Err<15% %", "Err<20% N", "Err<20% %",
-        "Tol 1 Inclus", "Tol 2 Hors<15%", "Tol 3 Hors>15%", "Tol Total",
+        f"Modele {kind_name}",
+        "N",
+        "Err.rel med (%)",
+        f"Err.abs med ({unit})",
+        "Err.rel p80 (%)",
+        f"Err.abs p80 ({unit})",
+        "GEH<5 (%)",
+        "GEH<=10 (%)",
+        "Err<10% N",
+        "Err<10% %",
+        "Err<15% N",
+        "Err<15% %",
+        "Err<20% N",
+        "Err<20% %",
+        "Tol 1 Inclus",
+        "Tol 2 Hors<15%",
+        "Tol 3 Hors>15%",
+        "Tol Total",
     ]
     thead = "<tr>" + "".join(f"<th>{h}</th>" for h in header_cells) + "</tr>"
 
@@ -890,13 +994,21 @@ def generate_html_report_peak(
         str(row.get("tol_out", "-")),
         str(row.get("tol_total", "-")),
     ]
-    tbody_row = '<tr style="background:#eafaf2;font-weight:700;">' + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+    tbody_row = (
+        '<tr style="background:#eafaf2;font-weight:700;">'
+        + "".join(f"<td>{c}</td>" for c in cells)
+        + "</tr>"
+    )
 
     # --- Stratification table per ref bucket ---
     if metrics_by_tmja_bucket:
         _bucket_headers = [
-            f"Bucket {ref_col} ({unit})", "N", "Tol. inclus (N)", "Tol. inclus (%)",
-            "p80 err.rel (%)", "R&sup2;",
+            f"Bucket {ref_col} ({unit})",
+            "N",
+            "Tol. inclus (N)",
+            "Tol. inclus (%)",
+            "p80 err.rel (%)",
+            "R&sup2;",
         ]
         _bucket_thead = "<tr>" + "".join(f"<th>{h}</th>" for h in _bucket_headers) + "</tr>"
         _bucket_rows: list[str] = []
@@ -908,7 +1020,7 @@ def generate_html_report_peak(
                 _label_cell += (
                     ' <small style="color:#b97a00;font-weight:600;" '
                     'title="Moins de 10 echantillons — fiabilite limitee.">'
-                    '(n&lt;10)</small>'
+                    "(n&lt;10)</small>"
                 )
             _bucket_rows.append(
                 f"<tr{_row_style}>"
@@ -921,54 +1033,54 @@ def generate_html_report_peak(
                 f"</tr>"
             )
         bucket_table_html = (
-            f'  <h2>Metriques stratifiees par tranche de {ref_col}</h2>\n'
+            f"  <h2>Metriques stratifiees par tranche de {ref_col}</h2>\n"
             f'  <p class="hint">Memes metriques recalculees sur 4 buckets de '
-            f'volume de trafic {kind_name} observe ({unit}). Une ligne sur fond '
-            'orange indique moins de 10 echantillons (metriques peu fiables).</p>\n'
+            f"volume de trafic {kind_name} observe ({unit}). Une ligne sur fond "
+            "orange indique moins de 10 echantillons (metriques peu fiables).</p>\n"
             '  <div class="panel">\n'
             '    <table id="tmjaBucketTable" class="display" style="width:100%">\n'
-            f'      <thead>{_bucket_thead}</thead>\n'
+            f"      <thead>{_bucket_thead}</thead>\n"
             f'      <tbody>{"".join(_bucket_rows)}</tbody>\n'
-            '    </table>\n'
-            '  </div>\n'
+            "    </table>\n"
+            "  </div>\n"
         )
     else:
         bucket_table_html = (
-            f'  <h2>Metriques stratifiees par tranche de {ref_col}</h2>\n'
+            f"  <h2>Metriques stratifiees par tranche de {ref_col}</h2>\n"
             '  <p class="hint" style="color:#888;font-style:italic;">'
-            f'Stratification {kind_name} indisponible : colonne {ref_col} absente des donnees de validation.</p>\n'
+            f"Stratification {kind_name} indisponible : colonne {ref_col} absente des donnees de validation.</p>\n"
         )
 
     # --- P4.1 / P4.2 / P4.3 sections (reuse generic builders, unit-agnostic) ---
     calibration_plot_inner = _make_calibration_plot_html(calibration_data)
     calibration_section_html = (
-        f'  <h2>Calibration {kind_name} : predit vs observe</h2>\n'
+        f"  <h2>Calibration {kind_name} : predit vs observe</h2>\n"
         f'  <p class="hint">Chaque point est un capteur {kind_name}. Echelle : {unit}. '
-        'La diagonale rouge <code>y = x</code> represente une prediction parfaite.</p>\n'
+        "La diagonale rouge <code>y = x</code> represente une prediction parfaite.</p>\n"
         '  <div class="panel plot-wrap">\n'
-        f'    {calibration_plot_inner}\n'
-        '  </div>\n'
+        f"    {calibration_plot_inner}\n"
+        "  </div>\n"
     )
 
     residuals_plot_inner = _make_residuals_by_fc_html(residuals_by_fc)
     residuals_section_html = (
-        f'  <h2>Residus {kind_name} par classe fonctionnelle</h2>\n'
+        f"  <h2>Residus {kind_name} par classe fonctionnelle</h2>\n"
         '  <p class="hint">Distribution des residus <code>pred &minus; obs</code> '
-        'pour chaque classe fonctionnelle (FC). Une boite centree sur 0 indique '
-        'un modele non biaise sur cette classe.</p>\n'
+        "pour chaque classe fonctionnelle (FC). Une boite centree sur 0 indique "
+        "un modele non biaise sur cette classe.</p>\n"
         '  <div class="panel plot-wrap">\n'
-        f'    {residuals_plot_inner}\n'
-        '  </div>\n'
+        f"    {residuals_plot_inner}\n"
+        "  </div>\n"
     )
 
     drift_inner = _make_drift_by_year_html(drift_by_year)
     drift_section_html = (
-        f'  <h2>Derive annuelle {kind_name} (metriques par annee)</h2>\n'
+        f"  <h2>Derive annuelle {kind_name} (metriques par annee)</h2>\n"
         '  <p class="hint">Memes metriques recalculees pour chaque annee '
-        'presente dans le jeu de validation (au moins 10 echantillons).</p>\n'
+        "presente dans le jeu de validation (au moins 10 echantillons).</p>\n"
         '  <div class="panel">\n'
-        f'    {drift_inner}\n'
-        '  </div>\n'
+        f"    {drift_inner}\n"
+        "  </div>\n"
     )
 
     # --- Assemble full HTML ---

@@ -63,6 +63,7 @@ def _fmt(v, digits=2) -> str:
 # with the original evaluation.py call sites.
 # ---------------------------------------------------------------------------
 
+
 def _add_tolerance_columns(df: pd.DataFrame, type_config: Any = None) -> pd.DataFrame:
     """Compute tolerance band columns + Tolerance_IN_OUT.
 
@@ -73,6 +74,7 @@ def _add_tolerance_columns(df: pd.DataFrame, type_config: Any = None) -> pd.Data
     """
     from ..ml.evaluation_pipeline import add_tolerance_columns
     from ..ml.types import TV_CONFIG
+
     if type_config is None:
         type_config = TV_CONFIG
     return add_tolerance_columns(df, type_config)
@@ -87,6 +89,7 @@ def _compute_flow_metrics(df: pd.DataFrame, type_config: Any = None) -> dict:
     """
     from ..ml.evaluation_pipeline import compute_flow_metrics
     from ..ml.types import TV_CONFIG
+
     if type_config is None:
         type_config = TV_CONFIG
     return compute_flow_metrics(df, type_config)
@@ -95,6 +98,7 @@ def _compute_flow_metrics(df: pd.DataFrame, type_config: Any = None) -> dict:
 def _compute_tolerance_counts(df: pd.DataFrame) -> dict:
     """Count Tolerance_IN_OUT — delegates to service.evaluation_pipeline (B3)."""
     from ..ml.evaluation_pipeline import compute_tolerance_counts
+
     return compute_tolerance_counts(df)
 
 
@@ -102,6 +106,7 @@ def _compute_tolerance_counts(df: pd.DataFrame) -> dict:
 # Shared GEH helper — kept in sync with the evaluation router so daily
 # (TV/PL) reports compute GEH on hourly-converted volumes.
 # ---------------------------------------------------------------------------
+
 
 def _geh(observed: np.ndarray, predicted: np.ndarray) -> np.ndarray:
     """GEH statistic (traffic engineering).
@@ -123,6 +128,7 @@ def _geh(observed: np.ndarray, predicted: np.ndarray) -> np.ndarray:
 # parent report only has to embed the string and add a heading.
 # ---------------------------------------------------------------------------
 
+
 def _make_calibration_plot_html(
     calibration_data: dict[str, Any] | None,
 ) -> str:
@@ -133,14 +139,14 @@ def _make_calibration_plot_html(
     if not calibration_data:
         return (
             '<p style="color:#888;font-style:italic;">'
-            'Donnees indisponibles &mdash; vecteurs obs/pred vides.</p>'
+            "Donnees indisponibles &mdash; vecteurs obs/pred vides.</p>"
         )
     obs = calibration_data.get("obs") or []
     pred = calibration_data.get("pred") or []
     if not obs or not pred:
         return (
             '<p style="color:#888;font-style:italic;">'
-            'Donnees indisponibles &mdash; vecteurs obs/pred vides.</p>'
+            "Donnees indisponibles &mdash; vecteurs obs/pred vides.</p>"
         )
 
     import plotly.graph_objects as go
@@ -152,7 +158,7 @@ def _make_calibration_plot_html(
     if not finite.any():
         return (
             '<p style="color:#888;font-style:italic;">'
-            'Donnees indisponibles &mdash; aucune paire (obs, pred) finie.</p>'
+            "Donnees indisponibles &mdash; aucune paire (obs, pred) finie.</p>"
         )
     obs_arr = obs_arr[finite]
     pred_arr = pred_arr[finite]
@@ -163,30 +169,33 @@ def _make_calibration_plot_html(
         hi = lo + 1.0
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=obs_arr.tolist(),
-        y=pred_arr.tolist(),
-        mode="markers",
-        name="Capteurs",
-        marker=dict(
-            size=6,
-            color="#0057b7",
-            opacity=0.55,
-            line=dict(width=0),
-        ),
-        hovertemplate=(
-            "<b>Observe</b> : %{x:.2f}<br>"
-            "<b>Predit</b> : %{y:.2f}<extra></extra>"
-        ),
-    ))
-    fig.add_trace(go.Scatter(
-        x=[lo, hi],
-        y=[lo, hi],
-        mode="lines",
-        name="y = x (parfait)",
-        line=dict(color="#e74c3c", width=2, dash="dash"),
-        hoverinfo="skip",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=obs_arr.tolist(),
+            y=pred_arr.tolist(),
+            mode="markers",
+            name="Capteurs",
+            marker=dict(
+                size=6,
+                color="#0057b7",
+                opacity=0.55,
+                line=dict(width=0),
+            ),
+            hovertemplate=(
+                "<b>Observe</b> : %{x:.2f}<br>" "<b>Predit</b> : %{y:.2f}<extra></extra>"
+            ),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[lo, hi],
+            y=[lo, hi],
+            mode="lines",
+            name="y = x (parfait)",
+            line=dict(color="#e74c3c", width=2, dash="dash"),
+            hoverinfo="skip",
+        )
+    )
     n_full = int(calibration_data.get("n", len(obs_arr)))
     n_plotted = int(calibration_data.get("n_plotted", len(obs_arr)))
     subtitle = ""
@@ -211,8 +220,8 @@ def _make_residuals_by_fc_html(
     if not residuals_by_fc:
         return (
             '<p style="color:#888;font-style:italic;">'
-            'Donnees indisponibles &mdash; colonne <code>functional_class</code> '
-            '(ou one-hot <code>fc_1..fc_5</code>) absente du jeu de validation.</p>'
+            "Donnees indisponibles &mdash; colonne <code>functional_class</code> "
+            "(ou one-hot <code>fc_1..fc_5</code>) absente du jeu de validation.</p>"
         )
 
     import plotly.graph_objects as go
@@ -225,24 +234,31 @@ def _make_residuals_by_fc_html(
         residuals = entry.get("residuals") or []
         if not residuals:
             continue
-        fig.add_trace(go.Box(
-            y=residuals,
-            name=f"FC {fc}",
-            marker_color=palette[i % len(palette)],
-            boxmean=True,
-            hovertemplate=(
-                f"<b>Classe fonctionnelle</b> : {fc}<br>"
-                "<b>Residu</b> : %{y:.4f}<extra></extra>"
-            ),
-        ))
+        fig.add_trace(
+            go.Box(
+                y=residuals,
+                name=f"FC {fc}",
+                marker_color=palette[i % len(palette)],
+                boxmean=True,
+                hovertemplate=(
+                    f"<b>Classe fonctionnelle</b> : {fc}<br>"
+                    "<b>Residu</b> : %{y:.4f}<extra></extra>"
+                ),
+            )
+        )
     if not fig.data:
         return (
             '<p style="color:#888;font-style:italic;">'
-            'Donnees indisponibles &mdash; aucun residu calculable par classe.</p>'
+            "Donnees indisponibles &mdash; aucun residu calculable par classe.</p>"
         )
     fig.add_shape(
-        type="line", xref="paper", yref="y",
-        x0=0, x1=1, y0=0, y1=0,
+        type="line",
+        xref="paper",
+        yref="y",
+        x0=0,
+        x1=1,
+        y0=0,
+        y1=0,
         line=dict(color="#999", width=1, dash="dot"),
     )
     fig.update_layout(
@@ -264,11 +280,16 @@ def _make_drift_by_year_html(
     if not drift_by_year:
         return (
             '<p style="color:#888;font-style:italic;">'
-            'Donnees indisponibles &mdash; colonne <code>year_mapped</code> absente '
-            'ou aucune annee n a au moins 10 echantillons.</p>'
+            "Donnees indisponibles &mdash; colonne <code>year_mapped</code> absente "
+            "ou aucune annee n a au moins 10 echantillons.</p>"
         )
     headers = [
-        "Annee", "N", "R&sup2;", "MAE", "Tol. inclus (%)", "p80 err.rel (%)",
+        "Annee",
+        "N",
+        "R&sup2;",
+        "MAE",
+        "Tol. inclus (%)",
+        "p80 err.rel (%)",
     ]
     thead = "<tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr>"
     rows: list[str] = []
@@ -277,8 +298,7 @@ def _make_drift_by_year_html(
         ym = entry.get("year_mapped")
         if ym is not None:
             label += (
-                f' <small style="color:#56637a;font-weight:500;">'
-                f'(year_mapped={ym})</small>'
+                f' <small style="color:#56637a;font-weight:500;">' f"(year_mapped={ym})</small>"
             )
         rows.append(
             "<tr>"
@@ -292,9 +312,9 @@ def _make_drift_by_year_html(
         )
     return (
         '<table id="driftByYearTable" class="display" style="width:100%">'
-        f'<thead>{thead}</thead>'
+        f"<thead>{thead}</thead>"
         f'<tbody>{"".join(rows)}</tbody>'
-        '</table>'
+        "</table>"
     )
 
 
@@ -302,6 +322,7 @@ def _make_drift_by_year_html(
 # Sensitivity-analysis section (TV / PL — daily v/j scale).
 # HPM / HPS use a kind-specific variant living in ``html_peak``.
 # ---------------------------------------------------------------------------
+
 
 def _build_sensitivity_section_html(
     df: pd.DataFrame,
@@ -329,11 +350,13 @@ def _build_sensitivity_section_html(
     """
     import plotly.graph_objects as go
     import plotly.io as pio
+
     from ..ml.types import TV_CONFIG
+
     if type_config is None:
         type_config = TV_CONFIG
-    _pred_label = type_config.eval_predicted_col              # "TVr" or "DPL"
-    _numerator_main = type_config.eval_numerator_fcd          # "TMJOFCDTV" or "TMJOFCDPL"
+    _pred_label = type_config.eval_predicted_col  # "TVr" or "DPL"
+    _numerator_main = type_config.eval_numerator_fcd  # "TMJOFCDTV" or "TMJOFCDPL"
     # Candidates that may appear in input_cols on legacy schemas; first match wins.
     _numerator_candidates = [_numerator_main]
     if _pred_label == "TVr":
@@ -362,9 +385,9 @@ def _build_sensitivity_section_html(
 
     # Compute Q1 / Median / Q3 baselines
     q_baselines = {
-        "Q1":  df_num.quantile(0.25),
+        "Q1": df_num.quantile(0.25),
         "Med": df_num.quantile(0.50),
-        "Q3":  df_num.quantile(0.75),
+        "Q3": df_num.quantile(0.75),
     }
 
     # Determine numerator column for the eval-predicted denormalisation
@@ -429,20 +452,19 @@ def _build_sensitivity_section_html(
                 f"<b>{feat}</b> : %{{x:.2f}}<br>",
                 f"<b>{_pred_label}</b> : %{{y:.1f}}<br>",
                 f"<i>Autres features fig&#233;es &#224; {bl_label} :</i><br>",
-            ] + [
-                f"&nbsp;&nbsp;{c} = {q_vec[c]:.2f}<br>"
-                for c in other_feats
-            ]
+            ] + [f"&nbsp;&nbsp;{c} = {q_vec[c]:.2f}<br>" for c in other_feats]
             hover_tmpl = "".join(hover_lines) + "<extra></extra>"
 
-            fig.add_trace(go.Scatter(
-                x=x_vals.tolist(),
-                y=pred_y.tolist(),
-                mode="lines",
-                name=bl_label,
-                line=dict(color=_COLORS[bl_label], dash=_DASHES[bl_label], width=2),
-                hovertemplate=hover_tmpl,
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=x_vals.tolist(),
+                    y=pred_y.tolist(),
+                    mode="lines",
+                    name=bl_label,
+                    line=dict(color=_COLORS[bl_label], dash=_DASHES[bl_label], width=2),
+                    hovertemplate=hover_tmpl,
+                )
+            )
 
         fig.update_layout(
             title=f"{_pred_label} ~ {feat}",
@@ -453,8 +475,10 @@ def _build_sensitivity_section_html(
             hoverlabel=dict(bgcolor="white", font_size=12, font_family="Manrope,sans-serif"),
             legend=dict(
                 orientation="h",
-                yanchor="bottom", y=1.02,
-                xanchor="left", x=0,
+                yanchor="bottom",
+                y=1.02,
+                xanchor="left",
+                x=0,
                 title_text="Baseline",
             ),
         )
@@ -465,9 +489,9 @@ def _build_sensitivity_section_html(
     # Build the HTML section
     if not rendered_cols:
         return (
-            '  <h2>Analyse de sensibilit&#233; &#8211; mod&#232;le</h2>\n'
+            "  <h2>Analyse de sensibilit&#233; &#8211; mod&#232;le</h2>\n"
             '  <p class="hint">Mod&#232;le ou colonnes d&#8217;entr&#233;e non disponibles '
-            'pour l&#8217;analyse de sensibilit&#233;.</p>'
+            "pour l&#8217;analyse de sensibilit&#233;.</p>"
         )
 
     # Pills
@@ -481,7 +505,7 @@ def _build_sensitivity_section_html(
     plot_divs_html = "\n".join(
         f'<div id="sens-plot-{feat}" class="sens-plot-slot" '
         f'style="display:{"block" if i == 0 else "none"};">'
-        f'{plots_dict[feat]}</div>'
+        f"{plots_dict[feat]}</div>"
         for i, feat in enumerate(rendered_cols)
     )
 
@@ -573,21 +597,25 @@ def _build_sensitivity_section_html(
 # Importing here is deferred so each submodule stays optional at import time.
 # ---------------------------------------------------------------------------
 
+
 def generate_html_report_tv(*args, **kwargs) -> str:
     """Self-contained HTML evaluation report for TV models (daily, v/j)."""
     from .html_tv import generate_html_report_tv as _impl
+
     return _impl(*args, **kwargs)
 
 
 def generate_html_report_pl(*args, **kwargs) -> str:
     """Self-contained HTML evaluation report for PL (Poids Lourds) models."""
     from .html_pl import generate_html_report_pl as _impl
+
     return _impl(*args, **kwargs)
 
 
 def generate_html_report_peak(*args, **kwargs) -> str:
     """Self-contained HTML evaluation report for HPM / HPS peak-hour models."""
     from .html_peak import generate_html_report_peak as _impl
+
     return _impl(*args, **kwargs)
 
 

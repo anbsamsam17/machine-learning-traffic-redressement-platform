@@ -5,16 +5,13 @@ from __future__ import annotations
 import io
 import json
 import logging
-import tempfile
 import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
 
 from ..auth import UserRecord, get_current_user, require_owned_session
-from ..session import session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/export", tags=["export"])
@@ -23,6 +20,7 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 def _resolve_export_kind(session, model_name: str) -> str:
     """Best-effort resolution of the model kind for the export filename.
@@ -96,13 +94,14 @@ async def export_model(
     # Inject le kind dans le nom du ZIP exporte (HPM / HPS / PL / TV).
     kind = _resolve_export_kind(session, model_name)
     fn_up = (model_name or "").upper()
-    already_prefixed = any(
-        fn_up.startswith(f"MODEL_{k}_") for k in ("TV", "PL", "HPM", "HPS")
-    )
+    already_prefixed = any(fn_up.startswith(f"MODEL_{k}_") for k in ("TV", "PL", "HPM", "HPS"))
     export_basename = model_name if already_prefixed else f"model_{kind}_{model_name}"
     logger.info(
         "Model exported: session=%s name=%s kind=%s size=%d bytes",
-        session_id, model_name, kind, len(zip_bytes),
+        session_id,
+        model_name,
+        kind,
+        len(zip_bytes),
     )
 
     return Response(
@@ -154,7 +153,10 @@ async def export_all_models(
     label = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(label))[:60] or "models"
     logger.info(
         "Bulk models export: session=%s files=%d size=%d bytes label=%s",
-        session_id, file_count, len(zip_bytes), label,
+        session_id,
+        file_count,
+        len(zip_bytes),
+        label,
     )
 
     return Response(

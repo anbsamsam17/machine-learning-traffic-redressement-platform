@@ -10,16 +10,16 @@ from __future__ import annotations
 import secrets
 
 import pytest
+from fastapi import HTTPException
 
 from app.auth import UserRecord, get_owned_session, user_store
-from app.session import session_manager
 from app.security import (
     _ensure_safe_segment,
     session_root,
     validate_path,
     validate_session_path,
 )
-from fastapi import HTTPException
+from app.session import session_manager
 
 
 def _make_user(email: str | None = None) -> UserRecord:
@@ -178,13 +178,17 @@ class TestPickleRefused:
 
     def test_df_with_dict_cell_serialises_via_parquet(self):
         import io
+
         import pandas as pd
+
         from app.session import _df_to_parquet_safe
 
-        df = pd.DataFrame({
-            "id": [1, 2],
-            "geometry": [{"type": "Point", "coordinates": [0, 0]}, None],
-        })
+        df = pd.DataFrame(
+            {
+                "id": [1, 2],
+                "geometry": [{"type": "Point", "coordinates": [0, 0]}, None],
+            }
+        )
         data = _df_to_parquet_safe(df)
         out = pd.read_parquet(io.BytesIO(data))
         assert len(out) == 2
@@ -203,10 +207,13 @@ class TestPickleRefused:
 # `require_owned_session` partout. Si A1 n'a pas fini, certains peuvent
 # echouer avec 200 au lieu de 403/404.
 
+
 class TestIDORCrossTenantHTTP:
     """User B ne doit JAMAIS pouvoir acceder a la session de User A."""
 
-    async def _register_and_login(self, client, email: str, password: str = "test-pass-12345") -> dict:
+    async def _register_and_login(
+        self, client, email: str, password: str = "test-pass-12345"
+    ) -> dict:
         """Register + login un user via le client async, retourne le token."""
         r = await client.post("/api/auth/register", json={"email": email, "password": password})
         # 201 si nouveau, 409 si deja existe (re-login OK dans ce cas)
@@ -227,6 +234,7 @@ class TestIDORCrossTenantHTTP:
         sid = r.json()["session_id"]
         # Verifier au niveau backend que la session a bien un owner
         from app.session import session_manager
+
         sess = session_manager.get_session(sid)
         assert sess is not None
         assert sess.owner_user_id  # non-vide
@@ -263,9 +271,10 @@ class TestIDORCrossTenantHTTP:
             json={"session_id": sid_a},
         )
         # Accept 404 (no leak) ou 403 (explicit forbid). NE PAS accepter 200.
-        assert r_b.status_code in (403, 404), (
-            f"IDOR leak: user B got status={r_b.status_code} for user A's session"
-        )
+        assert r_b.status_code in (
+            403,
+            404,
+        ), f"IDOR leak: user B got status={r_b.status_code} for user A's session"
 
     @pytest.mark.asyncio
     async def test_mapping_auto_requires_ownership(self, client, csv_content):
@@ -322,6 +331,9 @@ class TestIDORCrossTenantHTTP:
         ]:
             r = await getattr(authenticated_client, method)(endpoint, **kwargs)
             # Pas de 200 et pas de 500 (= leak ou stack trace).
-            assert r.status_code in (400, 403, 404, 422), (
-                f"path traversal on {endpoint}: status={r.status_code}"
-            )
+            assert r.status_code in (
+                400,
+                403,
+                404,
+                422,
+            ), f"path traversal on {endpoint}: status={r.status_code}"

@@ -146,7 +146,9 @@ def test_geojson_tv_emits_canonical_key():
     parsed = {
         "type": "FeatureCollection",
         "features": [
-            _point(4.85, 45.75, {"Identifiant ptm": "1", "Moyenne jours ouvrable (veh/jour)": 17805}),
+            _point(
+                4.85, 45.75, {"Identifiant ptm": "1", "Moyenne jours ouvrable (veh/jour)": 17805}
+            ),
             _point(4.86, 45.76, {"Identifiant ptm": "2", "Moyenne jours ouvrable (veh/jour)": 0}),
         ],
     }

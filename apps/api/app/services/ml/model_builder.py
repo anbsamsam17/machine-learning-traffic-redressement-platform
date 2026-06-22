@@ -35,31 +35,30 @@ os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 os.environ.setdefault("TF_GPU_ALLOCATOR", "cuda_malloc_async")
 os.environ.setdefault("TF_XLA_FLAGS", "--tf_xla_enable_xla_devices=false")
 
+import logging as _logging  # noqa: E402
+
+# Keras 3 exposes ``saving.register_keras_serializable`` on the standalone
+# ``keras`` package; ``tensorflow.keras`` is a lazy shim that does not, so
+# we import directly.
+import keras as _keras_pkg  # noqa: E402
 import tensorflow as tf  # noqa: E402
 from tensorflow import keras  # noqa: E402
 from tensorflow.keras import Sequential  # noqa: E402
 from tensorflow.keras.layers import Dense, Dropout  # noqa: E402
 from tensorflow.keras.optimizers import Adam  # noqa: E402
 
-# Keras 3 exposes ``saving.register_keras_serializable`` on the standalone
-# ``keras`` package; ``tensorflow.keras`` is a lazy shim that does not, so
-# we import directly.
-import keras as _keras_pkg  # noqa: E402
-
-import logging as _logging  # noqa: E402
 _mb_logger = _logging.getLogger(__name__)
 
 
 # AdamW availability — Keras 3 ships it natively; older TF/Keras may not.
 try:
     from tensorflow.keras.optimizers import AdamW as _AdamW  # noqa: E402
+
     _HAS_ADAMW = True
 except ImportError:  # pragma: no cover — depends on env
     _AdamW = None  # type: ignore
     _HAS_ADAMW = False
-    _mb_logger.debug(
-        "keras.optimizers.AdamW not available — 'adamw' will fall back to Adam"
-    )
+    _mb_logger.debug("keras.optimizers.AdamW not available — 'adamw' will fall back to Adam")
 
 
 # --- Custom layers for year embedding (named so they can be safely
@@ -94,6 +93,7 @@ class _YearToIndex(keras.layers.Layer):
 
     def call(self, inputs):
         from keras import ops as kops
+
         return kops.clip(kops.cast(inputs, "int32") - 1, 0, self.n_categories - 1)
 
     def compute_output_shape(self, input_shape):
@@ -117,6 +117,7 @@ class _OtherFeatures(keras.layers.Layer):
 
     def call(self, inputs):
         from keras import ops as kops
+
         return kops.take(inputs, self._keep, axis=1)
 
     def compute_output_shape(self, input_shape):
@@ -153,9 +154,8 @@ for _setter, _label in (
 # Helpers (P3.4 dropout schedule, P3.7 norm layer, P3.9 multi-quantile loss)
 # ---------------------------------------------------------------------------
 
-def _dropout_schedule(
-    dropout: float, n_layers: int, schedule: str
-) -> list[float]:
+
+def _dropout_schedule(dropout: float, n_layers: int, schedule: str) -> list[float]:
     """Return a list of per-layer dropout rates.
 
     - ``uniform``     : ``[dropout] * n_layers`` (legacy behaviour).
@@ -174,9 +174,7 @@ def _dropout_schedule(
     return [float(dropout)] * n_layers
 
 
-def _resolve_norm_layer(
-    use_batch_norm: bool, norm_layer: str | None, activation: str
-) -> str:
+def _resolve_norm_layer(use_batch_norm: bool, norm_layer: str | None, activation: str) -> str:
     """Resolve the requested normalization mode.
 
     Precedence:
@@ -194,9 +192,17 @@ def _resolve_norm_layer(
 
 def _make_norm_layer(mode: str, name: str | None = None) -> keras.layers.Layer | None:
     if mode == "batch":
-        return keras.layers.BatchNormalization(name=name) if name else keras.layers.BatchNormalization()
+        return (
+            keras.layers.BatchNormalization(name=name)
+            if name
+            else keras.layers.BatchNormalization()
+        )
     if mode == "layer":
-        return keras.layers.LayerNormalization(name=name) if name else keras.layers.LayerNormalization()
+        return (
+            keras.layers.LayerNormalization(name=name)
+            if name
+            else keras.layers.LayerNormalization()
+        )
     return None
 
 
@@ -242,6 +248,7 @@ def _multi_quantile_loss(quantiles: list[float]):
 # Optimizer / compile
 # ---------------------------------------------------------------------------
 
+
 def _build_optimizer(
     name: str,
     learning_rate: float,
@@ -256,9 +263,7 @@ def _build_optimizer(
     if name == "adamw":
         if _HAS_ADAMW:
             return _AdamW(weight_decay=float(weight_decay or 0.0), **kwargs)
-        _mb_logger.debug(
-            "AdamW not available in this Keras build — falling back to Adam"
-        )
+        _mb_logger.debug("AdamW not available in this Keras build — falling back to Adam")
         return Adam(**kwargs)
     # default Adam path
     return Adam(**kwargs)
@@ -324,6 +329,7 @@ def _compile_model(
 # Hidden stack builder shared by Sequential / Functional / Skip / Embedding
 # ---------------------------------------------------------------------------
 
+
 def _apply_hidden_stack(
     x,
     *,
@@ -346,9 +352,7 @@ def _apply_hidden_stack(
         x = _dropout_layer(
             drop, activation, name=f"{name_prefix}dropout_{i}" if name_prefix else None
         )(x)
-        norm = _make_norm_layer(
-            norm_mode, name=f"{name_prefix}norm_{i}" if name_prefix else None
-        )
+        norm = _make_norm_layer(norm_mode, name=f"{name_prefix}norm_{i}" if name_prefix else None)
         if norm is not None:
             x = norm(x)
         x = Dense(
@@ -363,6 +367,7 @@ def _apply_hidden_stack(
 # ---------------------------------------------------------------------------
 # Build paths
 # ---------------------------------------------------------------------------
+
 
 def _build_sequential(
     input_size: int,
@@ -392,18 +397,14 @@ def _build_sequential(
         n_units = max(2, int(round(input_size * factor)))
         rate_i = rates[i]
         if i == 0:
-            layers.append(
-                _dropout_layer(rate_i, activation, input_shape=(input_size,))
-            )
+            layers.append(_dropout_layer(rate_i, activation, input_shape=(input_size,)))
         else:
             layers.append(_dropout_layer(rate_i, activation))
         if norm_mode == "batch":
             layers.append(keras.layers.BatchNormalization())
         elif norm_mode == "layer":
             layers.append(keras.layers.LayerNormalization())
-        layers.append(
-            Dense(n_units, activation=activation, kernel_initializer=initializer)
-        )
+        layers.append(Dense(n_units, activation=activation, kernel_initializer=initializer))
 
     # Output layer -- linear activation for regression.
     out_units = n_quantiles if use_quantile_head else output_size
@@ -480,8 +481,7 @@ def _build_with_year_embedding(
     """
     if not (0 <= year_feature_idx < input_size):
         raise ValueError(
-            f"year_feature_idx={year_feature_idx} out of range "
-            f"for input_size={input_size}"
+            f"year_feature_idx={year_feature_idx} out of range " f"for input_size={input_size}"
         )
 
     rates = _dropout_schedule(dropout, len(neurons_factors), dropout_schedule)

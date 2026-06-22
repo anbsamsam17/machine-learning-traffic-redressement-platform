@@ -88,6 +88,7 @@ def _parse_geom_shapely(g: Any):
         return None
     try:
         from shapely.geometry import shape as _shapely_shape
+
         return _shapely_shape(geom)
     except Exception:  # noqa: BLE001 — defensive parse only
         return None

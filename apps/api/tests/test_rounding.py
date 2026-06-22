@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 # ---------------------------------------------------------------------------
 # Imports avec fallback (refactor en cours par autre agent)
@@ -21,21 +20,24 @@ import pytest
 
 try:
     from app.services.ml.rounding import (
-        _round_progressive,
         _appliquer_arrondi_avec_coherence,
+        _round_progressive,
     )
+
     _IMPORT_SOURCE = "services.ml.rounding"
 except ImportError:
     from app.routers.carte import (
-        _round_progressive,
         _appliquer_arrondi_avec_coherence,
+        _round_progressive,
     )
+
     _IMPORT_SOURCE = "routers.carte"
 
 
 # ---------------------------------------------------------------------------
 # _round_progressive — paliers
 # ---------------------------------------------------------------------------
+
 
 class TestRoundProgressivePaliers:
     """Verifie l'arrondi 3 paliers <100/x5, <1000/x10, >=1000/x100."""
@@ -121,6 +123,7 @@ class TestRoundProgressivePaliers:
 # _appliquer_arrondi_avec_coherence — preserve l'ordre min<=central<=max
 # ---------------------------------------------------------------------------
 
+
 class TestAppliquerArrondiAvecCoherence:
     """Tests le wrapper qui force min <= central <= max apres arrondi
     independant des trois series."""
@@ -134,13 +137,16 @@ class TestAppliquerArrondiAvecCoherence:
           - le min (145) reste < central (150) -> OK,
           - mais on doit s'assurer que le code n'inverse pas l'ordre.
         """
-        df = pd.DataFrame({
-            "JOrmin": [145.0, 80.0, 110.0],
-            "JOr":    [148.0, 95.0, 130.0],
-            "JOrmax": [152.0, 105.0, 175.0],
-        })
+        df = pd.DataFrame(
+            {
+                "JOrmin": [145.0, 80.0, 110.0],
+                "JOr": [148.0, 95.0, 130.0],
+                "JOrmax": [152.0, 105.0, 175.0],
+            }
+        )
         out = _appliquer_arrondi_avec_coherence(
-            df.copy(), [("JOrmin", "JOr", "JOrmax")],
+            df.copy(),
+            [("JOrmin", "JOr", "JOrmax")],
         )
         # Coherence : min <= central <= max sur toutes les lignes
         assert (out["JOrmin"] <= out["JOr"]).all()
@@ -148,10 +154,16 @@ class TestAppliquerArrondiAvecCoherence:
 
     def test_appliquer_arrondi_avec_coherence_multiple_triplets(self):
         """Plusieurs triplets traites en un appel (JOr, DPL, PM, PS)."""
-        df = pd.DataFrame({
-            "JOrmin": [145.0], "JOr": [148.0], "JOrmax": [152.0],
-            "DPLmin": [40.0], "DPL": [42.0], "DPLmax": [45.0],
-        })
+        df = pd.DataFrame(
+            {
+                "JOrmin": [145.0],
+                "JOr": [148.0],
+                "JOrmax": [152.0],
+                "DPLmin": [40.0],
+                "DPL": [42.0],
+                "DPLmax": [45.0],
+            }
+        )
         out = _appliquer_arrondi_avec_coherence(
             df.copy(),
             [("JOrmin", "JOr", "JOrmax"), ("DPLmin", "DPL", "DPLmax")],
@@ -163,7 +175,8 @@ class TestAppliquerArrondiAvecCoherence:
         """Si une colonne du triplet n'est pas la, on skip silencieusement (no crash)."""
         df = pd.DataFrame({"JOrmin": [10.0], "JOr": [20.0]})  # pas de JOrmax
         out = _appliquer_arrondi_avec_coherence(
-            df.copy(), [("JOrmin", "JOr", "JOrmax")],
+            df.copy(),
+            [("JOrmin", "JOr", "JOrmax")],
         )
         # JOrmin et JOr sont arrondis ; JOrmax n'est pas cree.
         assert "JOrmax" not in out.columns or pd.api.types.is_numeric_dtype(out.get("JOrmax"))
@@ -172,6 +185,7 @@ class TestAppliquerArrondiAvecCoherence:
 # ---------------------------------------------------------------------------
 # Source de l'import (audit)
 # ---------------------------------------------------------------------------
+
 
 def test_import_source_visible():
     """Note l'origine des imports (audit, pas check fonctionnel)."""

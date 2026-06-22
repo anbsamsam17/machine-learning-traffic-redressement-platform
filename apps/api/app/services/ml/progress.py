@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 # Ensure GPU is disabled before any TF import
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
@@ -24,9 +25,14 @@ class ProgressPayload:
     """Simple namespace for progress data sent to the callback."""
 
     __slots__ = (
-        "run_name", "epoch", "total_epochs",
-        "model_idx", "total_models",
-        "loss", "val_loss", "timestamp",
+        "run_name",
+        "epoch",
+        "total_epochs",
+        "model_idx",
+        "total_models",
+        "loss",
+        "val_loss",
+        "timestamp",
     )
 
     def __init__(
@@ -93,5 +99,7 @@ class TrainingProgressCallback(keras.callbacks.Callback):
             self._cb(payload)
         except Exception as exc:
             logger.warning(
-                "Progress callback failed at epoch %d: %s", epoch + 1, exc,
+                "Progress callback failed at epoch %d: %s",
+                epoch + 1,
+                exc,
             )

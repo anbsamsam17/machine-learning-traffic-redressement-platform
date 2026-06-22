@@ -7,14 +7,13 @@ No disk I/O is performed.
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 import os
-from datetime import datetime
-from pathlib import Path
 import threading  # noqa: F401 -- used in type hint string
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ...training_guard import TrainingDeadline
@@ -35,7 +34,6 @@ from .data_prep import prepare_training_data, split_train_valid
 from .grid_search import (
     GridCombination,
     build_feature_sets,
-    feature_mask_name,
     generate_all_combinations,
 )
 from .model_builder import build_model
@@ -51,15 +49,19 @@ SEED = 1750
 # In-memory model artifact
 # ---------------------------------------------------------------------------
 
+
 class TrainedModelArtifact:
     """Container for a single trained model kept in memory."""
 
     __slots__ = (
         "run_name",
         "model",
-        "mu_x", "sigma_x",
-        "mu_y", "sigma_y",
-        "input_cols", "output_cols",
+        "mu_x",
+        "sigma_x",
+        "mu_y",
+        "sigma_y",
+        "input_cols",
+        "output_cols",
         "on_off_norm_subset",
         "training_config",
         "training_metrics",
@@ -74,6 +76,7 @@ class TrainedModelArtifact:
 # ---------------------------------------------------------------------------
 # P4.5 — Hard example mining callback
 # ---------------------------------------------------------------------------
+
 
 class HardExampleMiningCallback(keras.callbacks.Callback):
     """Boost sample_weight on hard training examples mid-training.
@@ -174,6 +177,7 @@ class HardExampleMiningCallback(keras.callbacks.Callback):
 # Single model training (in memory)
 # ---------------------------------------------------------------------------
 
+
 def _train_single(
     x_train_norm: np.ndarray,
     y_train_norm: np.ndarray,
@@ -205,8 +209,8 @@ def _train_single(
     test_size: float,
     year_column_name: str | None = None,
     year_value_mapping: dict[str, float] | None = None,
-    cancel_event: "threading.Event | None" = None,
-    deadline: "TrainingDeadline | None" = None,
+    cancel_event: threading.Event | None = None,
+    deadline: TrainingDeadline | None = None,
     reduce_lr_patience: int = 10,
     reduce_lr_factor: float = 0.5,
     reduce_lr_min: float = 1e-5,
@@ -240,15 +244,11 @@ def _train_single(
     # year_embedding=True. We only enable it when the model actually
     # consumes `year_mapped` AND a non-empty year_value_mapping was passed.
     _year_emb_active = bool(use_year_embedding) and ("year_mapped" in combo.feature_cols)
-    _year_feature_idx = (
-        combo.feature_cols.index("year_mapped") if _year_emb_active else None
-    )
+    _year_feature_idx = combo.feature_cols.index("year_mapped") if _year_emb_active else None
     # n_categories falls back to 7 (the default in build_model) when the
     # caller didn't pass a mapping — keeps the layer width consistent with
     # the original P2B.7 reference implementation.
-    _year_n_cats = (
-        len(year_value_mapping) if (year_value_mapping and _year_emb_active) else 7
-    )
+    _year_n_cats = len(year_value_mapping) if (year_value_mapping and _year_emb_active) else 7
 
     model = build_model(
         input_size=x_train_norm.shape[1],
@@ -313,24 +313,29 @@ def _train_single(
 
     callbacks_list: list = [early_stop, reduce_lr]
     if cancel_event is not None:
+
         class _CancelCallback(keras.callbacks.Callback):
             def on_epoch_end(self, epoch, logs=None):
                 if cancel_event.is_set():
                     self.model.stop_training = True
+
         callbacks_list.append(_CancelCallback())
     # A9 (training_guard) — wall-clock deadline. Aborts the run cleanly at
     # MAX_TRAINING_MINUTES so a single grid cannot monopolise the (2-core ARM)
     # API indefinitely. No-op for short/test trainings (default 30-60 min).
     if deadline is not None:
+
         class _DeadlineCallback(keras.callbacks.Callback):
             def on_epoch_end(self, epoch, logs=None):
                 if deadline.should_stop():
                     self.model.stop_training = True
                     _logger.warning(
-                        "Training deadline reached (max %d min) — stopping "
-                        "run %s at epoch %d.",
-                        deadline.max_minutes, run_name_effective, epoch,
+                        "Training deadline reached (max %d min) — stopping " "run %s at epoch %d.",
+                        deadline.max_minutes,
+                        run_name_effective,
+                        epoch,
                     )
+
         callbacks_list.append(_DeadlineCallback())
     if progress_callback is not None:
         callbacks_list.append(
@@ -381,9 +386,7 @@ def _train_single(
         fit_kwargs["sample_weight"] = effective_train_sw
     if x_valid_norm is not None and y_valid_norm is not None:
         if valid_sample_weight is not None:
-            fit_kwargs["validation_data"] = (
-                x_valid_norm, y_valid_norm, valid_sample_weight
-            )
+            fit_kwargs["validation_data"] = (x_valid_norm, y_valid_norm, valid_sample_weight)
         else:
             fit_kwargs["validation_data"] = (x_valid_norm, y_valid_norm)
 
@@ -426,17 +429,13 @@ def _train_single(
 
         history_a = model.fit(**phase_a_kwargs)
 
-        if phase_b_epochs > 0 and not (
-            cancel_event is not None and cancel_event.is_set()
-        ):
+        if phase_b_epochs > 0 and not (cancel_event is not None and cancel_event.is_set()):
             fit_kwargs["epochs"] = phase_b_epochs
             history_b = model.fit(**fit_kwargs)
             # Merge histories so downstream code sees both phases.
             merged: dict[str, list] = {}
             for k in set(history_a.history) | set(history_b.history):
-                merged[k] = list(history_a.history.get(k, [])) + list(
-                    history_b.history.get(k, [])
-                )
+                merged[k] = list(history_a.history.get(k, [])) + list(history_b.history.get(k, []))
             history = type(history_a)()
             history.history = merged
         else:
@@ -459,7 +458,7 @@ def _train_single(
         eval_values = [eval_values]
     metrics = {
         name: float(np.round(value, 6))
-        for name, value in zip(model.metrics_names, eval_values)
+        for name, value in zip(model.metrics_names, eval_values, strict=False)
     }
 
     config_dict = {
@@ -526,18 +525,14 @@ def _train_single(
             else ""
         ),
         "use_curriculum": bool(curriculum_active),
-        "curriculum_phase_a_epochs": (
-            int(math.ceil(max_epochs * 0.3)) if curriculum_active else 0
-        ),
+        "curriculum_phase_a_epochs": (int(math.ceil(max_epochs * 0.3)) if curriculum_active else 0),
         # Phase 5 — flags previously dropped on the floor.
         "target_log_transform": bool(target_log_transform),
         "use_log_flow_weighting": bool(use_log_flow_weighting),
         "log_flow_weighting_col": str(log_flow_weighting_col),
         "scaler": str(scaler),
         "use_year_embedding": bool(_year_emb_active),
-        "year_feature_idx": (
-            int(_year_feature_idx) if _year_feature_idx is not None else None
-        ),
+        "year_feature_idx": (int(_year_feature_idx) if _year_feature_idx is not None else None),
         "year_n_categories": int(_year_n_cats),
         "year_embedding_dim": int(year_embedding_dim),
         # P2B feature engineering — echoed so evaluation can replay the
@@ -565,8 +560,9 @@ def _train_single(
 # Per-artifact TF serialization (must run BEFORE tf.keras.backend.clear_session)
 # ---------------------------------------------------------------------------
 
+
 def _persist_tf_artifact(
-    artifact: "TrainedModelArtifact",
+    artifact: TrainedModelArtifact,
     out_root: Path,
     *,
     run_name: str,
@@ -601,17 +597,22 @@ def _persist_tf_artifact(
     except Exception as exc:  # noqa: BLE001 — log loudly, never swallow.
         _logger.error(
             "model.save(.keras) failed for %s in %s: %s",
-            run_name, model_dir, exc,
+            run_name,
+            model_dir,
+            exc,
         )
 
     # Architecture (JSON, also requires a live graph for to_json()).
     try:
         (model_dir / "NNarchitecture.json").write_text(
-            artifact.model.to_json(), encoding="utf-8",
+            artifact.model.to_json(),
+            encoding="utf-8",
         )
     except Exception as exc:  # noqa: BLE001
         _logger.error(
-            "model.to_json() failed for %s: %s", run_name, exc,
+            "model.to_json() failed for %s: %s",
+            run_name,
+            exc,
         )
 
     # Legacy h5 weights (kept for backward compat with downstream code that
@@ -620,7 +621,9 @@ def _persist_tf_artifact(
         artifact.model.save_weights(str(model_dir / "NNweights.weights.h5"))
     except Exception as exc:  # noqa: BLE001
         _logger.error(
-            "model.save_weights failed for %s: %s", run_name, exc,
+            "model.save_weights failed for %s: %s",
+            run_name,
+            exc,
         )
 
     return model_dir
@@ -629,6 +632,7 @@ def _persist_tf_artifact(
 # ---------------------------------------------------------------------------
 # Full grid search pipeline
 # ---------------------------------------------------------------------------
+
 
 def run_training(
     df: pd.DataFrame,
@@ -652,9 +656,7 @@ def run_training(
     """
     input_cols = list(config.get("input_cols", type_config.input_cols))
     output_cols = list(config.get("output_cols", type_config.output_cols))
-    on_off_norm = np.array(
-        config.get("on_off_norm", type_config.on_off_norm), dtype=bool
-    )
+    on_off_norm = np.array(config.get("on_off_norm", type_config.on_off_norm), dtype=bool)
 
     if len(on_off_norm) != len(input_cols):
         raise ValueError(
@@ -673,6 +675,7 @@ def run_training(
     deadline = config.get("_deadline")
     if deadline is None:
         from ...training_guard import make_deadline
+
         deadline = make_deadline()
 
     # Enable TF op-level determinism once for the whole grid. Idempotent —
@@ -683,7 +686,8 @@ def run_training(
         tf.config.experimental.enable_op_determinism()
     except Exception as exc:  # noqa: BLE001 — non-fatal on older TF
         _logger.debug(
-            "enable_op_determinism unavailable on this TF build: %s", exc,
+            "enable_op_determinism unavailable on this TF build: %s",
+            exc,
         )
 
     # Prepare data
@@ -704,10 +708,7 @@ def run_training(
             ),
         )
     )
-    if (
-        "use_flag_comptage_weighting" in config
-        and "use_flag_permanent_weighting" not in config
-    ):
+    if "use_flag_comptage_weighting" in config and "use_flag_permanent_weighting" not in config:
         _logger.warning(
             "training config: 'use_flag_comptage_weighting' is deprecated; "
             "renamed to 'use_flag_permanent_weighting'."
@@ -720,9 +721,7 @@ def run_training(
         )
     )
     flag_weight = float(
-        config.get(
-            "flag_priority_weight", type_config.default_flag_priority_weight
-        )
+        config.get("flag_priority_weight", type_config.default_flag_priority_weight)
     )
 
     # Recent-year boost (new, opt-in). Auto-detected MAX(year_mapped).
@@ -754,9 +753,7 @@ def run_training(
     # The target is always standard-normalised (legacy behaviour).
     scaler_cfg = str(config.get("scaler", "standard"))
     if scaler_cfg not in ("standard", "robust"):
-        _logger.warning(
-            "Unknown scaler '%s'; falling back to 'standard'.", scaler_cfg
-        )
+        _logger.warning("Unknown scaler '%s'; falling back to 'standard'.", scaler_cfg)
         scaler_cfg = "standard"
 
     # AUDIT BUG P0-5 — Optional in-loop TF persistence. When `_persist_dir`
@@ -780,7 +777,8 @@ def run_training(
             _logger.error(
                 "Failed to prepare TF persist dir %s: %s — TF saves will be "
                 "skipped, caller will fall back to the legacy (and broken) path.",
-                _persist_dir_cfg, exc,
+                _persist_dir_cfg,
+                exc,
             )
             _persist_root = None
 
@@ -792,9 +790,7 @@ def run_training(
             config.get("year_embedding", False),
         )
     )
-    year_embedding_dim_cfg = int(
-        config.get("year_embedding_dim", 3)
-    )
+    year_embedding_dim_cfg = int(config.get("year_embedding_dim", 3))
 
     # Bug 7 — feature engineering echo. Resolved here so we can stamp the
     # artifact's training_config (and have evaluation_pipeline replay them
@@ -828,25 +824,15 @@ def run_training(
     idx_valid = split["idx_valid"]
 
     # Normalize Y (always all columns)
-    y_train_norm, mu_y, sigma_y = normalize(
-        y_train, np.ones(y.shape[1], dtype=bool)
-    )
+    y_train_norm, mu_y, sigma_y = normalize(y_train, np.ones(y.shape[1], dtype=bool))
     y_valid_norm = None
     if y_valid is not None:
-        y_valid_norm, _, _ = normalize(
-            y_valid, np.ones(y.shape[1], dtype=bool), mu_y, sigma_y
-        )
-    y_all_norm, _, _ = normalize(
-        y, np.ones(y.shape[1], dtype=bool), mu_y, sigma_y
-    )
+        y_valid_norm, _, _ = normalize(y_valid, np.ones(y.shape[1], dtype=bool), mu_y, sigma_y)
+    y_all_norm, _, _ = normalize(y, np.ones(y.shape[1], dtype=bool), mu_y, sigma_y)
 
     # Build feature sets
-    mandatory = list(
-        config.get("mandatory_input_cols", type_config.mandatory_input_cols)
-    )
-    min_input_count = int(
-        config.get("min_input_count", type_config.min_input_count)
-    )
+    mandatory = list(config.get("mandatory_input_cols", type_config.mandatory_input_cols))
+    min_input_count = int(config.get("min_input_count", type_config.min_input_count))
     feature_subset_grid = bool(config.get("feature_subset_grid", True))
     mode = config.get("mode", "grid")
 
@@ -857,19 +843,15 @@ def run_training(
         enable_feature_subset_grid=feature_subset_grid if mode == "grid" else False,
     )
 
-    col_to_mask = {
-        c: bool(v) for c, v in zip(input_cols, on_off_norm.tolist())
-    }
+    col_to_mask = {c: bool(v) for c, v in zip(input_cols, on_off_norm.tolist(), strict=False)}
 
     # Grid params
     activations = list(config.get("activations", type_config.default_activations))
     learning_rates = [
-        float(v)
-        for v in config.get("learning_rates", type_config.default_learning_rates)
+        float(v) for v in config.get("learning_rates", type_config.default_learning_rates)
     ]
     min_nb_epochs_list = [
-        int(v)
-        for v in config.get("min_nb_epochs_list", type_config.default_min_nb_epochs)
+        int(v) for v in config.get("min_nb_epochs_list", type_config.default_min_nb_epochs)
     ]
     max_epochs = int(config.get("max_epochs", type_config.default_max_epochs))
     dropout = float(config.get("dropout", type_config.default_dropout))
@@ -888,13 +870,9 @@ def run_training(
 
     # P4.4 — multi-seed runs. Validated to a sane range so a typo cannot
     # accidentally explode the grid into hundreds of replicas.
-    n_seeds = int(
-        config.get("n_seeds", getattr(type_config, "default_n_seeds", 1))
-    )
+    n_seeds = int(config.get("n_seeds", getattr(type_config, "default_n_seeds", 1)))
     if not (1 <= n_seeds <= 10):
-        raise ValueError(
-            f"n_seeds must be in [1, 10], got {n_seeds}."
-        )
+        raise ValueError(f"n_seeds must be in [1, 10], got {n_seeds}.")
 
     # P4.5 / P4.6 — feature flags (combo-wide for now).
     use_hard_example_mining = bool(
@@ -922,20 +900,14 @@ def run_training(
 
     optimizers = _as_list("optimizers", "optimizer", ["adam"])
     weight_decays = _as_list("weight_decays", "weight_decay", [0.0])
-    skip_connection_options = _as_list(
-        "skip_connection_options", "use_skip_connection", [False]
-    )
-    dropout_schedules = _as_list(
-        "dropout_schedules", "dropout_schedule", ["uniform"]
-    )
+    skip_connection_options = _as_list("skip_connection_options", "use_skip_connection", [False])
+    dropout_schedules = _as_list("dropout_schedules", "dropout_schedule", ["uniform"])
     clipnorms_list = _as_list("clipnorms", "clipnorm", [None])
     norm_layers_list = _as_list("norm_layers", "norm_layer", [None])
     # Bug 4 — wire `use_quantile_head` into the grid so each combo carries
     # the flag (build_model needs combo.use_quantile_head). Accept both the
     # singular form (`use_quantile_head=True`) and the list form.
-    quantile_head_options = _as_list(
-        "quantile_head_options", "use_quantile_head", [False]
-    )
+    quantile_head_options = _as_list("quantile_head_options", "use_quantile_head", [False])
 
     combinations = generate_all_combinations(
         feature_sets=feature_sets,
@@ -979,9 +951,9 @@ def run_training(
     if use_curriculum:
         bc_col = type_config.target_denominator_bc
         if bc_col in prepared.columns:
-            flow_full = pd.to_numeric(
-                prepared[bc_col], errors="coerce"
-            ).fillna(0.0).values.astype(float)
+            flow_full = (
+                pd.to_numeric(prepared[bc_col], errors="coerce").fillna(0.0).values.astype(float)
+            )
         else:
             _logger.warning(
                 "Curriculum learning requested but column %s is absent — "
@@ -1013,11 +985,9 @@ def run_training(
 
     model_idx = 0
 
-    for fmask, combos in by_mask.items():
+    for _fmask, combos in by_mask.items():
         feature_cols = combos[0].feature_cols
-        on_off_subset = np.array(
-            [col_to_mask[c] for c in feature_cols], dtype=bool
-        )
+        on_off_subset = np.array([col_to_mask[c] for c in feature_cols], dtype=bool)
 
         x_subset = prepared[feature_cols].values.astype(float)
         x_tr = x_subset[idx_train]
@@ -1026,9 +996,7 @@ def run_training(
         # Bug 6 — apply the configured scaler ("standard"|"robust") to the
         # input features. valid/all reuse the train-fitted mu/sigma so the
         # scaler argument is moot on those calls (kept for symmetry).
-        x_train_norm, mu_x, sigma_x = normalize(
-            x_tr, on_off_subset, scaler=scaler_cfg
-        )
+        x_train_norm, mu_x, sigma_x = normalize(x_tr, on_off_subset, scaler=scaler_cfg)
         x_valid_norm = None
         if x_va is not None:
             x_valid_norm, _, _ = normalize(x_va, on_off_subset, mu_x, sigma_x)
@@ -1061,8 +1029,7 @@ def run_training(
                 tf.keras.utils.set_random_seed(run_seed)
 
                 run_name_eff = (
-                    combo.run_name if n_seeds == 1
-                    else f"{combo.run_name}_seed{seed_idx}"
+                    combo.run_name if n_seeds == 1 else f"{combo.run_name}_seed{seed_idx}"
                 )
 
                 artifact = _train_single(
@@ -1125,7 +1092,8 @@ def run_training(
                 except Exception as exc:  # noqa: BLE001 — defensive
                     _logger.error(
                         "Failed to stamp multi-seed metadata on %s: %s",
-                        run_name_eff, exc,
+                        run_name_eff,
+                        exc,
                     )
 
                 # AUDIT BUG P0-5 — Persist TF-backed files NOW, while the
@@ -1138,7 +1106,9 @@ def run_training(
                     disk_run_name = f"{_persist_prefix_cfg}{run_name_eff}"
                     try:
                         persisted_dir = _persist_tf_artifact(
-                            artifact, _persist_root, run_name=disk_run_name,
+                            artifact,
+                            _persist_root,
+                            run_name=disk_run_name,
                         )
                         artifact.training_config["_persisted_dir"] = str(persisted_dir)
                         artifact.training_config["_persisted_run_name"] = disk_run_name
@@ -1146,7 +1116,8 @@ def run_training(
                         _logger.error(
                             "TF persistence failed for %s: %s — caller will "
                             "fall back to legacy save (likely broken).",
-                            run_name_eff, exc,
+                            run_name_eff,
+                            exc,
                         )
 
                 results[run_name_eff] = artifact
@@ -1155,13 +1126,15 @@ def run_training(
                 # MB on CPU. SAFE here because _persist_tf_artifact() above
                 # already wrote every TF-backed file to disk.
                 import gc as _gc
+
                 del artifact
                 _gc.collect()
                 try:
                     tf.keras.backend.clear_session()
                 except Exception as exc:  # noqa: BLE001 — defensive
                     _logger.warning(
-                        "clear_session after model failed: %s", exc,
+                        "clear_session after model failed: %s",
+                        exc,
                     )
 
     return results

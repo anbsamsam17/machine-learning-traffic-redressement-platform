@@ -41,6 +41,7 @@ TARGET_COLUMNS: list[str] = [
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class CompteursGenerateRequest(BaseModel):
     session_id: str
     column_mapping: dict[str, str]  # target_col -> source_col
@@ -69,6 +70,7 @@ class CompteursResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Core logic (mirrors Streamlit create_counting_loops_geojson)
 # ---------------------------------------------------------------------------
+
 
 def _build_compteurs_geojson(
     raw_df: pd.DataFrame,
@@ -121,16 +123,14 @@ def _build_compteurs_geojson(
         result_df["PRD"] = pd.to_numeric(result_df["PRD"], errors="coerce")
 
     if "TMJA Tous Vehicules (veh/jour)" in result_df.columns:
-        result_df["TMJA Tous Vehicules (veh/jour)"] = (
-            pd.to_numeric(result_df["TMJA Tous Vehicules (veh/jour)"], errors="coerce")
-            .round(0)
-        )
+        result_df["TMJA Tous Vehicules (veh/jour)"] = pd.to_numeric(
+            result_df["TMJA Tous Vehicules (veh/jour)"], errors="coerce"
+        ).round(0)
 
     if "TMJA Poids Lourds (veh/jour)" in result_df.columns:
-        result_df["TMJA Poids Lourds (veh/jour)"] = (
-            pd.to_numeric(result_df["TMJA Poids Lourds (veh/jour)"], errors="coerce")
-            .round(0)
-        )
+        result_df["TMJA Poids Lourds (veh/jour)"] = pd.to_numeric(
+            result_df["TMJA Poids Lourds (veh/jour)"], errors="coerce"
+        ).round(0)
 
     # ---- Determine geometry -------------------------------------------------
     has_geojson_geometry = "geometry" in df.columns or "__geometry_json" in df.columns
@@ -210,6 +210,7 @@ def _build_compteurs_geojson(
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.post("/generate", response_model=CompteursResponse)
 async def generate_compteurs(
     body: CompteursGenerateRequest,
@@ -239,7 +240,7 @@ async def generate_compteurs(
         )
     except Exception as exc:
         logger.exception("Compteurs generation failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la generation: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la generation: {exc}") from exc
 
     # Store in session for later export
     session_manager.store_data(body.session_id, "compteurs_geojson", geojson)
@@ -247,7 +248,9 @@ async def generate_compteurs(
 
     logger.info(
         "Compteurs generated: session=%s total=%d features=%d",
-        body.session_id, stats.total_rows, stats.output_features,
+        body.session_id,
+        stats.total_rows,
+        stats.output_features,
     )
 
     return CompteursResponse(

@@ -31,6 +31,7 @@ YEAR_MAPPING = {"2023": 1, "2024": 2, "2025": 3}
 # Synthetic DataFrame builders (10 rows max)
 # ---------------------------------------------------------------------------
 
+
 def _make_df(annee_values, col_name: str = "Annee") -> pd.DataFrame:
     """Build a 10-row synthetic DataFrame with an Annee column."""
     rng = np.random.default_rng(SEED)
@@ -54,6 +55,7 @@ def _config(input_cols=None, mapping=None, col="Annee") -> dict:
 # ---------------------------------------------------------------------------
 # Helper-level tests
 # ---------------------------------------------------------------------------
+
 
 def test_normalize_year_keys_int():
     s = pd.Series([2023, 2024, 2025])
@@ -95,12 +97,13 @@ def test_normalize_year_mapping_keys_empty():
 # (a) 2024 maps to the right value whatever the dtype
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "annee_values",
     [
-        [2023, 2024, 2025],          # int
-        [2023.0, 2024.0, 2025.0],    # float -> the original bug
-        ["2023", "2024", "2025"],    # str
+        [2023, 2024, 2025],  # int
+        [2023.0, 2024.0, 2025.0],  # float -> the original bug
+        ["2023", "2024", "2025"],  # str
     ],
 )
 def test_year_mapped_correct_for_any_dtype(annee_values):
@@ -124,6 +127,7 @@ def test_float_year_not_collapsed_to_mean():
 # ---------------------------------------------------------------------------
 # (b) mapping override takes priority over config
 # ---------------------------------------------------------------------------
+
 
 def test_mapping_override_wins_over_config():
     df = _make_df([2023, 2024, 2025])
@@ -162,6 +166,7 @@ def test_override_with_no_config_at_all():
 # (c) column override
 # ---------------------------------------------------------------------------
 
+
 def test_column_override():
     df = _make_df([2023, 2024, 2025], col_name="MyYear")
     out = _apply_year_mapping(
@@ -175,6 +180,7 @@ def test_column_override():
 # ---------------------------------------------------------------------------
 # (d) fallback when the year column is absent
 # ---------------------------------------------------------------------------
+
 
 def test_fallback_when_year_column_missing():
     # No Annee column -> constant median value of the mapping (median of
@@ -192,7 +198,7 @@ def test_year_column_resolved_case_insensitively():
     df = _make_df([2023, 2024, 2025], col_name="annee")  # lowercased column
     out = _apply_year_mapping(
         df,
-        _config(col="Annee"),          # config still uses the capitalised name
+        _config(col="Annee"),  # config still uses the capitalised name
         year_column_override="Annee",  # UI sends "Annee" too
     )
     assert out["year_mapped"].tolist() == [1.0, 2.0, 3.0]

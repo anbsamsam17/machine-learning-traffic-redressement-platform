@@ -56,8 +56,10 @@ def _geom_to_coords(geom) -> list[list[float]]:
 
 
 def _compute_sig(
-    jmin1: float | None, jmax1: float | None,
-    jmin2: float | None, jmax2: float | None,
+    jmin1: float | None,
+    jmax1: float | None,
+    jmin2: float | None,
+    jmax2: float | None,
 ) -> int:
     """sig=1 si les IC JOr des deux annees sont DISJOINTS, sinon 0.
 
@@ -107,9 +109,7 @@ def build_evolution_geojson(
     """
     n = len(gdf_t2)
     if len(matches_df) != n:
-        raise ValueError(
-            f"matches_df ({len(matches_df)}) doit couvrir la base T2 ({n})."
-        )
+        raise ValueError(f"matches_df ({len(matches_df)}) doit couvrir la base T2 ({n}).")
 
     # Index T1 par agregId pour recuperer les valeurs de l'annee 1.
     t1_rows: dict[str, dict[str, Any]] = {}
@@ -141,8 +141,8 @@ def build_evolution_geojson(
             ban_conc = None
 
         fc_t2 = brow.get("FC")
-        t2 = _num(brow.get("JOr"))          # volume redresse annee 2
-        jo_t2 = _num(brow.get("JO"))        # volume observe FCD annee 2
+        t2 = _num(brow.get("JOr"))  # volume redresse annee 2
+        jo_t2 = _num(brow.get("JO"))  # volume observe FCD annee 2
         jmin2 = _num(brow.get("JOrmin"))
         jmax2 = _num(brow.get("JOrmax"))
 
@@ -175,9 +175,7 @@ def build_evolution_geojson(
         jor_pct: float | None = None
         categorie: str
 
-        fc_change = (
-            fc_t1 is not None and fc_t2 is not None and str(fc_t1) != str(fc_t2)
-        )
+        fc_change = fc_t1 is not None and fc_t2 is not None and str(fc_t1) != str(fc_t2)
 
         if id_t1 is None or t1 is None:
             # Pas d'annee 1 appariee / non redressee en T1 -> nouveau.
@@ -216,14 +214,17 @@ def build_evolution_geojson(
             "agregId": agreg_id,
             "FC": str(fc_t2) if fc_t2 is not None else None,
             "HD": _num(brow.get("HD")),
-            "DD": bool(brow.get("DD")) if brow.get("DD") is not None and not (
-                isinstance(brow.get("DD"), float) and pd.isna(brow.get("DD"))
-            ) else None,
+            "DD": (
+                bool(brow.get("DD"))
+                if brow.get("DD") is not None
+                and not (isinstance(brow.get("DD"), float) and pd.isna(brow.get("DD")))
+                else None
+            ),
             "T2": t2,
             "T1": t1,
             "JO_T2": jo_t2,
             "JO_T1": jo_t1,
-            "JOr": jor_pct,             # null si non calculable (jamais inf/NaN)
+            "JOr": jor_pct,  # null si non calculable (jamais inf/NaN)
             "dJOr": d_jor,
             "JOr_display": jor_display,
             "sig": int(sig),
@@ -234,11 +235,13 @@ def build_evolution_geojson(
             "ban_concordance": ban_conc,
         }
 
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": _geom_to_coords(geom)},
-            "properties": props,
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": _geom_to_coords(geom)},
+                "properties": props,
+            }
+        )
 
     return {
         "type": "FeatureCollection",

@@ -11,15 +11,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # JWT secrets explicitly forbidden — used as placeholders/defaults in older
 # revisions or compose files. We refuse to boot on any of these.
-_FORBIDDEN_JWT_SECRETS = frozenset({
-    "",
-    "change-me",
-    "change-me-in-production",
-    "change-me-in-production-use-a-real-secret",
-    "changeme",
-    "secret",
-    "default",
-})
+_FORBIDDEN_JWT_SECRETS = frozenset(
+    {
+        "",
+        "change-me",
+        "change-me-in-production",
+        "change-me-in-production-use-a-real-secret",
+        "changeme",
+        "secret",
+        "default",
+    }
+)
 _MIN_JWT_SECRET_LEN = 32
 
 

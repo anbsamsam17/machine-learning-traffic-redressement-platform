@@ -7,18 +7,18 @@ import pandas as pd
 import pytest
 
 from app.services.ml.data_prep import (
-    _resolve_aliases,
-    _derive_target,
     _derive_flag_comptage,
+    _derive_target,
+    _resolve_aliases,
     prepare_training_data,
     split_train_valid,
 )
-from app.services.ml.types import TV_CONFIG, PL_CONFIG
-
+from app.services.ml.types import PL_CONFIG, TV_CONFIG
 
 # ---------------------------------------------------------------------------
 # Synthetic DataFrame builder
 # ---------------------------------------------------------------------------
+
 
 def _make_tv_df(n: int = 10, use_aliases: bool = False) -> pd.DataFrame:
     """Create a synthetic training DataFrame for TV.
@@ -56,34 +56,39 @@ def _make_tv_df(n: int = 10, use_aliases: bool = False) -> pd.DataFrame:
 def _make_pl_df(n: int = 10) -> pd.DataFrame:
     """Synthetic PL training DataFrame, schema modernise (HERE V2)."""
     rng = np.random.default_rng(1750)
-    return pd.DataFrame({
-        "TMJOFCDPL": rng.uniform(50, 1000, n),
-        "TMJOFCDTV": rng.uniform(500, 5000, n),
-        "functional_class": rng.choice([1, 2, 3, 4, 5], n),
-        "truck_avg_distance_m": rng.uniform(10, 80, n) * 1000,
-        "truck_avg_min_distance_m": rng.uniform(10, 80, n) * 1000,
-        "truck_avg_distance_before_m": rng.uniform(10, 80, n) * 1000,
-        "truck_avg_distance_after_m": rng.uniform(10, 80, n) * 1000,
-        "fcd_log": rng.uniform(0, 10, n),
-        "tv_pl_ratio": rng.uniform(0.05, 0.4, n),
-        "dist_to_lyon_center": rng.uniform(0, 30000, n),
-        "TxPenPL": rng.uniform(1, 30, n),
-        "TMJOBCPL": rng.uniform(100, 5000, n),
-    })
+    return pd.DataFrame(
+        {
+            "TMJOFCDPL": rng.uniform(50, 1000, n),
+            "TMJOFCDTV": rng.uniform(500, 5000, n),
+            "functional_class": rng.choice([1, 2, 3, 4, 5], n),
+            "truck_avg_distance_m": rng.uniform(10, 80, n) * 1000,
+            "truck_avg_min_distance_m": rng.uniform(10, 80, n) * 1000,
+            "truck_avg_distance_before_m": rng.uniform(10, 80, n) * 1000,
+            "truck_avg_distance_after_m": rng.uniform(10, 80, n) * 1000,
+            "fcd_log": rng.uniform(0, 10, n),
+            "tv_pl_ratio": rng.uniform(0.05, 0.4, n),
+            "dist_to_lyon_center": rng.uniform(0, 30000, n),
+            "TxPenPL": rng.uniform(1, 30, n),
+            "TMJOBCPL": rng.uniform(100, 5000, n),
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # _resolve_aliases
 # ---------------------------------------------------------------------------
 
+
 class TestResolveAliases:
     def test_tv_aliases_create_canonical_cols(self):
         """T2: legacy TMJATV/TxPen -> canonical HERE (TMJOFCDTV, TxPen)."""
-        df = pd.DataFrame({
-            "TMJATV": [100.0, 200.0],
-            "TMJAPL": [50.0, 60.0],
-            "TxPen": [10.1234, 20.5678],
-        })
+        df = pd.DataFrame(
+            {
+                "TMJATV": [100.0, 200.0],
+                "TMJAPL": [50.0, 60.0],
+                "TxPen": [10.1234, 20.5678],
+            }
+        )
         result = _resolve_aliases(df, TV_CONFIG)
         # Resolution vers le schema canonique HERE
         assert "TMJOFCDTV" in result.columns
@@ -94,20 +99,24 @@ class TestResolveAliases:
 
     def test_no_overwrite_existing_col(self):
         """If destination column already exists, alias should NOT overwrite it."""
-        df = pd.DataFrame({
-            "TMJATV": [999.0],
-            "TMJOFCDTV": [123.0],  # canonique deja present
-        })
+        df = pd.DataFrame(
+            {
+                "TMJATV": [999.0],
+                "TMJOFCDTV": [123.0],  # canonique deja present
+            }
+        )
         result = _resolve_aliases(df, TV_CONFIG)
         # La canonique deja presente n'est PAS ecrasee par l'alias.
         assert result["TMJOFCDTV"].iloc[0] == 123.0
 
     def test_pl_aliases(self):
         """T2: legacy TMJAPL/TxPenPL -> canonical HERE (TMJOFCDPL, TxPenPL)."""
-        df = pd.DataFrame({
-            "TMJAPL": [100.0],
-            "TxPenPL": [15.0],
-        })
+        df = pd.DataFrame(
+            {
+                "TMJAPL": [100.0],
+                "TxPenPL": [15.0],
+            }
+        )
         result = _resolve_aliases(df, PL_CONFIG)
         # Canonique HERE
         assert "TMJOFCDPL" in result.columns
@@ -126,13 +135,16 @@ class TestResolveAliases:
 # _derive_target
 # ---------------------------------------------------------------------------
 
+
 class TestDeriveTarget:
     def test_tv_derives_txpen_from_bc_fcd(self):
         """T2: target_col canonique = TxPen ; FCD/BC en TMJOFCDTV/TMJOBCTV."""
-        df = pd.DataFrame({
-            "TMJOFCDTV": [1000.0, 2000.0],
-            "TMJOBCTV": [5000.0, 10000.0],
-        })
+        df = pd.DataFrame(
+            {
+                "TMJOFCDTV": [1000.0, 2000.0],
+                "TMJOBCTV": [5000.0, 10000.0],
+            }
+        )
         result = _derive_target(df, TV_CONFIG)
         # Target name canonique = TV_CONFIG.target_col = "TxPen"
         assert TV_CONFIG.target_col in result.columns
@@ -140,29 +152,35 @@ class TestDeriveTarget:
         np.testing.assert_allclose(result[TV_CONFIG.target_col].values, expected)
 
     def test_does_not_overwrite_existing_target(self):
-        df = pd.DataFrame({
-            "TMJOFCDTV": [1000.0],
-            "TMJOBCTV": [5000.0],
-            "TxPen": [99.0],
-        })
+        df = pd.DataFrame(
+            {
+                "TMJOFCDTV": [1000.0],
+                "TMJOBCTV": [5000.0],
+                "TxPen": [99.0],
+            }
+        )
         result = _derive_target(df, TV_CONFIG)
         assert result["TxPen"].iloc[0] == 99.0
 
     def test_zero_bc_produces_zero_via_fillna(self):
         """T2: TMJOBCTV=0 -> mask False -> target = 0 (NaN-safe)."""
-        df = pd.DataFrame({
-            "TMJOFCDTV": [1000.0],
-            "TMJOBCTV": [0.0],
-        })
+        df = pd.DataFrame(
+            {
+                "TMJOFCDTV": [1000.0],
+                "TMJOBCTV": [0.0],
+            }
+        )
         result = _derive_target(df, TV_CONFIG)
         assert result[TV_CONFIG.target_col].iloc[0] == 0.0
 
     def test_pl_target_derivation(self):
         """T2: PL_CONFIG.target_col = TxPenPL ; FCD/BC en TMJOFCDPL/TMJOBCPL."""
-        df = pd.DataFrame({
-            "TMJOFCDPL": [500.0],
-            "TMJOBCPL": [2000.0],
-        })
+        df = pd.DataFrame(
+            {
+                "TMJOFCDPL": [500.0],
+                "TMJOBCPL": [2000.0],
+            }
+        )
         result = _derive_target(df, PL_CONFIG)
         assert PL_CONFIG.target_col in result.columns  # = "TxPenPL"
         np.testing.assert_allclose(result[PL_CONFIG.target_col].values, [25.0])
@@ -171,6 +189,7 @@ class TestDeriveTarget:
 # ---------------------------------------------------------------------------
 # _derive_flag_comptage
 # ---------------------------------------------------------------------------
+
 
 class TestDeriveFlagComptage:
     def test_from_type_column(self):
@@ -193,6 +212,7 @@ class TestDeriveFlagComptage:
 # ---------------------------------------------------------------------------
 # prepare_training_data (full pipeline)
 # ---------------------------------------------------------------------------
+
 
 class TestPrepareTrainingData:
     def test_standard_columns_pass_through(self):
@@ -218,16 +238,18 @@ class TestPrepareTrainingData:
     def test_target_derived_when_missing(self):
         """T2: TxPen derive de TMJOFCDTV/TMJOBCTV quand absent."""
         rng = np.random.default_rng(42)
-        df = pd.DataFrame({
-            "TMJOFCDTV": rng.uniform(100, 5000, 10),
-            "TMJOFCDPL": rng.uniform(50, 1000, 10),
-            "avg_distance_m": rng.uniform(5, 50, 10) * 1000,
-            "avg_speed_kmh": rng.uniform(30, 130, 10),
-            "truck_avg_min_distance_m": rng.uniform(10, 80, 10) * 1000,
-            "truck_avg_speed_kmh": rng.uniform(40, 90, 10),
-            "functional_class": rng.choice([1, 2, 3, 4, 5], 10),
-            "TMJOBCTV": rng.uniform(500, 20000, 10),
-        })
+        df = pd.DataFrame(
+            {
+                "TMJOFCDTV": rng.uniform(100, 5000, 10),
+                "TMJOFCDPL": rng.uniform(50, 1000, 10),
+                "avg_distance_m": rng.uniform(5, 50, 10) * 1000,
+                "avg_speed_kmh": rng.uniform(30, 130, 10),
+                "truck_avg_min_distance_m": rng.uniform(10, 80, 10) * 1000,
+                "truck_avg_speed_kmh": rng.uniform(40, 90, 10),
+                "functional_class": rng.choice([1, 2, 3, 4, 5], 10),
+                "TMJOBCTV": rng.uniform(500, 20000, 10),
+            }
+        )
         result = prepare_training_data(df, TV_CONFIG)
         assert TV_CONFIG.target_col in result.columns
         assert result[TV_CONFIG.target_col].notna().all()
@@ -260,6 +282,7 @@ class TestPrepareTrainingData:
 # ---------------------------------------------------------------------------
 # split_train_valid
 # ---------------------------------------------------------------------------
+
 
 class TestSplitTrainValid:
     def test_no_split_when_test_size_zero(self):

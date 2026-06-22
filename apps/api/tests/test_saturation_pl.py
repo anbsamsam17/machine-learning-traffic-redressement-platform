@@ -9,10 +9,8 @@ fonctions vivent encore aujourd'hui.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Imports compatibles 2 chemins (refactor en cours par autre agent)
@@ -21,40 +19,39 @@ import pytest
 try:
     # Chemin cible apres refactor (autre agent)
     from app.services.ml.saturation import (
+        DEFAULT_ALPHA_FC_MIN,
+        DEFAULT_ALPHA_MIN_ZONE_CRITIQUE,
+        DEFAULT_ALPHA_PHYSIQUE_MAX,
+        DEFAULT_BORNES_FC_ABS,
+        DEFAULT_RATIO_MACRO_PEN,
+        DEFAULT_SEUIL_VOL_FCD_TV,
         _alpha_v3,
         _detecter_zones_critiques,
         _saturer_hierarchique,
-        DEFAULT_ALPHA_FC_MIN,
-        DEFAULT_BORNES_FC_ABS,
-        DEFAULT_RATIO_MACRO_PEN,
-        DEFAULT_ALPHA_PHYSIQUE_MAX,
-        DEFAULT_SEUIL_VOL_FCD_TV,
-        DEFAULT_ALPHA_MIN_ZONE_CRITIQUE,
-        DEFAULT_RATIO_CAPTEUR_CRITIQUE,
-        DEFAULT_BUFFER_ZONE_CRITIQUE_M,
     )
+
     _IMPORT_SOURCE = "services.ml.saturation"
 except ImportError:
     # Chemin actuel (avant refactor) - constantes et fonctions vivent dans routers/carte.py
     from app.routers.carte import (
+        DEFAULT_ALPHA_FC_MIN,
+        DEFAULT_ALPHA_MIN_ZONE_CRITIQUE,
+        DEFAULT_ALPHA_PHYSIQUE_MAX,
+        DEFAULT_BORNES_FC_ABS,
+        DEFAULT_RATIO_MACRO_PEN,
+        DEFAULT_SEUIL_VOL_FCD_TV,
         _alpha_v3,
         _detecter_zones_critiques,
         _saturer_hierarchique,
-        DEFAULT_ALPHA_FC_MIN,
-        DEFAULT_BORNES_FC_ABS,
-        DEFAULT_RATIO_MACRO_PEN,
-        DEFAULT_ALPHA_PHYSIQUE_MAX,
-        DEFAULT_SEUIL_VOL_FCD_TV,
-        DEFAULT_ALPHA_MIN_ZONE_CRITIQUE,
-        DEFAULT_RATIO_CAPTEUR_CRITIQUE,
-        DEFAULT_BUFFER_ZONE_CRITIQUE_M,
     )
+
     _IMPORT_SOURCE = "routers.carte"
 
 
 # ---------------------------------------------------------------------------
 # _alpha_v3 - branche par branche
 # ---------------------------------------------------------------------------
+
 
 class TestAlphaV3:
     """Tests unitaires de la fonction _alpha_v3 (v3 = v2 + override zone critique)."""
@@ -70,7 +67,10 @@ class TestAlphaV3:
         is_crit = pd.Series([True])
 
         alpha_eff, _ = _alpha_v3(
-            fcd_pl, fcd_tv, fc, is_crit,
+            fcd_pl,
+            fcd_tv,
+            fc,
+            is_crit,
             DEFAULT_ALPHA_FC_MIN,
             DEFAULT_RATIO_MACRO_PEN,
             DEFAULT_ALPHA_PHYSIQUE_MAX,
@@ -89,7 +89,10 @@ class TestAlphaV3:
         is_crit = pd.Series([False])
 
         alpha_eff, source = _alpha_v3(
-            fcd_pl, fcd_tv, fc, is_crit,
+            fcd_pl,
+            fcd_tv,
+            fc,
+            is_crit,
             DEFAULT_ALPHA_FC_MIN,
             DEFAULT_RATIO_MACRO_PEN,
             DEFAULT_ALPHA_PHYSIQUE_MAX,
@@ -108,7 +111,10 @@ class TestAlphaV3:
         is_crit = pd.Series([False])
 
         alpha_eff, source = _alpha_v3(
-            fcd_pl, fcd_tv, fc, is_crit,
+            fcd_pl,
+            fcd_tv,
+            fc,
+            is_crit,
             DEFAULT_ALPHA_FC_MIN,
             DEFAULT_RATIO_MACRO_PEN,
             DEFAULT_ALPHA_PHYSIQUE_MAX,
@@ -128,7 +134,10 @@ class TestAlphaV3:
         is_crit = pd.Series([False])
 
         alpha_eff, source = _alpha_v3(
-            fcd_pl, fcd_tv, fc, is_crit,
+            fcd_pl,
+            fcd_tv,
+            fc,
+            is_crit,
             DEFAULT_ALPHA_FC_MIN,
             DEFAULT_RATIO_MACRO_PEN,
             DEFAULT_ALPHA_PHYSIQUE_MAX,
@@ -149,7 +158,10 @@ class TestAlphaV3:
         is_crit = pd.Series([False])
 
         alpha_eff, source = _alpha_v3(
-            fcd_pl, fcd_tv, fc, is_crit,
+            fcd_pl,
+            fcd_tv,
+            fc,
+            is_crit,
             DEFAULT_ALPHA_FC_MIN,
             DEFAULT_RATIO_MACRO_PEN,
             DEFAULT_ALPHA_PHYSIQUE_MAX,
@@ -165,6 +177,7 @@ class TestAlphaV3:
 # _detecter_zones_critiques
 # ---------------------------------------------------------------------------
 
+
 class TestDetecterZonesCritiques:
     """Tests pour _detecter_zones_critiques (override v3 ETAPE 0)."""
 
@@ -179,15 +192,17 @@ class TestDetecterZonesCritiques:
         from shapely.geometry import Point
 
         rows = []
-        for (lon, lat), ratio in zip(coords, ratios):
+        for (lon, lat), ratio in zip(coords, ratios, strict=False):
             tv = 1000.0
             pl = ratio * tv
-            rows.append({
-                "annee": annee,
-                "TMJOBCTV": tv,
-                "TMJOBCPL": pl,
-                "geometry": Point(lon, lat),
-            })
+            rows.append(
+                {
+                    "annee": annee,
+                    "TMJOBCTV": tv,
+                    "TMJOBCPL": pl,
+                    "geometry": Point(lon, lat),
+                }
+            )
         return gpd.GeoDataFrame(rows, crs="EPSG:4326")
 
     def _make_segments(self, coords_pairs: list[tuple[tuple[float, float], tuple[float, float]]]):
@@ -217,14 +232,17 @@ class TestDetecterZonesCritiques:
 
         # Segments : seg0 a cote de A (critique), seg1 a cote de B (non critique),
         # seg2 loin des deux (non critique)
-        segments = self._make_segments([
-            ((2.30, 45.75), (2.3001, 45.7501)),  # ~ capteur A
-            ((2.50, 45.95), (2.5001, 45.9501)),  # ~ capteur B
-            ((3.00, 46.50), (3.0001, 46.5001)),  # loin
-        ])
+        segments = self._make_segments(
+            [
+                ((2.30, 45.75), (2.3001, 45.7501)),  # ~ capteur A
+                ((2.50, 45.95), (2.5001, 45.9501)),  # ~ capteur B
+                ((3.00, 46.50), (3.0001, 46.5001)),  # loin
+            ]
+        )
 
         mask = _detecter_zones_critiques(
-            capteurs, segments,
+            capteurs,
+            segments,
             annee=2025,
             ratio_seuil=0.15,
             buffer_m=1000.0,
@@ -248,13 +266,16 @@ class TestDetecterZonesCritiques:
         # On place :
         #   - seg0 a ~50 m du capteur -> doit etre dans le buffer 1000 m
         #   - seg1 a ~5 km du capteur -> doit etre HORS du buffer
-        segments = self._make_segments([
-            ((2.3005, 45.75), (2.3006, 45.7501)),       # ~50 m
-            ((2.40, 45.80), (2.4001, 45.8001)),         # ~ 9 km
-        ])
+        segments = self._make_segments(
+            [
+                ((2.3005, 45.75), (2.3006, 45.7501)),  # ~50 m
+                ((2.40, 45.80), (2.4001, 45.8001)),  # ~ 9 km
+            ]
+        )
 
         mask = _detecter_zones_critiques(
-            capteurs, segments,
+            capteurs,
+            segments,
             annee=2025,
             ratio_seuil=0.15,
             buffer_m=1000.0,  # 1 km
@@ -270,12 +291,15 @@ class TestDetecterZonesCritiques:
             coords=[(2.30, 45.75)],
             annee=2024,
         )
-        segments = self._make_segments([
-            ((2.30, 45.75), (2.3001, 45.7501)),
-        ])
+        segments = self._make_segments(
+            [
+                ((2.30, 45.75), (2.3001, 45.7501)),
+            ]
+        )
 
         mask = _detecter_zones_critiques(
-            capteurs, segments,
+            capteurs,
+            segments,
             annee=2025,  # autre annee
             ratio_seuil=0.15,
             buffer_m=1000.0,
@@ -287,6 +311,7 @@ class TestDetecterZonesCritiques:
 # ---------------------------------------------------------------------------
 # Dispatch v1/v2/v3 selon les inputs disponibles
 # ---------------------------------------------------------------------------
+
 
 class TestSaturationDispatch:
     """Verifie que la saturation complete fait v1 / v2 / v3 selon les inputs.
@@ -308,7 +333,9 @@ class TestSaturationDispatch:
         fc = pd.Series([3])
 
         v_sat, mask = _saturer_hierarchique(
-            value_pred, tv_pred, fc,
+            value_pred,
+            tv_pred,
+            fc,
             DEFAULT_BORNES_FC_ABS,
             DEFAULT_ALPHA_FC_MIN,
         )
@@ -328,7 +355,10 @@ class TestSaturationDispatch:
         is_crit = pd.Series([False])
 
         alpha_eff, source = _alpha_v3(
-            fcd_pl, fcd_tv, fc, is_crit,
+            fcd_pl,
+            fcd_tv,
+            fc,
+            is_crit,
             DEFAULT_ALPHA_FC_MIN,
             DEFAULT_RATIO_MACRO_PEN,
             DEFAULT_ALPHA_PHYSIQUE_MAX,
@@ -348,7 +378,10 @@ class TestSaturationDispatch:
         is_crit = pd.Series([False, True])
 
         alpha_eff, _ = _alpha_v3(
-            fcd_pl, fcd_tv, fc, is_crit,
+            fcd_pl,
+            fcd_tv,
+            fc,
+            is_crit,
             DEFAULT_ALPHA_FC_MIN,
             DEFAULT_RATIO_MACRO_PEN,
             DEFAULT_ALPHA_PHYSIQUE_MAX,
@@ -365,6 +398,7 @@ class TestSaturationDispatch:
 # _saturer_hierarchique (cap dur FC + cap valeur <= alpha * TV)
 # ---------------------------------------------------------------------------
 
+
 class TestSaturerHierarchique:
     """La fonction generique partagee par PL/HPM/HPS."""
 
@@ -374,7 +408,9 @@ class TestSaturerHierarchique:
         tv_pred = pd.Series([1000.0, 1000.0])
         fc = pd.Series([3, 3])
         v_sat, _ = _saturer_hierarchique(
-            value_pred, tv_pred, fc,
+            value_pred,
+            tv_pred,
+            fc,
             DEFAULT_BORNES_FC_ABS,
             DEFAULT_ALPHA_FC_MIN,
         )
@@ -390,7 +426,9 @@ class TestSaturerHierarchique:
         tv_pred = pd.Series([10000.0])
         fc = pd.Series([3])
         v_sat, mask = _saturer_hierarchique(
-            value_pred, tv_pred, fc,
+            value_pred,
+            tv_pred,
+            fc,
             DEFAULT_BORNES_FC_ABS,
             DEFAULT_ALPHA_FC_MIN,
         )
@@ -405,7 +443,9 @@ class TestSaturerHierarchique:
         tv_pred = pd.Series([100000.0])
         fc = pd.Series([4])
         v_sat, mask = _saturer_hierarchique(
-            value_pred, tv_pred, fc,
+            value_pred,
+            tv_pred,
+            fc,
             DEFAULT_BORNES_FC_ABS,
             DEFAULT_ALPHA_FC_MIN,
         )
@@ -416,6 +456,7 @@ class TestSaturerHierarchique:
 # ---------------------------------------------------------------------------
 # Source de l'import (logged dans les rapports d'audit)
 # ---------------------------------------------------------------------------
+
 
 def test_import_source_visible():
     """Note l'origine des imports pour audit (pas un check fonctionnel)."""

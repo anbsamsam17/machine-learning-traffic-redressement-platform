@@ -7,7 +7,6 @@ import secrets
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Sample payloads
 # ---------------------------------------------------------------------------
@@ -146,7 +145,9 @@ class TestUploadGeojson:
         assert "TVr" in body["columns"]
 
     @pytest.mark.asyncio
-    async def test_reuses_existing_session(self, authenticated_client, tmp_workspace, owned_session_id):
+    async def test_reuses_existing_session(
+        self, authenticated_client, tmp_workspace, owned_session_id
+    ):
         r = await authenticated_client.post(
             "/api/visualisation/upload-geojson",
             files={"file": ("segments.geojson", _valid_segments_geojson(), "application/geo+json")},
@@ -196,9 +197,7 @@ class TestUploadGeojson:
         assert ".geojson" in r.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_accepts_new_schema_with_JOr(
-        self, authenticated_client, tmp_workspace
-    ):
+    async def test_accepts_new_schema_with_JOr(self, authenticated_client, tmp_workspace):
         """Le nouveau schema carte (2026-05) expose JOr + PM/PS au lieu de TVr."""
         r = await authenticated_client.post(
             "/api/visualisation/upload-geojson",
@@ -225,9 +224,7 @@ class TestUploadGeojson:
         assert {"DD", "HD"}.issubset(cols)
 
     @pytest.mark.asyncio
-    async def test_rejects_when_no_flow_column(
-        self, authenticated_client, tmp_workspace
-    ):
+    async def test_rejects_when_no_flow_column(self, authenticated_client, tmp_workspace):
         """Sans JOr ni TVr -> 400 avec message mentionnant les deux colonnes."""
         fc = {
             "type": "FeatureCollection",
@@ -283,11 +280,10 @@ class TestUploadSensors:
         assert r.json()["n_sensors"] == 1
 
     @pytest.mark.asyncio
-    async def test_rejects_without_latlon(self, authenticated_client, tmp_workspace, owned_session_id):
-        csv = (
-            "Identifiant du Poste / Section,TMJA Tous Vehicules (veh/jour)\n"
-            "S-1,1200\n"
-        )
+    async def test_rejects_without_latlon(
+        self, authenticated_client, tmp_workspace, owned_session_id
+    ):
+        csv = "Identifiant du Poste / Section,TMJA Tous Vehicules (veh/jour)\n" "S-1,1200\n"
         r = await authenticated_client.post(
             "/api/visualisation/upload-sensors",
             files={"file": ("nolatlon.csv", csv, "text/csv")},
@@ -319,12 +315,16 @@ class TestStream:
         assert len(body["features"]) == 2
 
     @pytest.mark.asyncio
-    async def test_get_geojson_missing_returns_404(self, authenticated_client, tmp_workspace, owned_session_id):
+    async def test_get_geojson_missing_returns_404(
+        self, authenticated_client, tmp_workspace, owned_session_id
+    ):
         r = await authenticated_client.get(f"/api/visualisation/geojson/{owned_session_id}")
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_get_sensors_after_upload(self, authenticated_client, tmp_workspace, owned_session_id):
+    async def test_get_sensors_after_upload(
+        self, authenticated_client, tmp_workspace, owned_session_id
+    ):
         await authenticated_client.post(
             "/api/visualisation/upload-sensors",
             files={"file": ("sensors.csv", _sensors_csv(), "text/csv")},

@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +33,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from .config import get_settings
-from .logging_config import RequestIDMiddleware, setup_logging, get_request_id
+from .logging_config import RequestIDMiddleware, get_request_id, setup_logging
 from .middleware.security_headers import SecurityHeadersMiddleware
 from .rate_limit import limiter
 from .session import session_manager
@@ -124,7 +124,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info(
         "MDL Redressement API starting (env=%s CORS=%s max_upload=%dMB)",
-        settings.ENVIRONMENT, settings.CORS_ORIGINS, settings.MAX_UPLOAD_MB,
+        settings.ENVIRONMENT,
+        settings.CORS_ORIGINS,
+        settings.MAX_UPLOAD_MB,
     )
     task = asyncio.create_task(_cleanup_loop())
     yield
@@ -148,11 +150,13 @@ _app_kwargs: dict = {
     "lifespan": lifespan,
 }
 if _settings.is_production:
-    _app_kwargs.update({
-        "docs_url": None,
-        "redoc_url": None,
-        "openapi_url": None,
-    })
+    _app_kwargs.update(
+        {
+            "docs_url": None,
+            "redoc_url": None,
+            "openapi_url": None,
+        }
+    )
 
 app = FastAPI(**_app_kwargs)
 
@@ -180,7 +184,9 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     # exc_info=True ensures the full traceback lands in JSON logs / Sentry.
     logger.exception(
         "Unhandled exception on %s %s (request_id=%s)",
-        request.method, request.url.path, request_id,
+        request.method,
+        request.url.path,
+        request_id,
     )
     return JSONResponse(
         status_code=500,
@@ -247,7 +253,8 @@ for _route in app.router.routes:
         )
 
 # -- Auth router (PUBLIC — never wrap with get_current_user) -------------------
-from .auth import get_current_user, router as auth_router  # noqa: E402
+from .auth import get_current_user  # noqa: E402
+from .auth import router as auth_router
 
 app.include_router(auth_router)
 
@@ -286,6 +293,7 @@ app.include_router(sessions.router)
 
 
 # -- Health (PUBLIC — minimal payload in production) ---------------------------
+
 
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:

@@ -128,6 +128,7 @@ def bootstrap_ci95(
 
 # --- Metric function adapters (signature: (obs, pred, w) -> float) ---
 
+
 def _metric_r2(obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None) -> float:
     """R-squared (coefficient of determination). Weights, when provided, scale
     the squared residuals and the centred variance consistently."""
@@ -135,19 +136,17 @@ def _metric_r2(obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None) -> float
     if w is not None and w.sum() > 0:
         wsum = float(w.sum())
         mean_obs = float(np.sum(w * obs) / wsum)
-        ss_res = float(np.sum(w * residuals ** 2))
+        ss_res = float(np.sum(w * residuals**2))
         ss_tot = float(np.sum(w * (obs - mean_obs) ** 2))
     else:
-        ss_res = float(np.sum(residuals ** 2))
+        ss_res = float(np.sum(residuals**2))
         ss_tot = float(np.sum((obs - np.mean(obs)) ** 2))
     if ss_tot <= 0:
         return 0.0
     return 1.0 - ss_res / ss_tot
 
 
-def _metric_p80_err_rel(
-    obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None
-) -> float:
+def _metric_p80_err_rel(obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None) -> float:
     """80th percentile of the absolute relative error |obs-pred|/obs * 100,
     matching ``compute_flow_metrics``'s ``err_rel_p80``. Weights are accepted
     for API symmetry but the percentile is computed un-weighted (consistent
@@ -160,9 +159,7 @@ def _metric_p80_err_rel(
     return float(np.nanpercentile(err_rel, 80))
 
 
-def _metric_tol_in_pct(
-    obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None
-) -> float:
+def _metric_tol_in_pct(obs: np.ndarray, pred: np.ndarray, w: np.ndarray | None) -> float:
     """Percentage of rows whose Tolerance_IN_OUT == 1 (inclus). Here ``obs``
     is repurposed to carry the pre-computed Tolerance_IN_OUT codes and
     ``pred`` is ignored - this lets us reuse the same bootstrap_ci95 plumbing
@@ -245,19 +242,15 @@ def _stratify_by_tmja(
     # error p80 the same way the global metric does.
     tol_codes: np.ndarray | None = None
     if "Tolerance_IN_OUT" in df.columns:
-        tol_codes = pd.to_numeric(
-            df["Tolerance_IN_OUT"], errors="coerce"
-        ).to_numpy(dtype=np.float64)
+        tol_codes = pd.to_numeric(df["Tolerance_IN_OUT"], errors="coerce").to_numpy(
+            dtype=np.float64
+        )
 
     obs_p80_arr: np.ndarray | None = None
     pred_p80_arr: np.ndarray | None = None
     if "TMJABCTV" in df.columns and "TVr" in df.columns:
-        obs_p80_arr = pd.to_numeric(df["TMJABCTV"], errors="coerce").to_numpy(
-            dtype=np.float64
-        )
-        pred_p80_arr = pd.to_numeric(df["TVr"], errors="coerce").to_numpy(
-            dtype=np.float64
-        )
+        obs_p80_arr = pd.to_numeric(df["TMJABCTV"], errors="coerce").to_numpy(dtype=np.float64)
+        pred_p80_arr = pd.to_numeric(df["TVr"], errors="coerce").to_numpy(dtype=np.float64)
 
     results: list[dict[str, Any]] = []
     for label, lo, hi in _TMJA_BUCKETS:
@@ -294,10 +287,7 @@ def _stratify_by_tmja(
             with np.errstate(divide="ignore", invalid="ignore"):
                 nonzero = (obs_b != 0) & np.isfinite(obs_b) & np.isfinite(pred_b)
                 if nonzero.any():
-                    err_rel = (
-                        np.abs((obs_b[nonzero] - pred_b[nonzero]) / obs_b[nonzero])
-                        * 100.0
-                    )
+                    err_rel = np.abs((obs_b[nonzero] - pred_b[nonzero]) / obs_b[nonzero]) * 100.0
                     p80_val = float(np.nanpercentile(err_rel, 80))
 
         # R-squared on (y_true, y_pred) restricted to the bucket.
@@ -319,12 +309,8 @@ def _stratify_by_tmja(
             "range": range_repr,
             "n_samples": n,
             "tol_in_n": tol_in_n_val,
-            "tol_in_pct": (
-                round(tol_in_pct_val, 2) if math.isfinite(tol_in_pct_val) else None
-            ),
-            "p80": (
-                round(p80_val, 4) if math.isfinite(p80_val) else None
-            ),
+            "tol_in_pct": (round(tol_in_pct_val, 2) if math.isfinite(tol_in_pct_val) else None),
+            "p80": (round(p80_val, 4) if math.isfinite(p80_val) else None),
             "r2": round(r2_val, 6) if math.isfinite(r2_val) else None,
             "low_sample_warning": 0 < n < _TMJA_LOW_SAMPLE_THRESHOLD,
         }
@@ -384,6 +370,7 @@ def _compute_calibration_data(
 # ---------------------------------------------------------------------------
 # P4.2 — Residual boxplot by functional_class
 # ---------------------------------------------------------------------------
+
 
 def _resolve_functional_class(df: pd.DataFrame) -> pd.Series | None:
     """Return a per-row integer ``functional_class`` series (1..5) when
@@ -449,9 +436,7 @@ def _compute_residuals_by_fc(
     results: list[dict[str, Any]] = []
     # Iterate over classes 1..5 (canonical range) plus any extra integer
     # actually present, just in case the schema ever grows.
-    unique_classes = sorted(
-        {int(v) for v in fc_vals if np.isfinite(v) and float(v).is_integer()}
-    )
+    unique_classes = sorted({int(v) for v in fc_vals if np.isfinite(v) and float(v).is_integer()})
     for fc in unique_classes:
         mask = np.isfinite(fc_vals) & (fc_vals == fc) & np.isfinite(residuals)
         if not mask.any():
@@ -466,17 +451,19 @@ def _compute_residuals_by_fc(
             res_sample = res_b[idx]
         else:
             res_sample = res_b
-        results.append({
-            "fc": int(fc),
-            "n": int(res_b.size),
-            "median": round(float(np.median(res_b)), 4),
-            "mean": round(float(np.mean(res_b)), 4),
-            "q1": round(float(np.percentile(res_b, 25)), 4),
-            "q3": round(float(np.percentile(res_b, 75)), 4),
-            "min": round(float(np.min(res_b)), 4),
-            "max": round(float(np.max(res_b)), 4),
-            "residuals": [round(float(v), 4) for v in res_sample],
-        })
+        results.append(
+            {
+                "fc": int(fc),
+                "n": int(res_b.size),
+                "median": round(float(np.median(res_b)), 4),
+                "mean": round(float(np.mean(res_b)), 4),
+                "q1": round(float(np.percentile(res_b, 25)), 4),
+                "q3": round(float(np.percentile(res_b, 75)), 4),
+                "min": round(float(np.min(res_b)), 4),
+                "max": round(float(np.max(res_b)), 4),
+                "residuals": [round(float(v), 4) for v in res_sample],
+            }
+        )
     return results
 
 
@@ -527,9 +514,7 @@ def _compute_drift_by_year(
             except (TypeError, ValueError):
                 continue
 
-    unique_years = sorted(
-        {int(round(v)) for v in ym if np.isfinite(v)}
-    )
+    unique_years = sorted({int(round(v)) for v in ym if np.isfinite(v)})
     results: list[dict[str, Any]] = []
     for year_val in unique_years:
         mask = np.isfinite(ym) & (np.round(ym).astype(int) == year_val)
@@ -542,7 +527,7 @@ def _compute_drift_by_year(
         res_b = obs_b - pred_b
         mae = float(np.mean(np.abs(res_b)))
 
-        ss_res = float(np.sum(res_b ** 2))
+        ss_res = float(np.sum(res_b**2))
         ss_tot = float(np.sum((obs_b - np.mean(obs_b)) ** 2))
         r2 = (1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0
 
@@ -560,13 +545,15 @@ def _compute_drift_by_year(
             err_rel = np.abs((obs_b[nonzero] - pred_b[nonzero]) / obs_b[nonzero]) * 100.0
             p80 = float(np.nanpercentile(err_rel, 80))
 
-        results.append({
-            "year_mapped": int(year_val),
-            "year_label": inv_label.get(year_val, f"year_{year_val}"),
-            "n_samples": n,
-            "r2": round(r2, 6),
-            "mae": round(mae, 4),
-            "tol_in_pct": round(tol_in_pct, 2) if math.isfinite(tol_in_pct) else None,
-            "p80": round(p80, 4) if math.isfinite(p80) else None,
-        })
+        results.append(
+            {
+                "year_mapped": int(year_val),
+                "year_label": inv_label.get(year_val, f"year_{year_val}"),
+                "n_samples": n,
+                "r2": round(r2, 6),
+                "mae": round(mae, 4),
+                "tol_in_pct": round(tol_in_pct, 2) if math.isfinite(tol_in_pct) else None,
+                "p80": round(p80, 4) if math.isfinite(p80) else None,
+            }
+        )
     return results

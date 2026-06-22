@@ -96,7 +96,7 @@ TVR_CAP = 20000.0
 # Helpers
 # ---------------------------------------------------------------------------
 def _weighted_pick(items_weights: list[tuple[str, float]], rng: random.Random) -> str:
-    items, weights = zip(*items_weights)
+    items, weights = zip(*items_weights, strict=False)
     return rng.choices(items, weights=weights, k=1)[0]
 
 
@@ -154,10 +154,7 @@ def build_visualisation(
     # cheap and lies inside the geometry, sufficient here).
     lo_min, la_min, lo_max, la_max = bbox
     rep = gdf.geometry.representative_point()
-    inside = (
-        (rep.x >= lo_min) & (rep.x <= lo_max)
-        & (rep.y >= la_min) & (rep.y <= la_max)
-    )
+    inside = (rep.x >= lo_min) & (rep.x <= lo_max) & (rep.y >= la_min) & (rep.y <= la_max)
     n_before = len(gdf)
     gdf = gdf[inside].copy()
     logger.info("[VIS] Inside-bbox filter: %d -> %d", n_before, len(gdf))
@@ -174,9 +171,9 @@ def build_visualisation(
         fc_weights_eff = {fc: 1.0 / len(present_fc) for fc in present_fc}
     else:
         fc_weights_eff = {fc: w / total_w for fc, w in fc_weights_eff.items()}
-    logger.info("[VIS] FC weights (effective): %s", {
-        fc: round(w, 3) for fc, w in fc_weights_eff.items()
-    })
+    logger.info(
+        "[VIS] FC weights (effective): %s", {fc: round(w, 3) for fc, w in fc_weights_eff.items()}
+    )
 
     # Stratified sample by FC bucket, then by TVr-quantile strata WITHIN each
     # bucket so the resulting TVr distribution covers all palette paliers.
@@ -193,9 +190,7 @@ def build_visualisation(
         if len(tvr_arr) <= 1 or float(np.ptp(tvr_arr)) < 1e-6:
             # Degenerate bucket: random sample.
             n = min(n_target, len(bucket))
-            sampled = bucket.sample(
-                n=n, random_state=int(rng_np.integers(0, 1_000_000))
-            )
+            sampled = bucket.sample(n=n, random_state=int(rng_np.integers(0, 1_000_000)))
             picks.append(sampled)
             continue
 
@@ -213,9 +208,7 @@ def build_visualisation(
                 continue
             n_strata = max(1, int(round(n_target * share)))
             n_strata = min(n_strata, len(slab))
-            sampled = slab.sample(
-                n=n_strata, random_state=int(rng_np.integers(0, 1_000_000))
-            )
+            sampled = slab.sample(n=n_strata, random_state=int(rng_np.integers(0, 1_000_000)))
             bucket_picks.append(sampled)
         if bucket_picks:
             picks.append(
@@ -278,11 +271,13 @@ def build_visualisation(
             "DPL_max": round(dpl_max, 1),
         }
         coords = _round_coords(list(row.geometry.coords), 5)
-        features.append({
-            "type": "Feature",
-            "properties": props,
-            "geometry": {"type": "LineString", "coordinates": coords},
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "properties": props,
+                "geometry": {"type": "LineString", "coordinates": coords},
+            }
+        )
 
     fc_dict = {"type": "FeatureCollection", "features": features}
     return sample, fc_dict
@@ -390,22 +385,24 @@ def build_discontinuites(
         else:
             flow_in, flow_out = lo, hi
 
-        features.append({
-            "type": "Feature",
-            "properties": {
-                "node_id": f"node_{i+1:04d}",
-                "principal_cause": cause,
-                "topology": topology,
-                "tier": tier,
-                "ecart": round(abs(flow_in - flow_out), 1),
-                "flow_in": round(flow_in, 1),
-                "flow_out": round(flow_out, 1),
-            },
-            "geometry": {
-                "type": "Point",
-                "coordinates": [round(jlon, 5), round(jlat, 5)],
-            },
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "node_id": f"node_{i+1:04d}",
+                    "principal_cause": cause,
+                    "topology": topology,
+                    "tier": tier,
+                    "ecart": round(abs(flow_in - flow_out), 1),
+                    "flow_in": round(flow_in, 1),
+                    "flow_out": round(flow_out, 1),
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [round(jlon, 5), round(jlat, 5)],
+                },
+            }
+        )
 
     return {"type": "FeatureCollection", "features": features}
 
@@ -423,18 +420,23 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--segments", type=Path, default=DEFAULT_SEGMENTS,
+        "--segments",
+        type=Path,
+        default=DEFAULT_SEGMENTS,
         help="Source segments GeoJSON (LineStrings).",
     )
     parser.add_argument(
-        "--bbox", type=float, nargs=4,
+        "--bbox",
+        type=float,
+        nargs=4,
         metavar=("LON_MIN", "LAT_MIN", "LON_MAX", "LAT_MAX"),
         default=DEFAULT_BBOX,
     )
     parser.add_argument("--max-segments", type=int, default=DEFAULT_MAX_SEGMENTS)
     parser.add_argument("--max-nodes", type=int, default=DEFAULT_MAX_NODES)
     parser.add_argument(
-        "--out-dir", type=Path,
+        "--out-dir",
+        type=Path,
         default=_repo_root() / "apps" / "web" / "public" / "preview",
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
@@ -455,14 +457,19 @@ def main(argv: list[str] | None = None) -> int:
 
     # ---- visualisation ----
     vis_sample, vis_fc = build_visualisation(
-        args.segments, bbox, args.max_segments, args.seed,
+        args.segments,
+        bbox,
+        args.max_segments,
+        args.seed,
     )
     out_vis = args.out_dir / "visualisation-lyon.geojson"
     out_vis.write_text(json.dumps(vis_fc, ensure_ascii=False), encoding="utf-8")
     size_kb_vis = out_vis.stat().st_size / 1024
     logger.info(
         "[OK] %s: %d features, %.1f KB",
-        out_vis.name, len(vis_fc["features"]), size_kb_vis,
+        out_vis.name,
+        len(vis_fc["features"]),
+        size_kb_vis,
     )
 
     # ---- discontinuites ----
@@ -472,7 +479,9 @@ def main(argv: list[str] | None = None) -> int:
     size_kb_dis = out_dis.stat().st_size / 1024
     logger.info(
         "[OK] %s: %d features, %.1f KB",
-        out_dis.name, len(dis_fc["features"]), size_kb_dis,
+        out_dis.name,
+        len(dis_fc["features"]),
+        size_kb_dis,
     )
 
     # ---- sanity stats ----
@@ -498,12 +507,16 @@ def main(argv: list[str] | None = None) -> int:
     if tvr_vals:
         logger.info(
             "  TVr min/med/max = %.0f / %.0f / %.0f",
-            tvr_vals[0], tvr_vals[len(tvr_vals) // 2], tvr_vals[-1],
+            tvr_vals[0],
+            tvr_vals[len(tvr_vals) // 2],
+            tvr_vals[-1],
         )
     if dpl_vals:
         logger.info(
             "  DPL min/med/max = %.0f / %.0f / %.0f",
-            dpl_vals[0], dpl_vals[len(dpl_vals) // 2], dpl_vals[-1],
+            dpl_vals[0],
+            dpl_vals[len(dpl_vals) // 2],
+            dpl_vals[-1],
         )
 
     logger.info("Done.")

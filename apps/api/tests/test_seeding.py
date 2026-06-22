@@ -14,7 +14,6 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import numpy as np  # noqa: E402
-import pytest  # noqa: E402
 
 from app.services.ml.seeding import derive_seed, seed_everything  # noqa: E402
 
@@ -24,6 +23,7 @@ SEED = 1750
 # ---------------------------------------------------------------------------
 # derive_seed
 # ---------------------------------------------------------------------------
+
 
 class TestDeriveSeed:
     def test_in_uint32_range(self):
@@ -41,6 +41,7 @@ class TestDeriveSeed:
 # ---------------------------------------------------------------------------
 # seed_everything — RNG reproducibility (cheap, no TF graph)
 # ---------------------------------------------------------------------------
+
 
 class TestSeedEverythingRng:
     def test_numpy_reproducible(self):
@@ -68,9 +69,9 @@ class TestSeedEverythingRng:
 # seed_everything — end-to-end training reproducibility
 # ---------------------------------------------------------------------------
 
+
 def _tiny_train_run(seed: int):
     """Seed, build a tiny model, train 2 epochs on fixed data, return state."""
-    import tensorflow as tf
     from tensorflow import keras
 
     seed_everything(seed)
@@ -102,7 +103,7 @@ class TestTrainingReproducibility:
 
         # Shapes are sanity-checked, then bit-exactness asserted.
         assert len(w1) == len(w2) and len(w1) > 0
-        for a, b in zip(w1, w2):
+        for a, b in zip(w1, w2, strict=False):
             assert a.shape == b.shape
             np.testing.assert_array_equal(a, b)
 
@@ -112,5 +113,5 @@ class TestTrainingReproducibility:
         w1, _ = _tiny_train_run(SEED)
         w2, _ = _tiny_train_run(SEED + 1)
         # At least one weight tensor must differ with a different seed.
-        any_diff = any(not np.array_equal(a, b) for a, b in zip(w1, w2))
+        any_diff = any(not np.array_equal(a, b) for a, b in zip(w1, w2, strict=False))
         assert any_diff

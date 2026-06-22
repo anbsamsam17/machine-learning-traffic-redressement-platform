@@ -65,13 +65,13 @@ def _load_model(model_path: str):
 
     model = load_model_compat(p)
 
-    with open(norm_file, "r") as f:
+    with open(norm_file) as f:
         norm_coefficients = json.load(f)
 
     config = None
     config_file = p / "training_config.json"
     if config_file.exists():
-        with open(config_file, "r", encoding="utf-8") as f:
+        with open(config_file, encoding="utf-8") as f:
             config = json.load(f)
 
     return model, norm_coefficients, config
@@ -95,6 +95,7 @@ def release_tf_model(model: Any | None = None) -> None:
     gc.collect()
     try:
         import tensorflow as _tf
+
         _tf.keras.backend.clear_session()
     except Exception as exc:  # noqa: BLE001
         logger.warning("release_tf_model: clear_session failed: %s", exc)
@@ -165,9 +166,7 @@ def _normalize_year_keys(series: pd.Series) -> pd.Series:
         int_like_mask = numeric_mask & (num == num.round())
         # Integer-like numerics -> "<int>" (drops the ".0" float suffix).
         if int_like_mask.any():
-            keys.loc[int_like_mask] = (
-                num.loc[int_like_mask].astype("int64").astype(str)
-            )
+            keys.loc[int_like_mask] = num.loc[int_like_mask].astype("int64").astype(str)
         # Numeric but non-integer -> canonical str of the float (e.g. "2024.5").
         float_like_mask = numeric_mask & ~int_like_mask
         if float_like_mask.any():
@@ -190,7 +189,7 @@ def _normalize_year_mapping_keys(mapping: dict) -> dict:
     normalized_keys = _normalize_year_keys(pd.Series(list(mapping.keys())))
     return {
         canonical: value
-        for canonical, value in zip(normalized_keys.tolist(), mapping.values())
+        for canonical, value in zip(normalized_keys.tolist(), mapping.values(), strict=False)
     }
 
 
@@ -227,11 +226,7 @@ def _apply_year_mapping(
 
     cfg = config or {}
     input_cols = cfg.get("input_cols") or []
-    needs_year = (
-        cfg.get("use_year_feature", False)
-        or ("year_mapped" in input_cols)
-        or has_override
-    )
+    needs_year = cfg.get("use_year_feature", False) or ("year_mapped" in input_cols) or has_override
     if not needs_year:
         return data
 
@@ -266,7 +261,8 @@ def _apply_year_mapping(
             logger.warning(
                 "year_mapped: colonne '%s' trouvee mais aucune valeur ne matche "
                 "le mapping %s -> feature annee neutralisee a 0.",
-                year_col, sorted(normalized_mapping.keys()),
+                year_col,
+                sorted(normalized_mapping.keys()),
             )
             data["year_mapped"] = 0
     else:
@@ -281,7 +277,9 @@ def _apply_year_mapping(
             "year_mapped: colonne annee '%s' introuvable parmi %s -> valeur "
             "CONSTANTE %s appliquee. Les predictions seront biaisees si le "
             "modele a ete entraine avec une annee variable.",
-            requested_col, list(data.columns)[:40], median_value,
+            requested_col,
+            list(data.columns)[:40],
+            median_value,
         )
         data["year_mapped"] = median_value
 
@@ -316,6 +314,7 @@ def _normalize_input_cols(input_cols: list[str]) -> list[str]:
 #
 # Outputs are PM / PS in v/h (vehicules per hour), NOT v/j (per day). The
 # corresponding IC tranches are recalibrated in PeakHourErrorThresholds.
+
 
 def _peak_hour_err_pct(value: float, thresholds: Any) -> float:
     """Return the v/h confidence-interval error percentage for a PM/PS value.
@@ -418,12 +417,13 @@ async def _predict_peak_hour(
         raise HTTPException(
             status_code=400,
             detail=f"Erreur chargement modele {kind}: {exc}",
-        )
+        ) from exc
 
     # 3. Apply year mapping (config + body overrides ; overrides PRIMENT,
     #    memes regles que TV/PL). None => comportement legacy (config seul).
     data = _apply_year_mapping(
-        data, config_pk,
+        data,
+        config_pk,
         year_column_override=year_column_override,
         year_mapping_override=year_mapping_override,
     )
@@ -471,6 +471,7 @@ async def _predict_peak_hour(
     gc.collect()
     try:
         import tensorflow as _tf
+
         _tf.keras.backend.clear_session()
     except Exception as exc:  # noqa: BLE001
         logger.warning("clear_session after %s predict failed: %s", kind, exc)

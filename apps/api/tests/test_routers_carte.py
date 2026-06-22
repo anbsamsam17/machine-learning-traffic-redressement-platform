@@ -10,7 +10,9 @@ import pytest
 
 class TestValidateModel:
     @pytest.mark.asyncio
-    async def test_missing_dir_returns_invalid(self, authenticated_client, tmp_workspace, csv_content):
+    async def test_missing_dir_returns_invalid(
+        self, authenticated_client, tmp_workspace, csv_content
+    ):
         # A5/SECURITY : le model_dir est confine au workspace de la session.
         # On cree une vraie session puis on cible un sous-dossier inexistant
         # SOUS son workspace (WORKSPACE_ROOT/{session_id}/...).
@@ -182,6 +184,7 @@ class TestDownloadCarte:
 # modele TF) pour eviter de gerer un mock de modele. Les tests e2e (avec
 # vrai modele) sont separes.
 
+
 class TestGenerateCarteJOrSchema:
     """Verifie que le schema de sortie utilise JOr (pas TVr) et inclut
     PLred/VLred. Tests via les helpers POST-prediction, pas le router complet
@@ -191,22 +194,30 @@ class TestGenerateCarteJOrSchema:
         """Helper _appliquer_arrondi_avec_coherence et _round_progressive
         produisent JOr/DPL/PLred/VLred (pas TVr/TVrmin/TVrmax)."""
         import pandas as pd
+
         try:
             from app.services.ml.rounding import (
-                _round_progressive, _appliquer_arrondi_avec_coherence,
+                _appliquer_arrondi_avec_coherence,
             )
         except ImportError:
             from app.routers.carte import (
-                _round_progressive, _appliquer_arrondi_avec_coherence,
+                _appliquer_arrondi_avec_coherence,
             )
 
         # Simule une carte intermediaire post-prediction (JOr/DPL deja calcules).
-        prod = pd.DataFrame({
-            "JOrmin": [80, 1200], "JOr": [100, 1500], "JOrmax": [120, 1800],
-            "DPLmin": [40, 200], "DPL": [50, 250], "DPLmax": [60, 300],
-        })
+        prod = pd.DataFrame(
+            {
+                "JOrmin": [80, 1200],
+                "JOr": [100, 1500],
+                "JOrmax": [120, 1800],
+                "DPLmin": [40, 200],
+                "DPL": [50, 250],
+                "DPLmax": [60, 300],
+            }
+        )
         prod = _appliquer_arrondi_avec_coherence(
-            prod, [("JOrmin", "JOr", "JOrmax"), ("DPLmin", "DPL", "DPLmax")],
+            prod,
+            [("JOrmin", "JOr", "JOrmax"), ("DPLmin", "DPL", "DPLmax")],
         )
         # JOr et DPL sont presents (pas TVr).
         assert "JOr" in prod.columns
@@ -217,16 +228,19 @@ class TestGenerateCarteJOrSchema:
         """PLred = DPL (apres arrondi) ; VLred = round_progressive(JOr - DPL)."""
         import numpy as np
         import pandas as pd
+
         try:
             from app.services.ml.rounding import _round_progressive
         except ImportError:
             from app.routers.carte import _round_progressive
 
         # Simule un sortie carte minimaliste pour validation des derivations.
-        prod = pd.DataFrame({
-            "JOr": pd.Series([1000, 5000], dtype="int32"),
-            "DPL": pd.Series([200, 1500], dtype="int32"),
-        })
+        prod = pd.DataFrame(
+            {
+                "JOr": pd.Series([1000, 5000], dtype="int32"),
+                "DPL": pd.Series([200, 1500], dtype="int32"),
+            }
+        )
         # PLred = DPL (apres arrondi DPL deja fait)
         prod["PLred"] = prod["DPL"].astype("int32")
         # VLred = round_progressive(max(JOr - DPL, 0))
@@ -255,11 +269,14 @@ class TestGenerateCarteJOrSchema:
         # Sans HPM/HPS demandes -> les blocs (10.c / 10.d) sont des no-op.
         # On verifie la condition d'entree via une carte intermediaire minimale.
         import pandas as pd
-        prod = pd.DataFrame({
-            "JOr": [1000],
-            "DPL": [200],
-            "FC": [3],
-        })
+
+        prod = pd.DataFrame(
+            {
+                "JOr": [1000],
+                "DPL": [200],
+                "FC": [3],
+            }
+        )
         # Pas de PM/PS dans prod -> les conditions hpm_saturation_enabled and
         # "PM" in prod.columns / "PS" in prod.columns sont False -> no-op.
         assert "PM" not in prod.columns
@@ -279,9 +296,13 @@ class TestGenerateCarteIDOR:
         import secrets
 
         async def _register_login(client_, email_):
-            r = await client_.post("/api/auth/register", json={"email": email_, "password": "test-12345"})
+            r = await client_.post(
+                "/api/auth/register", json={"email": email_, "password": "test-12345"}
+            )
             assert r.status_code in (200, 201, 409)
-            r = await client_.post("/api/auth/login", json={"email": email_, "password": "test-12345"})
+            r = await client_.post(
+                "/api/auth/login", json={"email": email_, "password": "test-12345"}
+            )
             assert r.status_code == 200
             return r.json()["access_token"]
 

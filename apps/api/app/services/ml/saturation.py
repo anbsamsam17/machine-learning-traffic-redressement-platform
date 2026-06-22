@@ -96,16 +96,16 @@ DEFAULT_ALPHA_FC_MIN = {1: 0.35, 2: 0.25, 3: 0.18, 4: 0.15, 5: 0.12}
 DEFAULT_BORNES_FC_ABS = {1: 15000, 2: 5000, 3: 3000, 4: 1500, 5: 800}
 
 # Hyperparametres v2 (cf SATURATION_PL_specs.md section "Parametres valides").
-DEFAULT_RATIO_MACRO_PEN = 1.137     # mean(TxPenTV)/mean(TxPenPL), 991 capteurs Lyon 2025
-DEFAULT_ALPHA_PHYSIQUE_MAX = 0.55   # plafond biomecanique CEREMA (au-dela = aberration)
-DEFAULT_SEUIL_VOL_FCD_TV = 50.0     # fallback si TMJFCDTV < seuil (v/j)
+DEFAULT_RATIO_MACRO_PEN = 1.137  # mean(TxPenTV)/mean(TxPenPL), 991 capteurs Lyon 2025
+DEFAULT_ALPHA_PHYSIQUE_MAX = 0.55  # plafond biomecanique CEREMA (au-dela = aberration)
+DEFAULT_SEUIL_VOL_FCD_TV = 50.0  # fallback si TMJFCDTV < seuil (v/j)
 
 # Hyperparametres v3 (override zones critiques) — cf SATURATION_PL_specs.md
 # section "Hyperparametres v3".
-DEFAULT_RATIO_CAPTEUR_CRITIQUE = 0.15    # capteur critique si TMJOBCPL/TMJOBCTV > 15 %
+DEFAULT_RATIO_CAPTEUR_CRITIQUE = 0.15  # capteur critique si TMJOBCPL/TMJOBCTV > 15 %
 DEFAULT_BUFFER_ZONE_CRITIQUE_M = 1000.0  # buffer 1 km en EPSG:2154 (Lambert-93)
-DEFAULT_ALPHA_MIN_ZONE_CRITIQUE = 0.30   # plancher local eleve dans zones critiques
-DEFAULT_ANNEE_CAPTEURS = 2025            # annee de reference pour les capteurs SIREDO
+DEFAULT_ALPHA_MIN_ZONE_CRITIQUE = 0.30  # plancher local eleve dans zones critiques
+DEFAULT_ANNEE_CAPTEURS = 2025  # annee de reference pour les capteurs SIREDO
 
 # Alias retro-compat v1 — preserve les imports existants et les anciens
 # clients API qui referencaient DEFAULT_BORNES_FC / DEFAULT_ALPHA_FC.
@@ -223,8 +223,8 @@ def _alpha_adaptatif(
 
 
 def _detecter_zones_critiques(
-    capteurs_pl: "gpd.GeoDataFrame",
-    segments: "gpd.GeoDataFrame",
+    capteurs_pl: gpd.GeoDataFrame,
+    segments: gpd.GeoDataFrame,
     annee: int,
     ratio_seuil: float,
     buffer_m: float,
@@ -267,21 +267,24 @@ def _detecter_zones_critiques(
         return pd.Series(False, index=segments.index)
 
     cap_annee = cap_annee.dropna(subset=["TMJOBCPL", "TMJOBCTV"])
-    cap_annee["ratio_obs"] = (
-        cap_annee["TMJOBCPL"] / cap_annee["TMJOBCTV"].replace(0, np.nan)
-    )
+    cap_annee["ratio_obs"] = cap_annee["TMJOBCPL"] / cap_annee["TMJOBCTV"].replace(0, np.nan)
     crit = cap_annee[cap_annee["ratio_obs"] > ratio_seuil]
 
     if len(crit) == 0:
         logger.info(
             "Detection zones critiques : 0 capteur > seuil %.2f (sur %d capteurs %d)",
-            ratio_seuil, len(cap_annee), annee,
+            ratio_seuil,
+            len(cap_annee),
+            annee,
         )
         return pd.Series(False, index=segments.index)
 
     logger.info(
         "Detection zones critiques : %d capteurs > seuil %.2f (sur %d capteurs %d)",
-        len(crit), ratio_seuil, len(cap_annee), annee,
+        len(crit),
+        ratio_seuil,
+        len(cap_annee),
+        annee,
     )
 
     # Buffer en EPSG:2154 (Lambert-93, metrique). Echec geometrique -> all-False.
@@ -358,7 +361,9 @@ def _alpha_v3(
 
     # Plancher LOCAL v3 : 0.30 dans zones critiques, sinon plancher FC (v2).
     alpha_min_local = np.where(
-        is_crit_arr, alpha_min_zone_critique, alpha_min_fc_arr,
+        is_crit_arr,
+        alpha_min_zone_critique,
+        alpha_min_fc_arr,
     )
 
     fcd_pl_arr = pd.to_numeric(fcd_pl, errors="coerce").fillna(0).astype(float).to_numpy()

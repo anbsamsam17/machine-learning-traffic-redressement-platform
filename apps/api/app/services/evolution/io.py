@@ -32,8 +32,15 @@ CRS_WGS84 = "EPSG:4326"
 # Proprietes potentiellement utiles, conservees si presentes (les autres sont
 # ignorees : seule la metrique JOr entre dans l'evolution).
 _KEEP_PROPS = [
-    "agregId", "JO", "JOr", "DD", "FC", "HD", "TP",
-    "JOrmin", "JOrmax",
+    "agregId",
+    "JO",
+    "JOr",
+    "DD",
+    "FC",
+    "HD",
+    "TP",
+    "JOrmin",
+    "JOrmax",
 ]
 
 

@@ -31,6 +31,7 @@ def _t(values):
 # Pinball / quantile
 # ---------------------------------------------------------------------------
 
+
 class TestPinballLoss:
     def test_matches_hand_computed_formula(self):
         """pinball = mean(max(q*e, (q-1)*e)) with e = y_true - y_pred."""
@@ -52,8 +53,8 @@ class TestPinballLoss:
         q = 0.8
         loss = PinballLoss(quantile=q)
         y_true = _t([[10.0]])
-        under = _t([[8.0]])   # under-prediction, e = +2
-        over = _t([[12.0]])   # over-prediction,  e = -2
+        under = _t([[8.0]])  # under-prediction, e = +2
+        over = _t([[12.0]])  # over-prediction,  e = -2
 
         l_under = float(loss(y_true, under).numpy())
         l_over = float(loss(y_true, over).numpy())
@@ -67,8 +68,8 @@ class TestPinballLoss:
         q = 0.2
         loss = PinballLoss(quantile=q)
         y_true = _t([[10.0]])
-        under = _t([[8.0]])   # e = +2 -> q*2 = 0.4
-        over = _t([[12.0]])   # e = -2 -> (1-q)*2 = 1.6
+        under = _t([[8.0]])  # e = +2 -> q*2 = 0.4
+        over = _t([[12.0]])  # e = -2 -> (1-q)*2 = 1.6
 
         l_under = float(loss(y_true, under).numpy())
         l_over = float(loss(y_true, over).numpy())
@@ -103,6 +104,7 @@ class TestPinballLoss:
 # Huber
 # ---------------------------------------------------------------------------
 
+
 class TestHuberLoss:
     def test_matches_hand_computed_formula(self):
         delta = 0.25
@@ -116,7 +118,7 @@ class TestHuberLoss:
             a = abs(e)
             quad = min(a, delta)
             lin = a - quad
-            return 0.5 * quad ** 2 + delta * lin
+            return 0.5 * quad**2 + delta * lin
 
         expected = np.mean([huber(0.1), huber(3.0)])
         assert value == pytest.approx(expected, abs=1e-6)
@@ -131,12 +133,13 @@ class TestHuberLoss:
         y_true = _t([[0.0]])
         y_pred = _t([[0.5]])  # |e| = 0.5 < delta
         value = float(loss(y_true, y_pred).numpy())
-        assert value == pytest.approx(0.5 * 0.5 ** 2, abs=1e-6)
+        assert value == pytest.approx(0.5 * 0.5**2, abs=1e-6)
 
 
 # ---------------------------------------------------------------------------
 # Tolerance-aware
 # ---------------------------------------------------------------------------
+
 
 class TestToleranceAwareLoss:
     def test_matches_hand_computed_formula(self):
@@ -163,7 +166,7 @@ class TestToleranceAwareLoss:
     def test_out_of_tolerance_increases_loss(self):
         loss = ToleranceAwareLoss(tolerance=0.15, penalty_factor=1.5)
         y_true = _t([[1.0]])
-        in_tol = float(loss(y_true, _t([[1.10]])).numpy())   # |e|=0.10 in tol
+        in_tol = float(loss(y_true, _t([[1.10]])).numpy())  # |e|=0.10 in tol
         out_tol = float(loss(y_true, _t([[1.10 + 0.10]])).numpy())  # |e|=0.20 out
         # The out-of-tol residual is larger AND penalised.
         assert out_tol > in_tol

@@ -7,6 +7,7 @@ installed; only the routing / validation paths run in CI.
 from __future__ import annotations
 
 import importlib.util
+from datetime import UTC
 
 import pytest
 
@@ -96,7 +97,7 @@ class TestTrainingDeadlineWiring:
     """
 
     def test_deadline_stops_training_after_first_epoch(self):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         import numpy as np
 
@@ -127,15 +128,22 @@ class TestTrainingDeadlineWiring:
 
         # Deadline already in the past (max_minutes=0 -> should_stop() True now).
         past_deadline = TrainingDeadline(
-            started_at=datetime.now(timezone.utc), max_minutes=0,
+            started_at=datetime.now(UTC),
+            max_minutes=0,
         )
         assert past_deadline.should_stop()
 
         artifact = _train_single(
-            x_train_norm=x, y_train_norm=y,
-            x_valid_norm=None, y_valid_norm=None,
-            x_all_norm=x, y_all_norm=y,
-            mu_x=mu_x, sigma_x=sigma_x, mu_y=mu_y, sigma_y=sigma_y,
+            x_train_norm=x,
+            y_train_norm=y,
+            x_valid_norm=None,
+            y_valid_norm=None,
+            x_all_norm=x,
+            y_all_norm=y,
+            mu_x=mu_x,
+            sigma_x=sigma_x,
+            mu_y=mu_y,
+            sigma_y=sigma_y,
             combo=combo,
             max_epochs=5,  # would run 5 epochs absent the deadline
             analysis_scope="all",
@@ -187,6 +195,7 @@ class TestTrainingStream:
 # parallele (concurrent_training_blocked).
 # ---------------------------------------------------------------------------
 
+
 class TestConcurrentTrainingBlocked:
     """Verifie que 2 starts simultanes par le meme user -> 409 sur le 2eme.
 
@@ -197,13 +206,17 @@ class TestConcurrentTrainingBlocked:
 
     def test_acquire_training_slot_blocks_second_call_same_user(self):
         """Acquire 1 -> OK ; acquire 2 (meme user) -> 409 HTTPException."""
-        from app.training_guard import (
-            _get_user_lock, release_training_slot, acquire_training_slot,
-        )
-        from fastapi import HTTPException
-
         # Generate a unique user_id pour ce test (eviter pollution avec autres tests)
         import secrets
+
+        from fastapi import HTTPException
+
+        from app.training_guard import (
+            _get_user_lock,
+            acquire_training_slot,
+            release_training_slot,
+        )
+
         user_id = f"test-user-{secrets.token_hex(8)}"
 
         # 1er acquire : OK
@@ -225,8 +238,9 @@ class TestConcurrentTrainingBlocked:
 
     def test_acquire_training_slot_different_users_independent(self):
         """User A acquire ; User B peut acquire en parallele (lock per-user)."""
-        from app.training_guard import _get_user_lock, release_training_slot
         import secrets
+
+        from app.training_guard import _get_user_lock, release_training_slot
 
         uid_a = f"test-userA-{secrets.token_hex(8)}"
         uid_b = f"test-userB-{secrets.token_hex(8)}"
@@ -244,8 +258,9 @@ class TestConcurrentTrainingBlocked:
 
     def test_release_training_slot_idempotent(self):
         """release_training_slot ne crash pas si lock deja libere."""
-        from app.training_guard import release_training_slot
         import secrets
+
+        from app.training_guard import release_training_slot
 
         uid = f"test-user-rel-{secrets.token_hex(8)}"
         # Release sans acquire prealable : pas d'erreur

@@ -18,10 +18,10 @@ from app.services.ml.stats_compare import (
     mcnemar,
 )
 
-
 # ---------------------------------------------------------------------------
 # mcnemar — chi-square branch (disc >= 25)
 # ---------------------------------------------------------------------------
+
 
 class TestMcNemarChiSquare:
     def test_statistic_matches_closed_form(self):
@@ -53,6 +53,7 @@ class TestMcNemarChiSquare:
 # mcnemar — exact binomial branch (disc < 25)
 # ---------------------------------------------------------------------------
 
+
 class TestMcNemarBinomial:
     def test_matches_scipy_binomtest(self):
         n01, n10 = 8, 2  # disc=10 < 25 -> exact binomial
@@ -81,6 +82,7 @@ class TestMcNemarBinomial:
 # in_tolerance_mask
 # ---------------------------------------------------------------------------
 
+
 class TestInToleranceMask:
     def test_relative_error_threshold(self):
         obs = np.array([100.0, 100.0, 100.0])
@@ -100,6 +102,7 @@ class TestInToleranceMask:
 # contingency
 # ---------------------------------------------------------------------------
 
+
 class TestContingency:
     def test_cells_count_correctly(self):
         a = np.array([True, True, False, False])
@@ -116,6 +119,7 @@ class TestContingency:
 # compare_models — high-level entry point
 # ---------------------------------------------------------------------------
 
+
 class TestCompareModels:
     def test_a_better_verdict_significant(self):
         # Construct obs/preds so A is in-tol on many sensors where B is not.
@@ -126,8 +130,7 @@ class TestCompareModels:
         # B: first 40 wildly off (out of tol), last 10 in tol.
         pred_b = np.concatenate([np.full(40, 200.0), np.full(10, 101.0)])
 
-        out = compare_models(obs, pred_a, pred_b, tolerance_pct=10.0,
-                             name_a="A", name_b="B")
+        out = compare_models(obs, pred_a, pred_b, tolerance_pct=10.0, name_a="A", name_b="B")
 
         assert out["model_a"]["tol_in_n"] == 50
         assert out["model_b"]["tol_in_n"] == 10

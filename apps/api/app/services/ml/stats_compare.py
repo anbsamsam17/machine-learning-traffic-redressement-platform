@@ -25,7 +25,7 @@ strictly higher AND the test is significant at alpha = 0.05.
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from scipy import stats
@@ -72,15 +72,13 @@ def contingency(
     - n11 : both OK
     """
     if in_tol_a.shape != in_tol_b.shape:
-        raise ValueError(
-            f"in_tol_a {in_tol_a.shape} and in_tol_b {in_tol_b.shape} must match"
-        )
+        raise ValueError(f"in_tol_a {in_tol_a.shape} and in_tol_b {in_tol_b.shape} must match")
     a_ok = in_tol_a.astype(bool)
     b_ok = in_tol_b.astype(bool)
     n00 = int(np.sum(~a_ok & ~b_ok))
-    n01 = int(np.sum(~a_ok &  b_ok))
-    n10 = int(np.sum( a_ok & ~b_ok))
-    n11 = int(np.sum( a_ok &  b_ok))
+    n01 = int(np.sum(~a_ok & b_ok))
+    n10 = int(np.sum(a_ok & ~b_ok))
+    n11 = int(np.sum(a_ok & b_ok))
     return {"n00": n00, "n01": n01, "n10": n10, "n11": n11}
 
 
@@ -146,9 +144,7 @@ def compare_models(
     the directional verdict.
     """
     if not (0.0 < tolerance_pct <= 100.0):
-        raise ValueError(
-            f"tolerance_pct must be in (0, 100], got {tolerance_pct}"
-        )
+        raise ValueError(f"tolerance_pct must be in (0, 100], got {tolerance_pct}")
 
     obs_arr = _to_float_array(obs, "obs")
     pa = _to_float_array(pred_a, "pred_a")

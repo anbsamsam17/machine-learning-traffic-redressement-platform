@@ -15,7 +15,6 @@ import secrets
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Sample synthetic geojson — 10 segments, 3 chaines + bretelles + rond-point
 # ---------------------------------------------------------------------------
@@ -79,53 +78,98 @@ def _synthetic_network() -> dict:
     features = [
         # Chaine 1 + 2 (noeud 2 = carrefour avec cliff FCD)
         _make_segment(
-            "A-F", 1, 2, tvr=15000,
+            "A-F",
+            1,
+            2,
+            tvr=15000,
             coords=[[4.83, 45.74], [4.84, 45.75]],
-            tmjo_tv=12000, tmjo_pl=800, fc=2,
+            tmjo_tv=12000,
+            tmjo_pl=800,
+            fc=2,
         ),
         _make_segment(
-            "B-F", 2, 3, tvr=4500,
+            "B-F",
+            2,
+            3,
+            tvr=4500,
             coords=[[4.84, 45.75], [4.85, 45.76]],
-            tmjo_tv=3000, tmjo_pl=200, fc=3,
+            tmjo_tv=3000,
+            tmjo_pl=200,
+            fc=3,
         ),
         _make_segment(
-            "C-F", 4, 2, tvr=8000,
+            "C-F",
+            4,
+            2,
+            tvr=8000,
             coords=[[4.83, 45.76], [4.84, 45.75]],
-            tmjo_tv=200, tmjo_pl=50, fc=3,   # tres faible vs A (cliff TV)
+            tmjo_tv=200,
+            tmjo_pl=50,
+            fc=3,  # tres faible vs A (cliff TV)
         ),
         # Continuite suspecte (noeud 11 = 1 in + 1 out, sans RAMP/RB)
         _make_segment(
-            "D-F", 10, 11, tvr=12000,
+            "D-F",
+            10,
+            11,
+            tvr=12000,
             coords=[[4.86, 45.74], [4.87, 45.75]],
-            tmjo_tv=8000, tmjo_pl=600, fc=3,
+            tmjo_tv=8000,
+            tmjo_pl=600,
+            fc=3,
         ),
         _make_segment(
-            "E-F", 11, 12, tvr=3000,
+            "E-F",
+            11,
+            12,
+            tvr=3000,
             coords=[[4.87, 45.75], [4.88, 45.76]],
-            tmjo_tv=1500, tmjo_pl=100, fc=3,
+            tmjo_tv=1500,
+            tmjo_pl=100,
+            fc=3,
         ),
         # Bretelle (noeud 21 = 1 in (RAMP) + 1 out)
         _make_segment(
-            "F-F", 20, 21, tvr=2000,
+            "F-F",
+            20,
+            21,
+            tvr=2000,
             coords=[[4.89, 45.74], [4.90, 45.75]],
-            tmjo_tv=1000, tmjo_pl=80, fc=4, ramp="Y",
+            tmjo_tv=1000,
+            tmjo_pl=80,
+            fc=4,
+            ramp="Y",
         ),
         _make_segment(
-            "G-F", 21, 22, tvr=8000,
+            "G-F",
+            21,
+            22,
+            tvr=8000,
             coords=[[4.90, 45.75], [4.91, 45.76]],
-            tmjo_tv=5000, tmjo_pl=400, fc=3,
+            tmjo_tv=5000,
+            tmjo_pl=400,
+            fc=3,
         ),
         # Frontaliers (3 paires de in/out non equilibres)
         _make_segment(
-            "H-F", 30, 31, tvr=10000,
+            "H-F",
+            30,
+            31,
+            tvr=10000,
             coords=[[4.92, 45.74], [4.93, 45.75]],
         ),
         _make_segment(
-            "I-F", 32, 33, tvr=10000,
+            "I-F",
+            32,
+            33,
+            tvr=10000,
             coords=[[4.94, 45.74], [4.95, 45.75]],
         ),
         _make_segment(
-            "J-F", 34, 35, tvr=5000,
+            "J-F",
+            34,
+            35,
+            tvr=5000,
             coords=[[4.96, 45.74], [4.97, 45.75]],
         ),
     ]
@@ -172,17 +216,19 @@ def _build_fcd_parquet_bytes(network: dict) -> bytes:
     rows: list[dict] = []
     for feat in network["features"]:
         props = feat["properties"]
-        rows.append({
-            "segment_id": str(props["agregId"]),
-            "TMJOFCDTV": float(props.get("TMJOFCDTV", 5000.0)),
-            "TMJOFCDPL": float(props.get("TMJOFCDPL", 500.0)),
-            "functional_class": int(props.get("functional_class", props.get("FC", 3))),
-            "RAMP": str(props.get("RAMP", "N")),
-            "ROUNDABOUT": str(props.get("ROUNDABOUT", "N")),
-            "avg_distance_before_m": 120.0,
-            "avg_min_distance_m": 80.0,
-            "truck_avg_distance_before_m": 130.0,
-        })
+        rows.append(
+            {
+                "segment_id": str(props["agregId"]),
+                "TMJOFCDTV": float(props.get("TMJOFCDTV", 5000.0)),
+                "TMJOFCDPL": float(props.get("TMJOFCDPL", 500.0)),
+                "functional_class": int(props.get("functional_class", props.get("FC", 3))),
+                "RAMP": str(props.get("RAMP", "N")),
+                "ROUNDABOUT": str(props.get("ROUNDABOUT", "N")),
+                "avg_distance_before_m": 120.0,
+                "avg_min_distance_m": 80.0,
+                "truck_avg_distance_before_m": 130.0,
+            }
+        )
     df = pd.DataFrame(rows)
     buf = io.BytesIO()
     df.to_parquet(buf, engine="pyarrow", compression="snappy")
@@ -296,7 +342,9 @@ class TestAnalyze:
         assert body["pipeline_duration_s"] >= 0
 
     @pytest.mark.asyncio
-    async def test_analyze_without_upload_returns_404(self, authenticated_client, tmp_workspace, owned_session_id):
+    async def test_analyze_without_upload_returns_404(
+        self, authenticated_client, tmp_workspace, owned_session_id
+    ):
         r = await authenticated_client.post(
             "/api/discontinuites/analyze",
             data={"session_id": owned_session_id},
@@ -333,9 +381,20 @@ class TestStream:
         for feat in body["features"]:
             assert feat["geometry"]["type"] == "Point"
             p = feat["properties"]
-            for key in ("node_id", "ecart", "flow_in", "flow_out", "principal_cause",
-                        "topology", "tier", "narrative", "drivers", "driver_scores",
-                        "edges_in", "edges_out"):
+            for key in (
+                "node_id",
+                "ecart",
+                "flow_in",
+                "flow_out",
+                "principal_cause",
+                "topology",
+                "tier",
+                "narrative",
+                "drivers",
+                "driver_scores",
+                "edges_in",
+                "edges_out",
+            ):
                 assert key in p, f"propriete absente: {key}"
 
     @pytest.mark.asyncio
@@ -365,9 +424,7 @@ class TestStream:
         assert body["n_edges"] == 10
         assert "cross_tab" in body
         # Le cross-tab doit refleter au moins 1 categorie
-        total_in_cross = sum(
-            sum(topos.values()) for topos in body["cross_tab"].values()
-        )
+        total_in_cross = sum(sum(topos.values()) for topos in body["cross_tab"].values())
         assert total_in_cross == body["n_features"]
         # Seuils user rule exposes
         assert body["user_rule"]["low_threshold"] == 2000.0
@@ -529,7 +586,9 @@ class TestUploadFcd:
         assert body["file_size_mb"] > 0
 
     @pytest.mark.asyncio
-    async def test_upload_fcd_without_geojson_returns_400(self, authenticated_client, tmp_workspace, owned_session_id):
+    async def test_upload_fcd_without_geojson_returns_400(
+        self, authenticated_client, tmp_workspace, owned_session_id
+    ):
         # owned_session_id existe mais aucun segments.geojson n'a ete uploade.
         fcd_bytes = _build_fcd_parquet_bytes(_synthetic_network())
         r = await authenticated_client.post(
@@ -541,7 +600,9 @@ class TestUploadFcd:
         assert "geojson" in r.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_upload_fcd_wrong_extension_returns_400(self, authenticated_client, tmp_workspace):
+    async def test_upload_fcd_wrong_extension_returns_400(
+        self, authenticated_client, tmp_workspace
+    ):
         up = await authenticated_client.post(
             "/api/discontinuites/upload-geojson",
             files={"file": ("network.geojson", _synthetic_geojson_str(), "application/geo+json")},
@@ -605,7 +666,9 @@ class TestAnalyzeWithFcdJoin:
         assert "FCD" in body["warning"]
 
     @pytest.mark.asyncio
-    async def test_analyze_with_fcd_restores_classification(self, authenticated_client, tmp_workspace):
+    async def test_analyze_with_fcd_restores_classification(
+        self, authenticated_client, tmp_workspace
+    ):
         """Avec parquet FCD joint, FCD_TV_cliff doit reapparaitre dans la distribution."""
         # Reseau light en geojson
         light_str = json.dumps(_light_network())

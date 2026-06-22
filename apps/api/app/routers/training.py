@@ -15,9 +15,8 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -25,18 +24,16 @@ from pydantic import BaseModel
 from ..auth import UserRecord, get_current_user, require_owned_session
 from ..config import get_settings
 from ..rate_limit import limit_training_start
+from ..services.ml.grid_search import (
+    build_feature_sets,
+    generate_all_combinations,
+)
+from ..services.ml.types import CONFIGS, TV_CONFIG, ModelTypeConfig
 from ..session import session_manager
 from ..training_guard import (
     _get_user_lock,
     release_training_slot,
 )
-from typing import TYPE_CHECKING
-
-from ..services.ml.grid_search import (
-    build_feature_sets,
-    generate_all_combinations,
-)
-from ..services.ml.types import CONFIGS, PL_CONFIG, TV_CONFIG, ModelTypeConfig
 
 # Top-level constant - keep numeric default available for Pydantic field defaults
 SEED = 1750
@@ -100,9 +97,12 @@ class TrainingConfig(BaseModel):
     # Retrocompat names (TMJAFCDTV / car_* / km) are resolved transparently
     # by services/ml/data_prep.py via TV_CONFIG.column_aliases.
     input_cols: list[str] = [
-        "TMJOFCDTV", "TMJOFCDPL",
-        "avg_distance_m", "avg_speed_kmh",
-        "truck_avg_min_distance_m", "truck_avg_speed_kmh",
+        "TMJOFCDTV",
+        "TMJOFCDPL",
+        "avg_distance_m",
+        "avg_speed_kmh",
+        "truck_avg_min_distance_m",
+        "truck_avg_speed_kmh",
         "functional_class",
     ]
     output_cols: list[str] = ["TxPen"]
@@ -213,33 +213,37 @@ def _make_progress_callback(task: TrainingTask, max_epochs: int):
     """Forward run_training ProgressPayload events into task.progress."""
     last_model_idx: dict[str, int | None] = {"idx": None}
 
-    def _push(p: "ProgressPayload") -> None:
+    def _push(p: ProgressPayload) -> None:
         if last_model_idx["idx"] != p.model_idx:
             last_model_idx["idx"] = p.model_idx
-            task.progress.append({
-                "type": "model_start",
+            task.progress.append(
+                {
+                    "type": "model_start",
+                    "model_index": p.model_idx - 1,
+                    "total_models": p.total_models,
+                    "model_name": p.run_name,
+                }
+            )
+
+        task.progress.append(
+            {
+                "type": "epoch",
                 "model_index": p.model_idx - 1,
                 "total_models": p.total_models,
                 "model_name": p.run_name,
-            })
-
-        task.progress.append({
-            "type": "epoch",
-            "model_index": p.model_idx - 1,
-            "total_models": p.total_models,
-            "model_name": p.run_name,
-            "epoch": p.epoch,
-            "total_epochs": max_epochs,
-            "loss": p.loss,
-            "val_loss": p.val_loss if p.val_loss is not None else p.loss,
-            "elapsed": time.time() - task.started_at,
-        })
+                "epoch": p.epoch,
+                "total_epochs": max_epochs,
+                "loss": p.loss,
+                "val_loss": p.val_loss if p.val_loss is not None else p.loss,
+                "elapsed": time.time() - task.started_at,
+            }
+        )
 
     return _push
 
 
 def _serialise_artifact_to_disk(
-    artifact: "TrainedModelArtifact",
+    artifact: TrainedModelArtifact,
     out_root: Path,
     *,
     seed: int,
@@ -273,7 +277,8 @@ def _serialise_artifact_to_disk(
             if not (model_dir / expected).exists():
                 logger.warning(
                     "Expected TF file %s missing in %s after pipeline persist",
-                    expected, model_dir,
+                    expected,
+                    model_dir,
                 )
     else:
         # Legacy path — pipeline didn't persist (e.g. caller didn't pass
@@ -287,23 +292,27 @@ def _serialise_artifact_to_disk(
                 "model.save(.keras) failed for %s (%s) - legacy h5 only. "
                 "This is expected when training_pipeline.clear_session() ran "
                 "before this save (audit bug P0-5).",
-                artifact.run_name, save_exc,
+                artifact.run_name,
+                save_exc,
             )
         try:
             (model_dir / "NNarchitecture.json").write_text(
-                artifact.model.to_json(), encoding="utf-8",
+                artifact.model.to_json(),
+                encoding="utf-8",
             )
         except Exception as arch_exc:  # noqa: BLE001
             logger.error(
                 "model.to_json() failed for %s: %s",
-                artifact.run_name, arch_exc,
+                artifact.run_name,
+                arch_exc,
             )
         try:
             artifact.model.save_weights(str(model_dir / "NNweights.weights.h5"))
         except Exception as w_exc:  # noqa: BLE001
             logger.error(
                 "model.save_weights failed for %s: %s",
-                artifact.run_name, w_exc,
+                artifact.run_name,
+                w_exc,
             )
 
     coeffs = {
@@ -313,24 +322,29 @@ def _serialise_artifact_to_disk(
         "SY": [artifact.sigma_y.tolist()],
     }
     (model_dir / "NNnormCoefficients.json").write_text(
-        json.dumps(coeffs, indent=2), encoding="utf-8",
+        json.dumps(coeffs, indent=2),
+        encoding="utf-8",
     )
     (model_dir / "training_config.json").write_text(
-        json.dumps(artifact.training_config, indent=2), encoding="utf-8",
+        json.dumps(artifact.training_config, indent=2),
+        encoding="utf-8",
     )
     (model_dir / "training_metrics.json").write_text(
-        json.dumps(artifact.training_metrics, indent=2), encoding="utf-8",
+        json.dumps(artifact.training_metrics, indent=2),
+        encoding="utf-8",
     )
 
     try:
         from ..services.ml.packaging import build_meta as _build_meta
+
         meta = _build_meta(
             seed=seed,
             data_sha256=data_sha256,
             extra={"format": "keras-native+legacy-h5"},
         )
         (model_dir / "meta.json").write_text(
-            json.dumps(meta, indent=2), encoding="utf-8",
+            json.dumps(meta, indent=2),
+            encoding="utf-8",
         )
     except Exception as meta_exc:  # noqa: BLE001
         logger.warning("meta.json write failed for %s: %s", artifact.run_name, meta_exc)
@@ -345,6 +359,7 @@ def _training_worker(task: TrainingTask) -> None:
     worker delegates the actual training loop to the shared service.
     """
     import os
+
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
     os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
@@ -392,8 +407,7 @@ def _training_worker(task: TrainingTask) -> None:
         # `model_<KIND>_` folder prefix; TV/PL stay un-prefixed).
         _kind_for_persist = (type_config.kind or type_config.name or "TV").upper()
         _persist_prefix = (
-            f"model_{_kind_for_persist}_"
-            if _kind_for_persist in ("HPM", "HPS") else ""
+            f"model_{_kind_for_persist}_" if _kind_for_persist in ("HPM", "HPS") else ""
         )
         cfg = {
             **cfg,
@@ -403,11 +417,13 @@ def _training_worker(task: TrainingTask) -> None:
         }
 
         total_combinations = _count_combinations(cfg)
-        task.progress.append({
-            "type": "info",
-            "message": f"Demarrage du grid search : {total_combinations} combinaisons",
-            "total_models": total_combinations,
-        })
+        task.progress.append(
+            {
+                "type": "info",
+                "message": f"Demarrage du grid search : {total_combinations} combinaisons",
+                "total_models": total_combinations,
+            }
+        )
 
         if total_combinations == 0:
             task.result = {
@@ -462,13 +478,15 @@ def _training_worker(task: TrainingTask) -> None:
             # consumers AND saved to disk via _serialise_artifact_to_disk.
             artifact.training_config["model_kind"] = _kind_label
 
-            results_list.append({
-                "run_name": disk_name,
-                "val_loss": val_loss,
-                "epochs_trained": epochs_trained,
-                "model_kind": _kind_label,
-                **artifact.training_config,
-            })
+            results_list.append(
+                {
+                    "run_name": disk_name,
+                    "val_loss": val_loss,
+                    "epochs_trained": epochs_trained,
+                    "model_kind": _kind_label,
+                    **artifact.training_config,
+                }
+            )
 
             if val_loss == val_loss and val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -480,19 +498,24 @@ def _training_worker(task: TrainingTask) -> None:
                 # Belt-and-braces: re-assert model_kind right before disk write.
                 artifact.training_config["model_kind"] = _kind_label
                 _serialise_artifact_to_disk(
-                    artifact, out_path, seed=seed, data_sha256=data_sha,
+                    artifact,
+                    out_path,
+                    seed=seed,
+                    data_sha256=data_sha,
                     kind=_kind_label,
                 )
 
-            task.progress.append({
-                "type": "model_end",
-                "model_index": len(results_list) - 1,
-                "model_name": disk_name,
-                "val_loss": val_loss,
-                "epochs_trained": epochs_trained,
-                "best_val_loss": best_val_loss if best_val_loss != float("inf") else None,
-                "best_model_name": best_name,
-            })
+            task.progress.append(
+                {
+                    "type": "model_end",
+                    "model_index": len(results_list) - 1,
+                    "model_name": disk_name,
+                    "val_loss": val_loss,
+                    "epochs_trained": epochs_trained,
+                    "best_val_loss": best_val_loss if best_val_loss != float("inf") else None,
+                    "best_model_name": best_name,
+                }
+            )
 
         task.result = {
             "total_models": len(results_list),
@@ -505,7 +528,8 @@ def _training_worker(task: TrainingTask) -> None:
         task.status = "completed"
         logger.info(
             "Grid search completed: %d models trained, best=%s",
-            len(results_list), best_name,
+            len(results_list),
+            best_name,
         )
 
     except Exception as exc:  # noqa: BLE001
@@ -553,7 +577,8 @@ async def start_training(
     config_dict["output_label"] = user_label
     logger.info(
         "Training output - user label=%r, server path=%s",
-        user_label, server_output,
+        user_label,
+        server_output,
     )
     session_manager.store_data(body.session_id, "output_dir", server_output)
     session_manager.store_data(body.session_id, "output_label", user_label)
@@ -609,7 +634,11 @@ async def start_training(
 
     logger.info(
         "Grid search started: task=%s session=%s combos=%d output_dir=%s max_epochs=%d",
-        task_id, body.session_id, total, server_output, body.max_epochs,
+        task_id,
+        body.session_id,
+        total,
+        server_output,
+        body.max_epochs,
     )
 
     return TrainingStartResponse(
@@ -701,8 +730,15 @@ async def training_status(
         task_id=task_id,
         status=task.status,
         progress_pct=round(
-            ((current_model + (last_epoch.get("epoch", 0) / max(last_epoch.get("total_epochs", 1), 1)))
-             / max(total_models, 1)) * 100, 1,
+            (
+                (
+                    current_model
+                    + (last_epoch.get("epoch", 0) / max(last_epoch.get("total_epochs", 1), 1))
+                )
+                / max(total_models, 1)
+            )
+            * 100,
+            1,
         ),
         current_epoch=last_epoch.get("epoch", 0),
         total_epochs=last_epoch.get("total_epochs", 0),

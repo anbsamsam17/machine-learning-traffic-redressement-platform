@@ -44,7 +44,23 @@ dev = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    # B008: FastAPI idiom — `Depends()`, `File()`, `Form()`, `Query()` are
+    # intentionally called in argument defaults (dependency injection).
+    "B008",
+    # E402: imports deliberately placed after the GPU-disable env setup
+    # (`os.environ.setdefault("CUDA_VISIBLE_DEVICES", ...)` before importing
+    # TensorFlow) and after route registration in main.py. Reordering them
+    # would change runtime behavior.
+    "E402",
+    # E501: long lines are predominantly inline HTML/CSS f-string literals in
+    # the report builders plus log/exception message strings; wrapping them
+    # risks altering generated output. Black handles all safely-wrappable code.
+    "E501",
+]
 
 [tool.black]
 target-version = ["py311"]

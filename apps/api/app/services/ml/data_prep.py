@@ -36,15 +36,11 @@ logger = logging.getLogger(__name__)
 _FUNCTIONAL_CLASS_LEVELS: tuple[int, ...] = (1, 2, 3, 4, 5)
 
 
-def _resolve_aliases(
-    df: pd.DataFrame, type_config: ModelTypeConfig
-) -> pd.DataFrame:
+def _resolve_aliases(df: pd.DataFrame, type_config: ModelTypeConfig) -> pd.DataFrame:
     """Apply column aliases defined in *type_config* (in-place on copy)."""
     for src, dst in type_config.column_aliases.items():
         if src in df.columns and dst not in df.columns:
-            df[dst] = pd.to_numeric(df[src], errors="coerce").round(
-                4 if "TxPen" in dst else 2
-            )
+            df[dst] = pd.to_numeric(df[src], errors="coerce").round(4 if "TxPen" in dst else 2)
     return df
 
 
@@ -77,35 +73,23 @@ def derive_hpm_hps_columns(df: pd.DataFrame) -> pd.DataFrame:
         df["FCD_HPS_TV"] = pd.to_numeric(df["FCDTV_h17"], errors="coerce")
 
     # ---- 2. Compute TxPen_HPM / TxPen_HPS from FCD + BC when possible ----
-    if (
-        "TxPen_HPM" not in df.columns
-        and {"FCD_HPM_TV", "TMJOBCTV_HPM"}.issubset(df.columns)
-    ):
+    if "TxPen_HPM" not in df.columns and {"FCD_HPM_TV", "TMJOBCTV_HPM"}.issubset(df.columns):
         fcd_hpm = pd.to_numeric(df["FCD_HPM_TV"], errors="coerce")
         bc_hpm = pd.to_numeric(df["TMJOBCTV_HPM"], errors="coerce")
         # Mask out zero / negative counters: division would explode to inf.
         denom = bc_hpm.where(bc_hpm > 0)
-        df["TxPen_HPM"] = (fcd_hpm / denom * 100.0).replace(
-            [np.inf, -np.inf], np.nan
-        )
+        df["TxPen_HPM"] = (fcd_hpm / denom * 100.0).replace([np.inf, -np.inf], np.nan)
 
-    if (
-        "TxPen_HPS" not in df.columns
-        and {"FCD_HPS_TV", "TMJOBCTV_HPS"}.issubset(df.columns)
-    ):
+    if "TxPen_HPS" not in df.columns and {"FCD_HPS_TV", "TMJOBCTV_HPS"}.issubset(df.columns):
         fcd_hps = pd.to_numeric(df["FCD_HPS_TV"], errors="coerce")
         bc_hps = pd.to_numeric(df["TMJOBCTV_HPS"], errors="coerce")
         denom = bc_hps.where(bc_hps > 0)
-        df["TxPen_HPS"] = (fcd_hps / denom * 100.0).replace(
-            [np.inf, -np.inf], np.nan
-        )
+        df["TxPen_HPS"] = (fcd_hps / denom * 100.0).replace([np.inf, -np.inf], np.nan)
 
     return df
 
 
-def _derive_target(
-    df: pd.DataFrame, type_config: ModelTypeConfig
-) -> pd.DataFrame:
+def _derive_target(df: pd.DataFrame, type_config: ModelTypeConfig) -> pd.DataFrame:
     """Compute target column (TxPenTVRef / TxPenPLRef) from BC / FCD if missing."""
     target = type_config.target_col
     bc_col = type_config.target_denominator_bc
@@ -134,9 +118,7 @@ _PERMANENT_TYPE_CANDIDATES: tuple[str, ...] = (
 
 # Values that count as "permanent" (the most trustworthy sensors). Match is
 # case-insensitive and whitespace-stripped.
-_PERMANENT_TYPE_VALUES: frozenset[str] = frozenset(
-    {"permanent", "siredo", "per", "tou"}
-)
+_PERMANENT_TYPE_VALUES: frozenset[str] = frozenset({"permanent", "siredo", "per", "tou"})
 
 
 def _find_type_compteur_column(df: pd.DataFrame) -> str | None:
@@ -146,8 +128,7 @@ def _find_type_compteur_column(df: pd.DataFrame) -> str | None:
     pick up ``"Type Compteur"``, ``"TYPE_COMPTEUR"``, ``" type compteur "`` …
     """
     normalized = {
-        col: col.strip().lower().replace("-", " ").replace("_", " ")
-        for col in df.columns
+        col: col.strip().lower().replace("-", " ").replace("_", " ") for col in df.columns
     }
     for candidate in _PERMANENT_TYPE_CANDIDATES:
         target = candidate.strip().lower().replace("-", " ").replace("_", " ")
@@ -172,9 +153,9 @@ def _derive_flag_permanent(df: pd.DataFrame) -> pd.DataFrame:
         elif "flag_comptage" in df.columns:
             # Legacy datasets where the upstream mapping already produced
             # the binary column — adopt it as-is.
-            df["flag_permanent"] = pd.to_numeric(
-                df["flag_comptage"], errors="coerce"
-            ).fillna(0).astype(int)
+            df["flag_permanent"] = (
+                pd.to_numeric(df["flag_comptage"], errors="coerce").fillna(0).astype(int)
+            )
         else:
             df["flag_permanent"] = 0
 
@@ -191,9 +172,7 @@ def _derive_flag_permanent(df: pd.DataFrame) -> pd.DataFrame:
 _derive_flag_comptage = _derive_flag_permanent
 
 
-def _apply_year_mapping(
-    df: pd.DataFrame, config: dict[str, Any]
-) -> pd.DataFrame:
+def _apply_year_mapping(df: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     """Create ``year_mapped`` column from config if needed.
 
     Shares the float/int/str key canonicalisation with the inference pipeline
@@ -231,9 +210,8 @@ def _apply_year_mapping(
 # P2B.1 / P2B.2 / P2B.3 — feature engineering helpers
 # ---------------------------------------------------------------------------
 
-def _fe_settings(
-    type_config: ModelTypeConfig, config: dict[str, Any]
-) -> dict[str, Any]:
+
+def _fe_settings(type_config: ModelTypeConfig, config: dict[str, Any]) -> dict[str, Any]:
     """Resolve feature-engineering flags from *type_config* and *config*.
 
     The config dict can either nest the flags under ``feature_engineering``
@@ -251,12 +229,8 @@ def _fe_settings(
         return default
 
     return {
-        "add_pl_tv_ratio": bool(
-            _get("add_pl_tv_ratio", type_config.add_pl_tv_ratio)
-        ),
-        "log_transform_cols": list(
-            _get("log_transform_cols", type_config.log_transform_cols)
-        ),
+        "add_pl_tv_ratio": bool(_get("add_pl_tv_ratio", type_config.add_pl_tv_ratio)),
+        "log_transform_cols": list(_get("log_transform_cols", type_config.log_transform_cols)),
         "one_hot_functional_class": bool(
             _get(
                 "one_hot_functional_class",
@@ -284,9 +258,7 @@ def _add_pl_tv_ratio(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _apply_log_transform_cols(
-    df: pd.DataFrame, cols: list[str]
-) -> pd.DataFrame:
+def _apply_log_transform_cols(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     """P2B.2 — for each col in *cols* add ``log_<col> = log1p(col)``."""
     if not cols:
         return df
@@ -325,9 +297,7 @@ def _one_hot_functional_class(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _apply_feature_engineering(
-    df: pd.DataFrame, fe: dict[str, Any]
-) -> pd.DataFrame:
+def _apply_feature_engineering(df: pd.DataFrame, fe: dict[str, Any]) -> pd.DataFrame:
     """Apply the configured P2B.* feature-engineering steps in order."""
     if fe["add_pl_tv_ratio"]:
         df = _add_pl_tv_ratio(df)
@@ -414,9 +384,7 @@ def _compute_log_flow_weights(
     to the binary flag-based weighting (or no weighting at all).
     """
     if flow_col not in df.columns:
-        logger.debug(
-            "log_flow_weighting requested but column '%s' missing", flow_col
-        )
+        logger.debug("log_flow_weighting requested but column '%s' missing", flow_col)
         return None
     flow = pd.to_numeric(df[flow_col], errors="coerce").fillna(0.0)
     # log1p is monotonic and well-defined for flow >= 0; clip negatives.
@@ -491,9 +459,7 @@ def split_train_valid(
 
     if 0 < test_size < 1:
         indices = np.arange(len(x_full))
-        idx_train, idx_valid = train_test_split(
-            indices, test_size=test_size, random_state=seed
-        )
+        idx_train, idx_valid = train_test_split(indices, test_size=test_size, random_state=seed)
         y_train = y[idx_train]
         y_valid = y[idx_valid]
     else:
@@ -525,15 +491,11 @@ def split_train_valid(
     # permanent AND in the most-recent year gets the product of both
     # boosts). The normalisation step further down rescales the resulting
     # vector so sum(weights) == N_train, preserving effective LR.
-    if all_sw is None and (
-        use_flag_permanent_weighting or use_flag_recent_year_weighting
-    ):
+    if all_sw is None and (use_flag_permanent_weighting or use_flag_recent_year_weighting):
         base = np.ones(len(df), dtype=float)
 
         if use_flag_permanent_weighting and flag_permanent_col in df.columns:
-            flag_series = pd.to_numeric(
-                df[flag_permanent_col], errors="coerce"
-            ).fillna(0)
+            flag_series = pd.to_numeric(df[flag_permanent_col], errors="coerce").fillna(0)
             base = np.where(
                 flag_series.values == 1,
                 base * float(flag_priority_weight),
@@ -547,15 +509,13 @@ def split_train_valid(
             )
 
         if use_flag_recent_year_weighting and recent_year_col in df.columns:
-            year_series = pd.to_numeric(
-                df[recent_year_col], errors="coerce"
-            )
+            year_series = pd.to_numeric(df[recent_year_col], errors="coerce")
             if year_series.notna().any():
                 # Auto-detect the most recent year as the MAX value in the
                 # mapped column (typed pipeline encodes years as small
                 # ascending integers 1..N — last is the newest).
                 max_year = float(year_series.max())
-                recent_mask = (year_series.values == max_year)
+                recent_mask = year_series.values == max_year
                 base = np.where(
                     recent_mask,
                     base * float(recent_year_priority_weight),

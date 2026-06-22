@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _single_combo_config(training_config: dict[str, Any]) -> dict[str, Any]:
     """Collapse a saved training_config into a single-combo grid config.
 
@@ -58,23 +59,18 @@ def _single_combo_config(training_config: dict[str, Any]) -> dict[str, Any]:
         "max_epochs": int(training_config.get("epochs_requested", 500)),
         "losses": [training_config.get("loss", "mse")],
         "dropouts": [float(training_config.get("dropout", 0.05))],
-        "neurons_factors_list": [
-            list(training_config.get("neurons_factors", [1.0, 1.0]))
-        ],
+        "neurons_factors_list": [list(training_config.get("neurons_factors", [1.0, 1.0]))],
         "use_batch_norm": bool(training_config.get("use_batch_norm", False)),
         "batch_sizes": [int(training_config.get("batch_size", 256))],
-
         # Disable feature-subset grid: we re-train ONE specific architecture.
         "feature_subset_grid": False,
         "mandatory_input_cols": list(training_config.get("input_cols", [])),
         "min_input_count": len(training_config.get("input_cols", [])),
-
         # Force NO internal validation split — the held-out fold plays
         # that role. The EarlyStopping callback inside the pipeline falls
         # back to monitoring train loss when test_size == 0.
         "test_size": 0.0,
         "analysis_scope": "all",
-
         # Seed + weighting are inherited so each fold is reproducible relative
         # to itself (offset by run_idx like the main pipeline does internally).
         "seed": int(training_config.get("seed", 1750)),
@@ -82,14 +78,10 @@ def _single_combo_config(training_config: dict[str, Any]) -> dict[str, Any]:
             training_config.get("use_flag_comptage_weighting", False)
         ),
         "flag_comptage_col": training_config.get("flag_comptage_col", "flag_comptage"),
-        "flag_priority_weight": float(
-            training_config.get("flag_priority_weight", 4.0)
-        ),
-
+        "flag_priority_weight": float(training_config.get("flag_priority_weight", 4.0)),
         # Year mapping must be replayed identically.
         "year_column_name": training_config.get("year_column_name", "") or "",
         "year_value_mapping": dict(training_config.get("year_value_mapping") or {}),
-
         # Safety cap (mirrors run_training's default).
         "_max_grid_combinations": 4,
     }
@@ -121,9 +113,7 @@ def _fold_metrics(
     # tol_in_pct: percentage of held-out rows whose Tolerance_IN_OUT == 1.
     tol_total = float(tol.get("tol_total") or 0)
     tol_in_pct = (
-        100.0 * float(tol.get("tol_in") or 0) / tol_total
-        if tol_total > 0
-        else float("nan")
+        100.0 * float(tol.get("tol_in") or 0) / tol_total if tol_total > 0 else float("nan")
     )
 
     # R² on the predicted flow (TVr / DPL) vs reference flow.
@@ -167,6 +157,7 @@ def _summary(values: list[float]) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def kfold_train_eval(
     df: pd.DataFrame,
@@ -223,9 +214,7 @@ def kfold_train_eval(
     # ────────────────────────────────────────────────────────────────────
     n = len(df)
     if n < 2 * k:
-        raise ValueError(
-            f"Pas assez de lignes ({n}) pour {k} folds (minimum {2 * k})."
-        )
+        raise ValueError(f"Pas assez de lignes ({n}) pour {k} folds (minimum {2 * k}).")
     kf = KFold(n_splits=k, shuffle=True, random_state=int(shuffle_seed))
 
     folds_out: list[dict[str, Any]] = []
@@ -256,25 +245,29 @@ def kfold_train_eval(
             )
         except Exception as exc:  # noqa: BLE001 — fold-level fault is non-fatal
             logger.exception("Fold %d training failed: %s", fold_idx, exc)
-            folds_out.append({
-                "fold_idx": fold_idx,
-                "tol_in_pct": float("nan"),
-                "p80": float("nan"),
-                "r2": float("nan"),
-                "n_val_samples": int(len(val_df)),
-                "error": str(exc),
-            })
+            folds_out.append(
+                {
+                    "fold_idx": fold_idx,
+                    "tol_in_pct": float("nan"),
+                    "p80": float("nan"),
+                    "r2": float("nan"),
+                    "n_val_samples": int(len(val_df)),
+                    "error": str(exc),
+                }
+            )
             continue
 
         if not results:
-            folds_out.append({
-                "fold_idx": fold_idx,
-                "tol_in_pct": float("nan"),
-                "p80": float("nan"),
-                "r2": float("nan"),
-                "n_val_samples": int(len(val_df)),
-                "error": "no_artifact",
-            })
+            folds_out.append(
+                {
+                    "fold_idx": fold_idx,
+                    "tol_in_pct": float("nan"),
+                    "p80": float("nan"),
+                    "r2": float("nan"),
+                    "n_val_samples": int(len(val_df)),
+                    "error": "no_artifact",
+                }
+            )
             continue
 
         # Single artifact (we collapsed the grid to one combo).
@@ -304,8 +297,8 @@ def kfold_train_eval(
 
     summary = {
         "tol_in_pct": _summary([f.get("tol_in_pct", float("nan")) for f in folds_out]),
-        "p80":        _summary([f.get("p80", float("nan")) for f in folds_out]),
-        "r2":         _summary([f.get("r2", float("nan")) for f in folds_out]),
+        "p80": _summary([f.get("p80", float("nan")) for f in folds_out]),
+        "r2": _summary([f.get("r2", float("nan")) for f in folds_out]),
     }
 
     return {

@@ -9,12 +9,10 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
-
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from ..auth import UserRecord, get_current_user, require_owned_session
-from ..config import get_settings
 from ..security import session_root, validate_path
 
 logger = logging.getLogger(__name__)
@@ -48,6 +46,7 @@ class ModelUploadResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _is_model_dir(p: Path) -> bool:
     """Return True if ``p`` looks like a serialised model directory.
@@ -195,6 +194,7 @@ def _get_session_models_dir(user_id: str, session_id: str) -> Path:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/list", response_model=ModelsListResponse)
 async def list_models(
     root: str = Query(None, description="Racine du scan recursif (chemin absolu)"),
@@ -245,9 +245,7 @@ async def list_models(
         require_owned_session(session_id, current_user)
         base = _get_session_models_dir(current_user.user_id, session_id)
     else:
-        raise HTTPException(
-            status_code=400, detail="Fournissez 'root' (ou 'dir') ou 'session_id'."
-        )
+        raise HTTPException(status_code=400, detail="Fournissez 'root' (ou 'dir') ou 'session_id'.")
 
     models = _scan_models_in_dir(base)
 
@@ -266,7 +264,9 @@ async def list_models(
 
 @router.post("/upload", response_model=ModelUploadResponse)
 async def upload_models_zip(
-    file: UploadFile = File(..., description="Fichier ZIP contenant un ou plusieurs dossiers de modeles"),
+    file: UploadFile = File(
+        ..., description="Fichier ZIP contenant un ou plusieurs dossiers de modeles"
+    ),
     session_id: str = Form(..., description="Session ID"),
     current_user: UserRecord = Depends(get_current_user),
 ) -> ModelUploadResponse:
@@ -289,6 +289,7 @@ async def upload_models_zip(
     # Read uploaded file into memory and validate it is a valid zip
     contents = await file.read()
     import io
+
     buf = io.BytesIO(contents)
     if not zipfile.is_zipfile(buf):
         raise HTTPException(status_code=400, detail="Le fichier n'est pas un ZIP valide.")
@@ -336,7 +337,9 @@ async def upload_models_zip(
 
 @router.post("/upload-folder", response_model=ModelUploadResponse)
 async def upload_models_folder(
-    files: list[UploadFile] = File(..., description="Fichiers du dossier de modeles (via webkitdirectory)"),
+    files: list[UploadFile] = File(
+        ..., description="Fichiers du dossier de modeles (via webkitdirectory)"
+    ),
     session_id: str = Form(..., description="Session ID"),
     current_user: UserRecord = Depends(get_current_user),
 ) -> ModelUploadResponse:
@@ -419,7 +422,9 @@ async def upload_models_folder(
         if m.kind != folder_kind:
             logger.warning(
                 "Model %s kind mismatch: folder=%s vs training_config=%s",
-                m.name, folder_kind, m.kind,
+                m.name,
+                folder_kind,
+                m.kind,
             )
 
     logger.info("Folder upload complete: %d model(s) found for session %s", len(models), session_id)

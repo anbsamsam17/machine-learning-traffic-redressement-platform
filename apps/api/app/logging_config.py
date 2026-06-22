@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
+# ---------------------------------------------------------------------------
+# Contextvars for request-scoped data
+# ---------------------------------------------------------------------------
+import contextvars
 import json
 import logging
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .config import get_settings
-
-# ---------------------------------------------------------------------------
-# Contextvars for request-scoped data
-# ---------------------------------------------------------------------------
-
-import contextvars
 
 _request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
@@ -29,12 +27,13 @@ def get_request_id() -> str:
 # JSON formatter
 # ---------------------------------------------------------------------------
 
+
 class JSONFormatter(logging.Formatter):
     """Emit one JSON object per log line."""
 
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -50,6 +49,7 @@ class JSONFormatter(logging.Formatter):
 # ---------------------------------------------------------------------------
 # Setup function
 # ---------------------------------------------------------------------------
+
 
 def setup_logging() -> None:
     """Configure root logger with JSON formatter."""
@@ -74,6 +74,7 @@ def setup_logging() -> None:
 # ---------------------------------------------------------------------------
 # Request-ID middleware
 # ---------------------------------------------------------------------------
+
 
 class RequestIDMiddleware:
     """Pure-ASGI middleware that injects a unique request_id.

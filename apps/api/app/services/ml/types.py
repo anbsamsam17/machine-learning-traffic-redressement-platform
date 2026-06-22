@@ -24,7 +24,7 @@ class ModelTypeConfig:
     """Immutable descriptor for a model type (TV / PL / HPM / HPS)."""
 
     # --- identity ---
-    name: str                       # "TV", "PL", "HPM" or "HPS"
+    name: str  # "TV", "PL", "HPM" or "HPS"
 
     # --- columns ---
     input_cols: list[str]
@@ -37,29 +37,29 @@ class ModelTypeConfig:
     # --- target derivation ---
     #   For TV: TxPenTVRef = TMJAFCDTV / TMJABCTV * 100
     #   For PL: TxPenPLRef = TMJAFCDPL / TMJABCPL * 100
-    target_col: str                 # output column name (TxPenTVRef / TxPenPLRef)
-    target_numerator_fcd: str       # TMJAFCDTV / TMJAFCDPL
-    target_denominator_bc: str      # TMJABCTV  / TMJABCPL
-    target_alias: str               # short alias ("TxPen" / "TxPenPL")
+    target_col: str  # output column name (TxPenTVRef / TxPenPLRef)
+    target_numerator_fcd: str  # TMJAFCDTV / TMJAFCDPL
+    target_denominator_bc: str  # TMJABCTV  / TMJABCPL
+    target_alias: str  # short alias ("TxPen" / "TxPenPL")
 
     # --- evaluation ---
     #   TVr = TMJAFCDTV / TxPen_pred * 100   (TV)
     #   DPL = TMJAFCDPL / TxPen_pred * 100   (PL)
-    eval_predicted_col: str         # "TVr" / "DPL"
-    eval_reference_col: str         # "TMJABCTV" / "TMJABCPL"
-    eval_numerator_fcd: str         # "TMJAFCDTV" / "TMJAFCDPL"
+    eval_predicted_col: str  # "TVr" / "DPL"
+    eval_reference_col: str  # "TMJABCTV" / "TMJABCPL"
+    eval_numerator_fcd: str  # "TMJAFCDTV" / "TMJAFCDPL"
 
     # --- grid search defaults ---
     mandatory_input_cols: list[str]
     min_input_count: int
-    default_activations: list[str]       = field(default_factory=lambda: ["elu"])
-    default_learning_rates: list[float]  = field(default_factory=lambda: [0.01])
-    default_min_nb_epochs: list[int]     = field(default_factory=lambda: [500, 1000])
-    default_max_epochs: int              = 2050
-    default_batch_size: int              = 256
-    default_dropout: float               = 0.05
-    default_test_size: float             = 0.05
-    default_high_flow_threshold: float   = 1000.0
+    default_activations: list[str] = field(default_factory=lambda: ["elu"])
+    default_learning_rates: list[float] = field(default_factory=lambda: [0.01])
+    default_min_nb_epochs: list[int] = field(default_factory=lambda: [500, 1000])
+    default_max_epochs: int = 2050
+    default_batch_size: int = 256
+    default_dropout: float = 0.05
+    default_test_size: float = 0.05
+    default_high_flow_threshold: float = 1000.0
 
     # --- P2A.4 / P2A.5 / P2B feature engineering defaults --------------------
     # All flags below are additive: defaults preserve pre-refactor behaviour
@@ -197,7 +197,6 @@ class ModelTypeConfig:
 
 TV_CONFIG = ModelTypeConfig(
     name="TV",
-
     # Nouveau schema FCD HERE (cf. Etape1_MDL_TV.txt).
     # Inputs : 2 FCD + 4 distances (VL min/total + PL min/total) + 2 vitesses
     # + functional_class (categoriel).
@@ -211,49 +210,52 @@ TV_CONFIG = ModelTypeConfig(
         "functional_class",
     ],
     output_cols=["TxPen"],
-    on_off_norm=[True, True, True, True, True, True, False],   # functional_class categoriel : pas de norm
-
+    on_off_norm=[
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+    ],  # functional_class categoriel : pas de norm
     # Retrocompat des datasets historiques (Bordeaux : TMJATV/TMJAFCDTV/car_*/km).
     # Note unite : car_*_distance_km est en km, la cible m. La conversion est
     # supposee deja appliquee en amont (data_prep) si applicable.
     column_aliases={
         # FCD
-        "TMJATV":    "TMJOFCDTV",
+        "TMJATV": "TMJOFCDTV",
         "TMJAFCDTV": "TMJOFCDTV",
-        "TMJFCDTV":  "TMJOFCDTV",
-        "TMJAPL":    "TMJOFCDPL",
+        "TMJFCDTV": "TMJOFCDTV",
+        "TMJAPL": "TMJOFCDPL",
         "TMJAFCDPL": "TMJOFCDPL",
-        "TMJFCDPL":  "TMJOFCDPL",
+        "TMJFCDPL": "TMJOFCDPL",
         # Capteurs (target)
-        "TMJABCTV":  "TMJOBCTV",
-        "TMJABCPL":  "TMJOBCPL",
+        "TMJABCTV": "TMJOBCTV",
+        "TMJABCPL": "TMJOBCPL",
         # TxPen
         "TxPenTVRef": "TxPen",
         # Vitesses
-        "car_average_speed_kmh":   "avg_speed_kmh",
+        "car_average_speed_kmh": "avg_speed_kmh",
         "truck_average_speed_kmh": "truck_avg_speed_kmh",
         # Distances (unite : Lyon en m, Bordeaux en km — voir data_prep)
-        "car_average_distance_km":       "avg_distance_m",
+        "car_average_distance_km": "avg_distance_m",
         "truck_min_average_distance_km": "truck_avg_min_distance_m",
-        "truck_average_distance_km":     "truck_avg_distance_m",
+        "truck_average_distance_km": "truck_avg_distance_m",
         # Reseau
         "linkFC": "functional_class",
-        "FC":     "functional_class",
+        "FC": "functional_class",
     },
-
     target_col="TxPen",
     target_numerator_fcd="TMJOFCDTV",
     target_denominator_bc="TMJOBCTV",
     target_alias="TxPen",
-
     eval_predicted_col="TVr",
     eval_reference_col="TMJOBCTV",
     eval_numerator_fcd="TMJOFCDTV",
-
     mandatory_input_cols=["TMJOFCDTV", "TMJOFCDPL"],
     min_input_count=3,
     default_high_flow_threshold=1000.0,
-
     # HPM/HPS-extension metadata (kept here for uniformity across kinds).
     kind="TV",
     label="Tous Véhicules",
@@ -275,7 +277,6 @@ TV_CONFIG = ModelTypeConfig(
 
 PL_CONFIG = ModelTypeConfig(
     name="PL",
-
     input_cols=[
         "TMJOFCDPL",
         "functional_class",
@@ -291,30 +292,26 @@ PL_CONFIG = ModelTypeConfig(
     # functional_class est categoriel int 1-5 -> norm OFF ; les 8 autres
     # features sont continues z-scorees (mask [True, False, True*7]).
     on_off_norm=[True, False, True, True, True, True, True, True, True],
-
     column_aliases={
-        "TMJAPL":    "TMJOFCDPL",
+        "TMJAPL": "TMJOFCDPL",
         "TMJAFCDPL": "TMJOFCDPL",
-        "TMJABCPL":  "TMJOBCPL",
+        "TMJABCPL": "TMJOBCPL",
         "TxPenPLRef": "TxPenPL",
-        "car_average_speed_kmh":   "avg_speed_kmh",
+        "car_average_speed_kmh": "avg_speed_kmh",
         "truck_average_speed_kmh": "truck_avg_speed_kmh",
-        "car_average_distance_km":       "avg_distance_m",
+        "car_average_distance_km": "avg_distance_m",
         "truck_min_average_distance_km": "truck_avg_min_distance_m",
-        "truck_average_distance_km":     "truck_avg_distance_m",
+        "truck_average_distance_km": "truck_avg_distance_m",
         "linkFC": "functional_class",
-        "FC":     "functional_class",
+        "FC": "functional_class",
     },
-
     target_col="TxPenPL",
     target_numerator_fcd="TMJOFCDPL",
     target_denominator_bc="TMJOBCPL",
     target_alias="TxPenPL",
-
     eval_predicted_col="DPL",
     eval_reference_col="TMJOBCPL",
     eval_numerator_fcd="TMJOFCDPL",
-
     mandatory_input_cols=["TMJOFCDPL"],
     min_input_count=2,
     default_high_flow_threshold=500.0,
@@ -324,7 +321,6 @@ PL_CONFIG = ModelTypeConfig(
     default_batch_size=64,
     default_dropout=0.015,
     default_test_size=0.0,
-
     # HPM/HPS-extension metadata (kept here for uniformity across kinds).
     kind="PL",
     label="Poids Lourds",
@@ -343,7 +339,6 @@ PL_CONFIG = ModelTypeConfig(
 
 HPM_CONFIG = ModelTypeConfig(
     name="HPM",
-
     input_cols=[
         "FCD_HPM_TV",
         "TMJOFCDPL",
@@ -355,44 +350,39 @@ HPM_CONFIG = ModelTypeConfig(
     ],
     output_cols=["TxPen_HPM"],
     on_off_norm=[True, True, True, True, True, True, False],
-
     column_aliases={
         # Hourly FCD aliases — accept legacy / shorthand names.
-        "FCDTV_h08":      "FCD_HPM_TV",
-        "FCDTV_HPM":      "FCD_HPM_TV",
-        "FCD_HPM":        "FCD_HPM_TV",
+        "FCDTV_h08": "FCD_HPM_TV",
+        "FCDTV_HPM": "FCD_HPM_TV",
+        "FCD_HPM": "FCD_HPM_TV",
         # TV daily aliases still useful for the shared inputs.
-        "TMJAPL":         "TMJOFCDPL",
-        "TMJAFCDPL":      "TMJOFCDPL",
-        "TMJFCDPL":       "TMJOFCDPL",
+        "TMJAPL": "TMJOFCDPL",
+        "TMJAFCDPL": "TMJOFCDPL",
+        "TMJFCDPL": "TMJOFCDPL",
         # Hourly counter aliases.
-        "BCTV_HPM":       "TMJOBCTV_HPM",
-        "TMJOBCTV_h08":   "TMJOBCTV_HPM",
+        "BCTV_HPM": "TMJOBCTV_HPM",
+        "TMJOBCTV_h08": "TMJOBCTV_HPM",
         # Speeds / distances (shared with TV).
-        "car_average_speed_kmh":         "avg_speed_kmh",
-        "truck_average_speed_kmh":       "truck_avg_speed_kmh",
-        "car_average_distance_km":       "avg_distance_m",
+        "car_average_speed_kmh": "avg_speed_kmh",
+        "truck_average_speed_kmh": "truck_avg_speed_kmh",
+        "car_average_distance_km": "avg_distance_m",
         "truck_min_average_distance_km": "truck_avg_min_distance_m",
-        "truck_average_distance_km":     "truck_avg_distance_m",
+        "truck_average_distance_km": "truck_avg_distance_m",
         "linkFC": "functional_class",
-        "FC":     "functional_class",
+        "FC": "functional_class",
     },
-
     target_col="TxPen_HPM",
     target_numerator_fcd="FCD_HPM_TV",
     target_denominator_bc="TMJOBCTV_HPM",
     target_alias="TxPen_HPM",
-
     # Predicted column at evaluation time: HPM_FCDr (NEVER TVr — critical to
     # avoid downstream confusion with the daily TV pipeline).
     eval_predicted_col="HPM_FCDr",
     eval_reference_col="TMJOBCTV_HPM",
     eval_numerator_fcd="FCD_HPM_TV",
-
     mandatory_input_cols=["FCD_HPM_TV"],
     min_input_count=2,
     default_high_flow_threshold=80.0,  # ~ TV/12, peak-hour scale (v/h)
-
     # HPM/HPS-extension metadata.
     kind="HPM",
     label="Heure de Pointe Matin",
@@ -407,7 +397,6 @@ HPM_CONFIG = ModelTypeConfig(
 
 HPS_CONFIG = ModelTypeConfig(
     name="HPS",
-
     input_cols=[
         "FCD_HPS_TV",
         "TMJOFCDPL",
@@ -419,44 +408,39 @@ HPS_CONFIG = ModelTypeConfig(
     ],
     output_cols=["TxPen_HPS"],
     on_off_norm=[True, True, True, True, True, True, False],
-
     column_aliases={
         # Hourly FCD aliases — accept legacy / shorthand names.
-        "FCDTV_h17":      "FCD_HPS_TV",
-        "FCDTV_HPS":      "FCD_HPS_TV",
-        "FCD_HPS":        "FCD_HPS_TV",
+        "FCDTV_h17": "FCD_HPS_TV",
+        "FCDTV_HPS": "FCD_HPS_TV",
+        "FCD_HPS": "FCD_HPS_TV",
         # TV daily aliases still useful for the shared inputs.
-        "TMJAPL":         "TMJOFCDPL",
-        "TMJAFCDPL":      "TMJOFCDPL",
-        "TMJFCDPL":       "TMJOFCDPL",
+        "TMJAPL": "TMJOFCDPL",
+        "TMJAFCDPL": "TMJOFCDPL",
+        "TMJFCDPL": "TMJOFCDPL",
         # Hourly counter aliases.
-        "BCTV_HPS":       "TMJOBCTV_HPS",
-        "TMJOBCTV_h17":   "TMJOBCTV_HPS",
+        "BCTV_HPS": "TMJOBCTV_HPS",
+        "TMJOBCTV_h17": "TMJOBCTV_HPS",
         # Speeds / distances (shared with TV).
-        "car_average_speed_kmh":         "avg_speed_kmh",
-        "truck_average_speed_kmh":       "truck_avg_speed_kmh",
-        "car_average_distance_km":       "avg_distance_m",
+        "car_average_speed_kmh": "avg_speed_kmh",
+        "truck_average_speed_kmh": "truck_avg_speed_kmh",
+        "car_average_distance_km": "avg_distance_m",
         "truck_min_average_distance_km": "truck_avg_min_distance_m",
-        "truck_average_distance_km":     "truck_avg_distance_m",
+        "truck_average_distance_km": "truck_avg_distance_m",
         "linkFC": "functional_class",
-        "FC":     "functional_class",
+        "FC": "functional_class",
     },
-
     target_col="TxPen_HPS",
     target_numerator_fcd="FCD_HPS_TV",
     target_denominator_bc="TMJOBCTV_HPS",
     target_alias="TxPen_HPS",
-
     # Predicted column at evaluation time: HPS_FCDr (NEVER TVr — critical to
     # avoid downstream confusion with the daily TV pipeline).
     eval_predicted_col="HPS_FCDr",
     eval_reference_col="TMJOBCTV_HPS",
     eval_numerator_fcd="FCD_HPS_TV",
-
     mandatory_input_cols=["FCD_HPS_TV"],
     min_input_count=2,
     default_high_flow_threshold=80.0,
-
     # HPM/HPS-extension metadata.
     kind="HPS",
     label="Heure de Pointe Soir",
@@ -481,8 +465,8 @@ distances HERE) car celles-ci ne disposent pas de variante horaire dans
 ``BCFCDREF_2025_HPM_HPS.geojson``.
 """
 CONFIGS: dict[ModelKind, ModelTypeConfig] = {
-    "TV":  TV_CONFIG,
-    "PL":  PL_CONFIG,
+    "TV": TV_CONFIG,
+    "PL": PL_CONFIG,
     "HPM": HPM_CONFIG,
     "HPS": HPS_CONFIG,
 }

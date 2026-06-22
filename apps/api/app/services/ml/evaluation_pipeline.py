@@ -22,13 +22,12 @@ if TYPE_CHECKING:
 # Column alias resolution for evaluation data
 # ---------------------------------------------------------------------------
 
+
 def _resolve_eval_aliases(df: pd.DataFrame, type_config: ModelTypeConfig) -> pd.DataFrame:
     """Apply column aliases + derive flag_comptage on evaluation data."""
     for src, dst in type_config.column_aliases.items():
         if src in df.columns and dst not in df.columns:
-            df[dst] = pd.to_numeric(df[src], errors="coerce").round(
-                4 if "TxPen" in dst else 2
-            )
+            df[dst] = pd.to_numeric(df[src], errors="coerce").round(4 if "TxPen" in dst else 2)
 
     # Reverse aliases for convenience
     fcd = type_config.eval_numerator_fcd  # TMJAFCDTV or TMJAFCDPL
@@ -51,6 +50,7 @@ def _resolve_eval_aliases(df: pd.DataFrame, type_config: ModelTypeConfig) -> pd.
 # ---------------------------------------------------------------------------
 # Test-time augmentation (TTA) — P4.7
 # ---------------------------------------------------------------------------
+
 
 def apply_model_tta(
     model: Any,
@@ -120,6 +120,7 @@ def apply_model_tta(
 # apply_model (unified TV / PL)
 # ---------------------------------------------------------------------------
 
+
 def apply_model(
     data: pd.DataFrame,
     artifact: TrainedModelArtifact,
@@ -159,6 +160,7 @@ def apply_model(
             _apply_log_transform_cols,
             _one_hot_functional_class,
         )
+
         if bool(_fe.get("add_pl_tv_ratio", False)):
             df = _add_pl_tv_ratio(df)
         log_cols = list(_fe.get("log_transform_cols") or [])
@@ -190,9 +192,7 @@ def apply_model(
             df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].median())
         else:
             median_value = (
-                sorted(year_mapping.values())[len(year_mapping) // 2]
-                if year_mapping
-                else 0
+                sorted(year_mapping.values())[len(year_mapping) // 2] if year_mapping else 0
             )
             df["year_mapped"] = median_value
 
@@ -232,15 +232,11 @@ def apply_model(
     df["TP_redressement"] = pd.to_numeric(y[:, 0], errors="coerce")
 
     # Predicted flow: numerator_fcd / TxPen * 100
-    pred_col = type_config.eval_predicted_col      # "TVr" or "DPL"
-    ref_col = type_config.eval_reference_col        # "TMJABCTV" or "TMJABCPL"
-    fcd_col = type_config.eval_numerator_fcd        # "TMJAFCDTV" or "TMJAFCDPL"
+    pred_col = type_config.eval_predicted_col  # "TVr" or "DPL"
+    ref_col = type_config.eval_reference_col  # "TMJABCTV" or "TMJABCPL"
+    fcd_col = type_config.eval_numerator_fcd  # "TMJAFCDTV" or "TMJAFCDPL"
 
-    df[pred_col] = (
-        pd.to_numeric(df[fcd_col], errors="coerce")
-        / df["TP_redressement"]
-        * 100.0
-    )
+    df[pred_col] = pd.to_numeric(df[fcd_col], errors="coerce") / df["TP_redressement"] * 100.0
 
     for col in [pred_col, ref_col]:
         if col in df.columns:
@@ -249,18 +245,14 @@ def apply_model(
     # Errors
     df["Erreur absolue"] = (df[pred_col] - df[ref_col]).abs().round(1)
     denom = df[ref_col].replace([np.inf, -np.inf], np.nan)
-    df["Erreur %"] = (
-        df["Erreur absolue"] / denom * 100.0
-    ).replace([np.inf, -np.inf], np.nan)
+    df["Erreur %"] = (df["Erreur absolue"] / denom * 100.0).replace([np.inf, -np.inf], np.nan)
 
     # GEH on daily flows (TMJA already daily — no /24 conversion)
     a = df[pred_col]
     b = df[ref_col]
     with np.errstate(divide="ignore", invalid="ignore"):
         geh = np.sqrt(2.0 * (a - b) ** 2 / (a + b))
-    df["GEH"] = pd.to_numeric(geh, errors="coerce").replace(
-        [np.inf, -np.inf], np.nan
-    )
+    df["GEH"] = pd.to_numeric(geh, errors="coerce").replace([np.inf, -np.inf], np.nan)
 
     # Coordinates
     if "__lat" in df.columns and "__lon" in df.columns:
@@ -273,6 +265,7 @@ def apply_model(
 # ---------------------------------------------------------------------------
 # Dynamic tolerance (identical for TV and PL)
 # ---------------------------------------------------------------------------
+
 
 def add_tolerance_columns(
     df: pd.DataFrame,
@@ -314,12 +307,8 @@ def add_tolerance_columns(
     out.loc[mask500, max_col] = 10 * np.ceil(out.loc[mask500, max_col] / 10)
 
     mask_middle = out[pred_col] >= 500
-    out.loc[mask_middle, min_col] = 100 * np.floor(
-        out.loc[mask_middle, min_col] / 100
-    )
-    out.loc[mask_middle, max_col] = 100 * np.ceil(
-        out.loc[mask_middle, max_col] / 100
-    )
+    out.loc[mask_middle, min_col] = 100 * np.floor(out.loc[mask_middle, min_col] / 100)
+    out.loc[mask_middle, max_col] = 100 * np.ceil(out.loc[mask_middle, max_col] / 100)
 
     out.loc[out[min_col].notna() & (out[min_col] < 100), min_col] = 0
     out.loc[out[max_col].notna() & (out[max_col] < 100), max_col] = 100
@@ -350,6 +339,7 @@ def add_tolerance_columns(
 # ---------------------------------------------------------------------------
 # Metrics
 # ---------------------------------------------------------------------------
+
 
 def compute_flow_metrics(
     df: pd.DataFrame,
@@ -384,9 +374,7 @@ def compute_flow_metrics(
 
     err_abs = (d[pred_col] - d[ref_col]).abs().astype(float)
     with np.errstate(divide="ignore", invalid="ignore"):
-        err_rel = np.where(
-            d[ref_col] != 0, err_abs / d[ref_col] * 100.0, np.nan
-        )
+        err_rel = np.where(d[ref_col] != 0, err_abs / d[ref_col] * 100.0, np.nan)
     err_rel = pd.Series(err_rel).replace([np.inf, -np.inf], np.nan)
 
     geh = pd.to_numeric(d["GEH"], errors="coerce")
@@ -430,6 +418,7 @@ def choose_best_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
 # Full evaluation pipeline
 # ---------------------------------------------------------------------------
 
+
 def run_evaluation(
     models: dict[str, TrainedModelArtifact],
     val_df: pd.DataFrame,
@@ -470,10 +459,7 @@ def run_evaluation(
                     stats_df = results[results["flag_comptage"] == 1].copy()
                 elif "Type" in results.columns:
                     stats_df = results[
-                        results["Type"]
-                        .astype(str)
-                        .str.strip()
-                        .isin(["Per", "Tou"])
+                        results["Type"].astype(str).str.strip().isin(["Per", "Tou"])
                     ].copy()
                 else:
                     stats_df = results.copy()
@@ -483,9 +469,7 @@ def run_evaluation(
             metrics = compute_flow_metrics(stats_df, type_config)
             tol = compute_tolerance_counts(stats_df)
 
-            err_pct = pd.to_numeric(
-                stats_df.get("Erreur %"), errors="coerce"
-            )
+            err_pct = pd.to_numeric(stats_df.get("Erreur %"), errors="coerce")
             n_total_pct = int(err_pct.notna().sum())
             n_lt10 = int((err_pct < 10).sum())
             n_lt15 = int((err_pct < 15).sum())
@@ -505,8 +489,9 @@ def run_evaluation(
             rows.append(row)
             model_results[name] = results
 
-        except Exception as exc:
+        except Exception:
             import traceback
+
             traceback.print_exc()
             continue
 
@@ -532,6 +517,7 @@ def run_evaluation(
 # callers can keep their `from .evaluation_pipeline import kfold_train_eval`
 # imports stable as the audit plan expects.
 
+
 def kfold_train_eval(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """K-fold cross-validation on a trained-model configuration.
 
@@ -541,4 +527,5 @@ def kfold_train_eval(*args: Any, **kwargs: Any) -> dict[str, Any]:
     ``run_training`` at module import time.
     """
     from .kfold import kfold_train_eval as _impl
+
     return _impl(*args, **kwargs)

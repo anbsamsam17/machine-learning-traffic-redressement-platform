@@ -5,30 +5,34 @@ from __future__ import annotations
 import pytest
 
 from app.services.ml.grid_search import (
+    GridCombination,
     build_feature_sets,
     feature_mask_name,
     generate_all_combinations,
-    GridCombination,
 )
-
 
 # ---------------------------------------------------------------------------
 # build_feature_sets
 # ---------------------------------------------------------------------------
+
 
 class TestBuildFeatureSets:
     ALL_COLS = ["A", "B", "C", "D"]
 
     def test_no_grid_returns_all(self):
         result = build_feature_sets(
-            self.ALL_COLS, mandatory_cols=["A"], min_input_count=1,
+            self.ALL_COLS,
+            mandatory_cols=["A"],
+            min_input_count=1,
             enable_feature_subset_grid=False,
         )
         assert result == [self.ALL_COLS]
 
     def test_all_mandatory_returns_single_set(self):
         result = build_feature_sets(
-            self.ALL_COLS, mandatory_cols=self.ALL_COLS, min_input_count=4,
+            self.ALL_COLS,
+            mandatory_cols=self.ALL_COLS,
+            min_input_count=4,
             enable_feature_subset_grid=True,
         )
         assert len(result) == 1
@@ -36,7 +40,9 @@ class TestBuildFeatureSets:
 
     def test_mandatory_always_present(self):
         result = build_feature_sets(
-            self.ALL_COLS, mandatory_cols=["A"], min_input_count=1,
+            self.ALL_COLS,
+            mandatory_cols=["A"],
+            min_input_count=1,
             enable_feature_subset_grid=True,
         )
         for fs in result:
@@ -44,7 +50,9 @@ class TestBuildFeatureSets:
 
     def test_min_input_count_enforced(self):
         result = build_feature_sets(
-            self.ALL_COLS, mandatory_cols=["A"], min_input_count=3,
+            self.ALL_COLS,
+            mandatory_cols=["A"],
+            min_input_count=3,
             enable_feature_subset_grid=True,
         )
         for fs in result:
@@ -53,7 +61,9 @@ class TestBuildFeatureSets:
     def test_total_combinations_count(self):
         """With 4 cols, 1 mandatory, min_input=1: 2^3 = 8 optional subsets."""
         result = build_feature_sets(
-            self.ALL_COLS, mandatory_cols=["A"], min_input_count=1,
+            self.ALL_COLS,
+            mandatory_cols=["A"],
+            min_input_count=1,
             enable_feature_subset_grid=True,
         )
         # optional = [B, C, D] => subsets of size 0..3 = C(3,0)+C(3,1)+C(3,2)+C(3,3) = 8
@@ -62,7 +72,9 @@ class TestBuildFeatureSets:
     def test_order_preserved(self):
         """Output column order should match all_input_cols order."""
         result = build_feature_sets(
-            self.ALL_COLS, mandatory_cols=["A"], min_input_count=1,
+            self.ALL_COLS,
+            mandatory_cols=["A"],
+            min_input_count=1,
             enable_feature_subset_grid=True,
         )
         for fs in result:
@@ -72,27 +84,36 @@ class TestBuildFeatureSets:
     def test_missing_mandatory_raises(self):
         with pytest.raises(ValueError, match="Mandatory columns are not part of input-cols"):
             build_feature_sets(
-                self.ALL_COLS, mandatory_cols=["X"], min_input_count=1,
+                self.ALL_COLS,
+                mandatory_cols=["X"],
+                min_input_count=1,
                 enable_feature_subset_grid=True,
             )
 
     def test_min_input_less_than_mandatory_raises(self):
         with pytest.raises(ValueError, match="min-input-count"):
             build_feature_sets(
-                self.ALL_COLS, mandatory_cols=["A", "B"], min_input_count=1,
+                self.ALL_COLS,
+                mandatory_cols=["A", "B"],
+                min_input_count=1,
                 enable_feature_subset_grid=True,
             )
 
     def test_tv_default_config(self):
         """Test with actual TV input cols and mandatory cols."""
         input_cols = [
-            "TMJAFCDTV", "TMJAFCDPL", "car_average_distance_km",
-            "car_average_speed_kmh", "truck_min_average_distance_km",
+            "TMJAFCDTV",
+            "TMJAFCDPL",
+            "car_average_distance_km",
+            "car_average_speed_kmh",
+            "truck_min_average_distance_km",
             "truck_average_speed_kmh",
         ]
         mandatory = ["TMJAFCDTV", "TMJAFCDPL"]
         result = build_feature_sets(
-            input_cols, mandatory_cols=mandatory, min_input_count=3,
+            input_cols,
+            mandatory_cols=mandatory,
+            min_input_count=3,
             enable_feature_subset_grid=True,
         )
         # 4 optional, min 1 optional => C(4,1)+C(4,2)+C(4,3)+C(4,4) = 4+6+4+1 = 15
@@ -104,7 +125,9 @@ class TestBuildFeatureSets:
 
     def test_empty_mandatory_list(self):
         result = build_feature_sets(
-            ["A", "B"], mandatory_cols=[], min_input_count=0,
+            ["A", "B"],
+            mandatory_cols=[],
+            min_input_count=0,
             enable_feature_subset_grid=True,
         )
         # All subsets including empty set: C(2,0)+C(2,1)+C(2,2) = 1+2+1 = 4
@@ -114,6 +137,7 @@ class TestBuildFeatureSets:
 # ---------------------------------------------------------------------------
 # feature_mask_name
 # ---------------------------------------------------------------------------
+
 
 class TestFeatureMaskName:
     def test_all_features(self):
@@ -140,6 +164,7 @@ class TestFeatureMaskName:
 # ---------------------------------------------------------------------------
 # generate_all_combinations
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateAllCombinations:
     def test_single_feature_set_single_params(self):

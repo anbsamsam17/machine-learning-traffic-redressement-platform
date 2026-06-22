@@ -13,7 +13,7 @@ import socket
 import subprocess
 import sys
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -53,7 +53,7 @@ def build_meta(
     skipped) rather than raised, so packaging never fails on a missing tool.
     """
     meta = {
-        "saved_at": datetime.now(timezone.utc).isoformat() + "Z",
+        "saved_at": datetime.now(UTC).isoformat() + "Z",
         "python_version": sys.version.split()[0],
         "platform": platform.platform(),
         "hostname": socket.gethostname(),
@@ -62,11 +62,13 @@ def build_meta(
     }
     try:
         import tensorflow as _tf
+
         meta["tf_version"] = _tf.__version__
     except Exception as exc:  # noqa: BLE001
         meta["tf_version_error"] = str(exc)
     try:
         import keras as _k
+
         meta["keras_version"] = _k.__version__
     except Exception as exc:  # noqa: BLE001
         meta["keras_version_error"] = str(exc)
@@ -76,16 +78,21 @@ def build_meta(
         logger.debug("build_meta: numpy version unavailable: %s", exc)
     try:
         import sklearn as _sk
+
         meta["sklearn_version"] = _sk.__version__
     except Exception as exc:  # noqa: BLE001
         logger.debug("build_meta: sklearn version unavailable: %s", exc)
     try:
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).resolve().parent,
-            stderr=subprocess.DEVNULL,
-            timeout=5,
-        ).decode().strip()
+        sha = (
+            subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=Path(__file__).resolve().parent,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            .decode()
+            .strip()
+        )
         meta["git_sha"] = sha
     except Exception as exc:  # noqa: BLE001
         logger.debug("build_meta: git SHA unavailable: %s", exc)
@@ -130,9 +137,7 @@ def load_model_compat(model_dir: Path | str) -> Any:
 
     arch = model_dir / "NNarchitecture.json"
     if not arch.exists():
-        raise FileNotFoundError(
-            f"Neither model.keras nor NNarchitecture.json found in {model_dir}"
-        )
+        raise FileNotFoundError(f"Neither model.keras nor NNarchitecture.json found in {model_dir}")
     model = model_from_json(arch.read_text(encoding="utf-8"))
     weights = model_dir / "NNweights.weights.h5"
     if not weights.exists():
@@ -145,7 +150,7 @@ def load_model_compat(model_dir: Path | str) -> Any:
     return model
 
 
-def export_model_zip(artifact: "TrainedModelArtifact") -> bytes:
+def export_model_zip(artifact: TrainedModelArtifact) -> bytes:
     """Serialise *artifact* into a legacy-H5 ZIP archive and return its raw bytes.
 
     The archive bundles the architecture JSON, H5 weights, normalisation
@@ -157,7 +162,9 @@ def export_model_zip(artifact: "TrainedModelArtifact") -> bytes:
         arch_json = artifact.model.to_json()
         zf.writestr("NNarchitecture.json", arch_json)
 
-        import tempfile, os
+        import os
+        import tempfile
+
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as tmp:
             tmp_path = tmp.name
         try:

@@ -52,18 +52,40 @@ def _make_barplot_html(df: pd.DataFrame, title: str) -> str:
     n_sample = min(200, len(d))
     d = d.sample(n=n_sample, random_state=42).reset_index(drop=True)
 
-    labels = d["PTM_ID"].astype(str).tolist() if "PTM_ID" in d.columns else [str(i) for i in range(len(d))]
+    labels = (
+        d["PTM_ID"].astype(str).tolist()
+        if "PTM_ID" in d.columns
+        else [str(i) for i in range(len(d))]
+    )
 
     hover_cols = [
-        c for c in [
-            "PTM_ID", "Identifiant", "STA", "Type", "Commune", "Route",
-            "TMJAFCDTV", "TMJAFCDPL",
-            "car_count", "car_average_speed_kmh", "car_average_distance_km",
-            "truck_count", "truck_average_speed_kmh", "truck_min_average_distance_km",
-            "TMJABCTV", "TVr", "TP_redressement",
-            "Erreur %", "Erreur absolue", "GEH",
-            "TVrmin", "TVrmax", "Tolerance_IN_OUT",
-        ] if c in d.columns
+        c
+        for c in [
+            "PTM_ID",
+            "Identifiant",
+            "STA",
+            "Type",
+            "Commune",
+            "Route",
+            "TMJAFCDTV",
+            "TMJAFCDPL",
+            "car_count",
+            "car_average_speed_kmh",
+            "car_average_distance_km",
+            "truck_count",
+            "truck_average_speed_kmh",
+            "truck_min_average_distance_km",
+            "TMJABCTV",
+            "TVr",
+            "TP_redressement",
+            "Erreur %",
+            "Erreur absolue",
+            "GEH",
+            "TVrmin",
+            "TVrmax",
+            "Tolerance_IN_OUT",
+        ]
+        if c in d.columns
     ]
 
     def _fmtv(v):
@@ -80,24 +102,31 @@ def _make_barplot_html(df: pd.DataFrame, title: str) -> str:
 
     customdata = [[_fmtv(row.get(c)) for c in hover_cols] for _, row in d.iterrows()]
     hover_lines = "".join(
-        f"<b>{_label(c)}</b> : %{{customdata[{i}]}}<br>"
-        for i, c in enumerate(hover_cols)
+        f"<b>{_label(c)}</b> : %{{customdata[{i}]}}<br>" for i, c in enumerate(hover_cols)
     )
     hover_template = hover_lines + "<extra></extra>"
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=labels, y=d["TMJABCTV"].tolist(),
-        name=f"{_label('TMJABCTV')} (validation)", marker_color="#1f77b4",
-        customdata=customdata,
-        hovertemplate=hover_template,
-    ))
-    fig.add_trace(go.Bar(
-        x=labels, y=d["TVr"].tolist(),
-        name="TVr (predit)", marker_color="#00b894",
-        customdata=customdata,
-        hovertemplate=hover_template,
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=d["TMJABCTV"].tolist(),
+            name=f"{_label('TMJABCTV')} (validation)",
+            marker_color="#1f77b4",
+            customdata=customdata,
+            hovertemplate=hover_template,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=d["TVr"].tolist(),
+            name="TVr (predit)",
+            marker_color="#00b894",
+            customdata=customdata,
+            hovertemplate=hover_template,
+        )
+    )
     fig.update_layout(
         barmode="group",
         template="plotly_white",
@@ -174,16 +203,34 @@ def _make_folium_map_html(stats_df: pd.DataFrame, model_name: str) -> str:
     layer.add_to(m)
 
     info_cols = [
-        c for c in [
-            "PTM_ID", "Identifiant", "STA", "Type", "Commune", "Route",
-            "TMJAFCDTV", "TMJAFCDPL",
-            "car_count", "car_average_speed_kmh", "car_average_distance_km",
-            "truck_count", "truck_average_speed_kmh", "truck_min_average_distance_km",
-            "TMJABCTV", "TVr", "TP_redressement",
-            "Erreur %", "Erreur absolue", "GEH",
-            "TVrmin", "TVrmax", "Tolerance_IN_OUT",
+        c
+        for c in [
+            "PTM_ID",
+            "Identifiant",
+            "STA",
+            "Type",
+            "Commune",
+            "Route",
+            "TMJAFCDTV",
+            "TMJAFCDPL",
+            "car_count",
+            "car_average_speed_kmh",
+            "car_average_distance_km",
+            "truck_count",
+            "truck_average_speed_kmh",
+            "truck_min_average_distance_km",
+            "TMJABCTV",
+            "TVr",
+            "TP_redressement",
+            "Erreur %",
+            "Erreur absolue",
+            "GEH",
+            "TVrmin",
+            "TVrmax",
+            "Tolerance_IN_OUT",
             "flag_comptage",
-        ] if c in valid.columns
+        ]
+        if c in valid.columns
     ]
 
     for _, row in valid.iterrows():
@@ -211,12 +258,16 @@ def _make_folium_map_html(stats_df: pd.DataFrame, model_name: str) -> str:
         ).add_to(layer)
 
     folium.LayerControl(collapsed=False).add_to(m)
-    m.fit_bounds([
-        [float(valid["lat"].min()), float(valid["lon"].min())],
-        [float(valid["lat"].max()), float(valid["lon"].max())],
-    ])
+    m.fit_bounds(
+        [
+            [float(valid["lat"].min()), float(valid["lon"].min())],
+            [float(valid["lat"].max()), float(valid["lon"].max())],
+        ]
+    )
 
-    pct = lambda n: (100.0 * n / n_valid) if n_valid > 0 else 0.0
+    def pct(n):
+        return (100.0 * n / n_valid) if n_valid > 0 else 0.0
+
     legend_html = f"""
     <div style="position:fixed;bottom:20px;left:20px;z-index:9999;background:white;
             padding:10px 14px;border:1px solid #ccc;border-radius:10px;
@@ -237,13 +288,13 @@ def _make_folium_map_html(stats_df: pd.DataFrame, model_name: str) -> str:
         f'<iframe id="folium-map-frame" width="100%" height="600" '
         f'style="border:none;border-radius:12px;display:block;" '
         f'sandbox="allow-scripts allow-same-origin"></iframe>\n'
-        f'<script>\n'
-        f'(function(){{\n'
+        f"<script>\n"
+        f"(function(){{\n"
         f'  var iframe = document.getElementById("folium-map-frame");\n'
         f'  var html = atob("{encoded}");\n'
-        f'  iframe.srcdoc = html;\n'
-        f'}})();\n'
-        f'</script>'
+        f"  iframe.srcdoc = html;\n"
+        f"}})();\n"
+        f"</script>"
     )
 
 
@@ -339,7 +390,11 @@ def generate_html_report_tv(
         row = {
             "model": model_name,
             "n": len(y_true),
-            "err_rel_med": float(metrics.median_relative_error) if metrics.median_relative_error is not None else float("nan"),
+            "err_rel_med": (
+                float(metrics.median_relative_error)
+                if metrics.median_relative_error is not None
+                else float("nan")
+            ),
             "err_abs_med": float(metrics.mae),
             "err_rel_p80": float("nan"),
             "err_abs_p80": float("nan"),
@@ -400,10 +455,12 @@ def generate_html_report_tv(
             return ""
         return (
             f' <small style="font-size:11px;color:#56637a;font-weight:600;">'
-            f'(CI95 [{lo:.{digits}f}{suffix}, {hi:.{digits}f}{suffix}])</small>'
+            f"(CI95 [{lo:.{digits}f}{suffix}, {hi:.{digits}f}{suffix}])</small>"
         )
 
-    tol_in_pct_val = (100.0 * row["tol_in"] / row["tol_total"]) if row.get("tol_total") else float("nan")
+    tol_in_pct_val = (
+        (100.0 * row["tol_in"] / row["tol_total"]) if row.get("tol_total") else float("nan")
+    )
     r2_val = metrics.r_squared
 
     # --- Barplot ---
@@ -416,7 +473,9 @@ def generate_html_report_tv(
     if df is not None and "lat" in df.columns and "lon" in df.columns:
         map_html = _make_folium_map_html(df, model_name)
     else:
-        map_html = "<p style='color:#888;font-style:italic;'>Donnees non disponibles pour la carte.</p>"
+        map_html = (
+            "<p style='color:#888;font-style:italic;'>Donnees non disponibles pour la carte.</p>"
+        )
 
     # --- Outlier table (Erreur % > 15%) ---
     if df is not None and "Erreur %" in df.columns:
@@ -444,9 +503,9 @@ def generate_html_report_tv(
                 _otrows.append(f"<tr{style}>" + "".join(cells) + "</tr>")
             outlier_html = (
                 f'<table id="outlierTable" class="display" style="width:100%">'
-                f'<thead>{_oth}</thead>'
+                f"<thead>{_oth}</thead>"
                 f'<tbody>{"".join(_otrows)}</tbody>'
-                f'</table>'
+                f"</table>"
             )
             outlier_count = len(out_df)
         else:
@@ -458,10 +517,24 @@ def generate_html_report_tv(
 
     # --- Comparison table (single model row, same 18 columns as original) ---
     header_cells = [
-        "Modele", "N", "Err.rel med (%)", "Err.abs med",
-        "Err.rel p80 (%)", "Err.abs p80", "GEH<5 (%)", "GEH<=10 (%)",
-        "Err<10% N", "Err<10% %", "Err<15% N", "Err<15% %", "Err<20% N", "Err<20% %",
-        "Tol 1 Inclus", "Tol 2 Hors<15%", "Tol 3 Hors>15%", "Tol Total",
+        "Modele",
+        "N",
+        "Err.rel med (%)",
+        "Err.abs med",
+        "Err.rel p80 (%)",
+        "Err.abs p80",
+        "GEH<5 (%)",
+        "GEH<=10 (%)",
+        "Err<10% N",
+        "Err<10% %",
+        "Err<15% N",
+        "Err<15% %",
+        "Err<20% N",
+        "Err<20% %",
+        "Tol 1 Inclus",
+        "Tol 2 Hors<15%",
+        "Tol 3 Hors>15%",
+        "Tol Total",
     ]
     thead = "<tr>" + "".join(f"<th>{h}</th>" for h in header_cells) + "</tr>"
 
@@ -486,29 +559,33 @@ def generate_html_report_tv(
         str(row.get("tol_out", "-")),
         str(row.get("tol_total", "-")),
     ]
-    tbody_row = '<tr style="background:#eafaf2;font-weight:700;">' + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+    tbody_row = (
+        '<tr style="background:#eafaf2;font-weight:700;">'
+        + "".join(f"<td>{c}</td>" for c in cells)
+        + "</tr>"
+    )
 
     # --- P1.2 Stratification table per TMJOBCTV bucket ---
     if metrics_by_tmja_bucket:
         _bucket_headers = [
-            "Bucket TMJOBCTV", "N", "Tol. inclus (N)", "Tol. inclus (%)",
-            "p80 err.rel (%)", "R&sup2;",
+            "Bucket TMJOBCTV",
+            "N",
+            "Tol. inclus (N)",
+            "Tol. inclus (%)",
+            "p80 err.rel (%)",
+            "R&sup2;",
         ]
-        _bucket_thead = (
-            "<tr>" + "".join(f"<th>{h}</th>" for h in _bucket_headers) + "</tr>"
-        )
+        _bucket_thead = "<tr>" + "".join(f"<th>{h}</th>" for h in _bucket_headers) + "</tr>"
         _bucket_rows: list[str] = []
         for _b in metrics_by_tmja_bucket:
             _warn = bool(_b.get("low_sample_warning"))
-            _row_style = (
-                ' style="background:#fff7ec;"' if _warn else ""
-            )
+            _row_style = ' style="background:#fff7ec;"' if _warn else ""
             _label_cell = _html.escape(str(_b.get("bucket", "-")))
             if _warn:
                 _label_cell += (
                     ' <small style="color:#b97a00;font-weight:600;" '
                     'title="Moins de 10 echantillons — fiabilite limitee.">'
-                    '(n&lt;10)</small>'
+                    "(n&lt;10)</small>"
                 )
             _bucket_rows.append(
                 f"<tr{_row_style}>"
@@ -521,64 +598,64 @@ def generate_html_report_tv(
                 f"</tr>"
             )
         bucket_table_html = (
-            '  <h2>Metriques stratifiees par tranche de TMJOBCTV</h2>\n'
+            "  <h2>Metriques stratifiees par tranche de TMJOBCTV</h2>\n"
             '  <p class="hint">Memes metriques recalculees sur 4 buckets de '
-            'volume de trafic observe. Permet de detecter un modele performant '
-            'globalement mais defaillant sur les capteurs faible/forte densite. '
-            'Une ligne sur fond orange indique moins de 10 echantillons '
-            '(metriques peu fiables).</p>\n'
+            "volume de trafic observe. Permet de detecter un modele performant "
+            "globalement mais defaillant sur les capteurs faible/forte densite. "
+            "Une ligne sur fond orange indique moins de 10 echantillons "
+            "(metriques peu fiables).</p>\n"
             '  <div class="panel">\n'
             '    <table id="tmjaBucketTable" class="display" style="width:100%">\n'
-            f'      <thead>{_bucket_thead}</thead>\n'
+            f"      <thead>{_bucket_thead}</thead>\n"
             f'      <tbody>{"".join(_bucket_rows)}</tbody>\n'
-            '    </table>\n'
-            '  </div>\n'
+            "    </table>\n"
+            "  </div>\n"
         )
     else:
         bucket_table_html = (
-            '  <h2>Metriques stratifiees par tranche de TMJOBCTV</h2>\n'
+            "  <h2>Metriques stratifiees par tranche de TMJOBCTV</h2>\n"
             '  <p class="hint" style="color:#888;font-style:italic;">'
-            'Stratification indisponible : colonne TMJOBCTV (ou TMJABCTV) '
-            'absente des donnees de validation.</p>\n'
+            "Stratification indisponible : colonne TMJOBCTV (ou TMJABCTV) "
+            "absente des donnees de validation.</p>\n"
         )
 
     # --- P4.1 Calibration plot ---
     calibration_plot_inner = _make_calibration_plot_html(calibration_data)
     calibration_section_html = (
-        '  <h2>Calibration : predit vs observe</h2>\n'
+        "  <h2>Calibration : predit vs observe</h2>\n"
         '  <p class="hint">Chaque point est un capteur. La diagonale rouge '
-        '<code>y = x</code> represente une prediction parfaite. Un nuage '
-        'systematiquement en dessous (resp. au-dessus) indique un biais de '
-        'sous-estimation (resp. sur-estimation).</p>\n'
+        "<code>y = x</code> represente une prediction parfaite. Un nuage "
+        "systematiquement en dessous (resp. au-dessus) indique un biais de "
+        "sous-estimation (resp. sur-estimation).</p>\n"
         '  <div class="panel plot-wrap">\n'
-        f'    {calibration_plot_inner}\n'
-        '  </div>\n'
+        f"    {calibration_plot_inner}\n"
+        "  </div>\n"
     )
 
     # --- P4.2 Residual boxplot by functional_class ---
     residuals_plot_inner = _make_residuals_by_fc_html(residuals_by_fc)
     residuals_section_html = (
-        '  <h2>Residus par classe fonctionnelle</h2>\n'
+        "  <h2>Residus par classe fonctionnelle</h2>\n"
         '  <p class="hint">Distribution des residus <code>pred &minus; obs</code> '
-        'pour chaque classe fonctionnelle (FC). Une boite centree sur 0 indique '
-        'un modele non biaise sur cette classe ; une boite decalee revele un '
-        'biais systematique propre a la classe.</p>\n'
+        "pour chaque classe fonctionnelle (FC). Une boite centree sur 0 indique "
+        "un modele non biaise sur cette classe ; une boite decalee revele un "
+        "biais systematique propre a la classe.</p>\n"
         '  <div class="panel plot-wrap">\n'
-        f'    {residuals_plot_inner}\n'
-        '  </div>\n'
+        f"    {residuals_plot_inner}\n"
+        "  </div>\n"
     )
 
     # --- P4.3 Drift by year ---
     drift_inner = _make_drift_by_year_html(drift_by_year)
     drift_section_html = (
-        '  <h2>Derive annuelle (metriques par annee)</h2>\n'
+        "  <h2>Derive annuelle (metriques par annee)</h2>\n"
         '  <p class="hint">Memes metriques recalculees pour chaque annee '
-        'presente dans le jeu de validation (au moins 10 echantillons). Une '
-        'forte variation du R&sup2; ou du tol_in entre annees suggere une '
-        'derive temporelle du modele.</p>\n'
+        "presente dans le jeu de validation (au moins 10 echantillons). Une "
+        "forte variation du R&sup2; ou du tol_in entre annees suggere une "
+        "derive temporelle du modele.</p>\n"
         '  <div class="panel">\n'
-        f'    {drift_inner}\n'
-        '  </div>\n'
+        f"    {drift_inner}\n"
+        "  </div>\n"
     )
 
     # --- Assemble full HTML ---

@@ -29,7 +29,7 @@ import logging
 import re
 import time
 import unicodedata
-from typing import Callable
+from collections.abc import Callable
 
 import geopandas as gpd
 import numpy as np
@@ -169,11 +169,13 @@ def build_candidates(g_base: gpd.GeoDataFrame, g_t1: gpd.GeoDataFrame) -> pd.Dat
     keep_len = lr >= LEN_RATIO_MIN
     keep = keep_r & keep_fc & keep_len
 
-    return pd.DataFrame({
-        "src_idx": src_idx[keep].astype("int64"),
-        "tgt_idx": tgt_idx[keep].astype("int64"),
-        "cand_dist_m": dist[keep].astype("float64"),
-    })
+    return pd.DataFrame(
+        {
+            "src_idx": src_idx[keep].astype("int64"),
+            "tgt_idx": tgt_idx[keep].astype("int64"),
+            "cand_dist_m": dist[keep].astype("float64"),
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -197,8 +199,7 @@ def score_pairs(
     en parametres : aucun etat global n'est lu ni mute (thread-safe).
     """
     if cand.empty:
-        return cand.assign(dtheta_deg=[], gate_pass=[], cover_a=[],
-                           mean_ptline_m=[], score=[])
+        return cand.assign(dtheta_deg=[], gate_pass=[], cover_a=[], mean_ptline_m=[], score=[])
     si = cand["src_idx"].to_numpy()
     ti = cand["tgt_idx"].to_numpy()
     n = si.size
@@ -240,8 +241,12 @@ def score_pairs(
     s_haus = np.exp(-hausdorff / (3.0 * SCALE_M))
     s_dir = np.clip(1.0 - dtheta / 90.0, 0.0, 1.0)
     score_base = (
-        0.28 * iou + 0.18 * cover_a + 0.16 * s_dist
-        + 0.08 * s_haus + 0.08 * len_ratio + 0.22 * s_dir
+        0.28 * iou
+        + 0.18 * cover_a
+        + 0.16 * s_dist
+        + 0.08 * s_haus
+        + 0.08 * len_ratio
+        + 0.22 * s_dir
     )
     fac = np.clip(1.0 - (dtheta / dir_penalty_scale) ** 2, 0.0, 1.0)
     score = np.where(gate_pass, score_base * fac, 0.0)
@@ -293,7 +298,7 @@ def hungarian_unique(pairs: pd.DataFrame) -> pd.DataFrame:
         cost = np.full((ls_idx.size, lt_idx.size), BIG, dtype="float64")
         cost[ls, lt] = 1.0 - grp["score"].to_numpy()
         row_i, col_j = linear_sum_assignment(cost)
-        for ri, cj in zip(row_i, col_j):
+        for ri, cj in zip(row_i, col_j, strict=False):
             if cost[ri, cj] >= BIG:
                 continue
             results.append((int(ls_idx[ri]), int(lt_idx[cj]), float(1.0 - cost[ri, cj])))
@@ -357,7 +362,9 @@ def geometric_match(
     cand = cand[cand["tgt_idx"].isin(ok_t1)]
 
     scored = score_pairs(
-        g_base, g_t1, cand,
+        g_base,
+        g_t1,
+        cand,
         dtheta_reject=dtheta_reject,
         dir_penalty_scale=dir_penalty_scale,
     )
@@ -382,7 +389,7 @@ def geometric_match(
     out["margin"] = out["match_score"] - out["score2"]
     out["match_level"] = [
         _classify(s, m, score_auto=score_auto, score_min=score_min, margin_min=margin)
-        for s, m in zip(out["match_score"].to_numpy(), out["margin"].to_numpy())
+        for s, m in zip(out["match_score"].to_numpy(), out["margin"].to_numpy(), strict=False)
     ]
     out = out[out["match_level"] != "NON_MATCH"]
     return out[["src_idx", "tgt_idx", "match_score", "match_level"]].reset_index(drop=True)
@@ -418,18 +425,53 @@ def detect_street_name_col(*gdfs: gpd.GeoDataFrame) -> str | None:
 
 
 _VOIE_TOKENS = {
-    "rue", "avenue", "av", "bd", "boulevard", "chemin", "ch", "impasse", "imp",
-    "allee", "allees", "place", "pl", "route", "rte", "quai", "cours", "montee",
-    "passage", "voie", "rond", "point", "giratoire", "carrefour", "pont", "la",
-    "le", "les", "de", "du", "des", "d", "l", "saint", "st", "sainte", "ste",
-    "grande", "petit", "petite", "vieux", "vieille",
+    "rue",
+    "avenue",
+    "av",
+    "bd",
+    "boulevard",
+    "chemin",
+    "ch",
+    "impasse",
+    "imp",
+    "allee",
+    "allees",
+    "place",
+    "pl",
+    "route",
+    "rte",
+    "quai",
+    "cours",
+    "montee",
+    "passage",
+    "voie",
+    "rond",
+    "point",
+    "giratoire",
+    "carrefour",
+    "pont",
+    "la",
+    "le",
+    "les",
+    "de",
+    "du",
+    "des",
+    "d",
+    "l",
+    "saint",
+    "st",
+    "sainte",
+    "ste",
+    "grande",
+    "petit",
+    "petite",
+    "vieux",
+    "vieille",
 }
 
 
 def _strip_accents(s: str) -> str:
-    return "".join(
-        c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)
-    )
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 
 def is_road_code(s: object) -> bool:
@@ -460,6 +502,7 @@ def jaccard(a: set[str], b: set[str]) -> float:
 def _ban_call(batch: pd.DataFrame, session=None) -> pd.DataFrame:
     """Appeler BAN reverse sur un lot de points (retries backoff exponentiel)."""
     import requests
+
     buf = _io.StringIO()
     batch[["src_idx", "lat", "lon"]].to_csv(buf, index=False)
     payload = buf.getvalue().encode("utf-8")
@@ -527,28 +570,29 @@ def validate_ban(
             "Validation BAN court-circuitee : aucune colonne de nom de voie "
             "(%s) dans la base T2 -> %d troncon(s) GEOM_* marque(s) INDISPONIBLE "
             "(aucun appel reseau).",
-            "/".join(STREET_NAME_COLS), src.size,
+            "/".join(STREET_NAME_COLS),
+            src.size,
         )
         progress(1.0, "ban")
-        return pd.DataFrame(
-            {"src_idx": src, "ban_concordance": ["INDISPONIBLE"] * src.size}
-        )
+        return pd.DataFrame({"src_idx": src, "ban_concordance": ["INDISPONIBLE"] * src.size})
 
     geoms = g_base.geometry.values[src]
     mids = shapely.line_interpolate_point(geoms, 0.5, normalized=True)
     gs = gpd.GeoSeries(mids, crs=g_base.crs or CRS_L93).to_crs(CRS_WGS84)
-    pts = pd.DataFrame({
-        "src_idx": src,
-        "lat": gs.y.to_numpy().round(6),
-        "lon": gs.x.to_numpy().round(6),
-    })
+    pts = pd.DataFrame(
+        {
+            "src_idx": src,
+            "lat": gs.y.to_numpy().round(6),
+            "lon": gs.x.to_numpy().round(6),
+        }
+    )
 
     todo = pts[~pts["src_idx"].isin(set(cache.keys()))].reset_index(drop=True)
     progress(0.0, "ban")
     if not todo.empty:
         n_batches = int(np.ceil(len(todo) / BATCH_SIZE))
         for j in range(n_batches):
-            batch = todo.iloc[j * BATCH_SIZE:(j + 1) * BATCH_SIZE]
+            batch = todo.iloc[j * BATCH_SIZE : (j + 1) * BATCH_SIZE]
             try:
                 resp = _ban_call(batch, session=session)
             except RuntimeError:
@@ -577,8 +621,12 @@ def validate_ban(
             continue
         ban_type = entry.get("ban_type")
         ref = ref_names.get(int(sidx)) if has_ref else None
-        if not has_ref or ref is None or is_road_code(ref) \
-                or ban_type not in ("housenumber", "street"):
+        if (
+            not has_ref
+            or ref is None
+            or is_road_code(ref)
+            or ban_type not in ("housenumber", "street")
+        ):
             rows.append((int(sidx), "INDISPONIBLE"))
             continue
         jac = jaccard(normalize_name(ref), normalize_name(entry["ban_name"]))
@@ -664,14 +712,18 @@ def match_segments(
 
     # --- N2 - GEOMETRIQUE sur le residuel -------------------------------- #
     progress(0.30, "geo")
-    residual_src = np.array([i for i in range(n_base) if match_level[i] == "NON_MATCH"], dtype="int64")
+    residual_src = np.array(
+        [i for i in range(n_base) if match_level[i] == "NON_MATCH"], dtype="int64"
+    )
     # T1 deja consommes par la cle sont exclus des candidats geo (unicite).
     g_t1_free = g_t1.copy()
     if used_t1:
         g_t1_free.loc[list(used_t1), "geom_ok"] = False
 
     geo = geometric_match(
-        g_base, g_t1_free, residual_src,
+        g_base,
+        g_t1_free,
+        residual_src,
         score_auto=score_auto,
         score_min=score_min,
         margin=margin,
@@ -686,10 +738,12 @@ def match_segments(
 
     ban_concordance = np.array([None] * n_base, dtype=object)
 
-    matches = pd.DataFrame({
-        "src_idx": np.arange(n_base),
-        "match_level": match_level,
-    })
+    matches = pd.DataFrame(
+        {
+            "src_idx": np.arange(n_base),
+            "match_level": match_level,
+        }
+    )
 
     # --- N3 - BAN (filtre securite) -------------------------------------- #
     if use_ban:
@@ -705,10 +759,16 @@ def match_segments(
                 "/".join(STREET_NAME_COLS),
             )
         ban_df = validate_ban(
-            g_base, matches, cache=ban_cache, session=ban_session,
-            progress=progress, name_col=name_col,
+            g_base,
+            matches,
+            cache=ban_cache,
+            session=ban_session,
+            progress=progress,
+            name_col=name_col,
         )
-        ban_map = dict(zip(ban_df["src_idx"].to_numpy(), ban_df["ban_concordance"].to_numpy()))
+        ban_map = dict(
+            zip(ban_df["src_idx"].to_numpy(), ban_df["ban_concordance"].to_numpy(), strict=False)
+        )
         for i in range(n_base):
             if match_level[i] in ("GEOM_AUTO", "GEOM_VERIF"):
                 conc = ban_map.get(i, "INDISPONIBLE")
@@ -725,10 +785,12 @@ def match_segments(
     id_t1_arr = np.empty(n_base, dtype=object)
     for i in range(n_base):
         id_t1_arr[i] = id_t1[i]
-    return pd.DataFrame({
-        "id_t2": np.asarray(base_ids, dtype=object),
-        "id_t1": id_t1_arr,
-        "match_level": np.asarray(match_level, dtype=object),
-        "match_score": score_arr,
-        "ban_concordance": ban_concordance,
-    })
+    return pd.DataFrame(
+        {
+            "id_t2": np.asarray(base_ids, dtype=object),
+            "id_t1": id_t1_arr,
+            "match_level": np.asarray(match_level, dtype=object),
+            "match_score": score_arr,
+            "ban_concordance": ban_concordance,
+        }
+    )

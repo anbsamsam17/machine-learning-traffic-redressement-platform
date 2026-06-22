@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import io
-
 import pytest
 
 
@@ -38,11 +35,13 @@ class TestUploadCSV:
 
     @pytest.mark.asyncio
     async def test_upload_csv_columns_present(self, authenticated_client, csv_content):
-        data = (await authenticated_client.post(
-            "/api/upload",
-            files={"file": ("test.csv", csv_content, "text/csv")},
-            data={"mode": "TV"},
-        )).json()
+        data = (
+            await authenticated_client.post(
+                "/api/upload",
+                files={"file": ("test.csv", csv_content, "text/csv")},
+                data={"mode": "TV"},
+            )
+        ).json()
         assert "TMJAFCDTV" in data["columns"]
         assert "car_average_speed_kmh" in data["columns"]
 
@@ -77,11 +76,13 @@ class TestUploadGeoJSON:
 
     @pytest.mark.asyncio
     async def test_upload_geojson_has_geometry_cols(self, authenticated_client, geojson_content):
-        data = (await authenticated_client.post(
-            "/api/upload",
-            files={"file": ("test.geojson", geojson_content, "application/json")},
-            data={"mode": "TV"},
-        )).json()
+        data = (
+            await authenticated_client.post(
+                "/api/upload",
+                files={"file": ("test.geojson", geojson_content, "application/json")},
+                data={"mode": "TV"},
+            )
+        ).json()
         assert data["rows"] == 2
         # GeoJSON parser adds __lat, __lon, geometry, __geometry_json
         assert "__lat" in data["columns"]
@@ -90,11 +91,13 @@ class TestUploadGeoJSON:
     @pytest.mark.asyncio
     async def test_upload_geojson_preview_serializable(self, authenticated_client, geojson_content):
         """Geometry dicts in preview should be JSON-serialized to strings."""
-        data = (await authenticated_client.post(
-            "/api/upload",
-            files={"file": ("test.geojson", geojson_content, "application/json")},
-            data={"mode": "TV"},
-        )).json()
+        data = (
+            await authenticated_client.post(
+                "/api/upload",
+                files={"file": ("test.geojson", geojson_content, "application/json")},
+                data={"mode": "TV"},
+            )
+        ).json()
         for row in data["preview"]:
             for v in row.values():
                 # No raw dict values -- they should be strings or numbers

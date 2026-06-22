@@ -20,8 +20,6 @@ Les magic numbers des bornes DPL min/max sont nommes via les tables
 
 from __future__ import annotations
 
-from typing import Callable
-
 import numpy as np
 import pandas as pd
 
@@ -37,13 +35,13 @@ import pandas as pd
 #
 # Borne inferieure : DPLmin = coef_min(JOr) * JOr
 _DPL_MIN_COEFS = {
-    "lt_500": 0.75,        # JOr < 500       -> 0.75 * JOr (ratio mediane CEREMA)
-    "lt_1000": 0.85,       # 500 <= JOr < 1000
-    "lt_2000": 0.85,       # 1000 <= JOr < 2000
-    "lt_4000": 0.88,       # 2000 <= JOr < 4000
-    "lt_6000": 0.88,       # 4000 <= JOr < 6000
-    "lt_10000": 0.88,      # 6000 <= JOr < 10000
-    "ge_10000": 0.88,      # JOr >= 10000 — branche speciale avec marge -1500
+    "lt_500": 0.75,  # JOr < 500       -> 0.75 * JOr (ratio mediane CEREMA)
+    "lt_1000": 0.85,  # 500 <= JOr < 1000
+    "lt_2000": 0.85,  # 1000 <= JOr < 2000
+    "lt_4000": 0.88,  # 2000 <= JOr < 4000
+    "lt_6000": 0.88,  # 4000 <= JOr < 6000
+    "lt_10000": 0.88,  # 6000 <= JOr < 10000
+    "ge_10000": 0.88,  # JOr >= 10000 — branche speciale avec marge -1500
 }
 # Marge soustractive (en v/j) appliquee sur la branche JOr >= 10000.
 # Capage final : max(JOr - 1500, round(coef * JOr, -2)).
@@ -52,13 +50,13 @@ _DPL_MIN_HIGH_MARGIN = 1500
 # Borne superieure : DPLmax = coef_max(JOr) * JOr, avec un floor de +10 (cf
 # spec § "Cas limites" : eviter DPLmax = DPL exactement).
 _DPL_MAX_COEFS = {
-    "lt_500": 1.25,        # JOr < 500       -> 1.25 * JOr (marge max obs.)
+    "lt_500": 1.25,  # JOr < 500       -> 1.25 * JOr (marge max obs.)
     "lt_1000": 1.25,
     "lt_2000": 1.15,
     "lt_4000": 1.12,
     "lt_6000": 1.12,
     "lt_10000": 1.12,
-    "ge_10000": 1.12,      # branche speciale avec plafond +1500
+    "ge_10000": 1.12,  # branche speciale avec plafond +1500
 }
 _DPL_MAX_FLOOR_OFFSET = 10
 # Marge additive (en v/j) appliquee comme plafond de la branche JOr >= 10000.
@@ -80,11 +78,12 @@ _DPL_MAX_HIGH_MARGIN = 1500
 # La coherence ordinale (min <= central <= max) est imposee en post-traitement :
 # un arrondi independant peut casser l'ordre (ex : 145, 148, 152 -> 145, 150, 150).
 
+
 def _round_progressive(s: pd.Series) -> pd.Series:
     """Arrondi 3 paliers (Option B, cf ARRONDI_PROGRESSIF_specs.md):
-       v < 100         -> multiple de 5
-       100 <= v < 1000 -> multiple de 10
-       v >= 1000       -> multiple de 100
+    v < 100         -> multiple de 5
+    100 <= v < 1000 -> multiple de 10
+    v >= 1000       -> multiple de 100
     """
     arr = pd.to_numeric(s, errors="coerce").fillna(0).astype(float).to_numpy()
     out = np.where(
@@ -162,23 +161,28 @@ def _calculer_DPLmax(JOr: float) -> float:
         return max(_DPL_MAX_COEFS["lt_500"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET)
     elif JOr < 1000:
         return round(
-            max(_DPL_MAX_COEFS["lt_1000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET), -2,
+            max(_DPL_MAX_COEFS["lt_1000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET),
+            -2,
         )
     elif JOr < 2000:
         return round(
-            max(_DPL_MAX_COEFS["lt_2000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET), -2,
+            max(_DPL_MAX_COEFS["lt_2000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET),
+            -2,
         )
     elif JOr < 4000:
         return round(
-            max(_DPL_MAX_COEFS["lt_4000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET), -2,
+            max(_DPL_MAX_COEFS["lt_4000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET),
+            -2,
         )
     elif JOr < 6000:
         return round(
-            max(_DPL_MAX_COEFS["lt_6000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET), -2,
+            max(_DPL_MAX_COEFS["lt_6000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET),
+            -2,
         )
     elif JOr < 10000:
         return round(
-            max(_DPL_MAX_COEFS["lt_10000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET), -2,
+            max(_DPL_MAX_COEFS["lt_10000"] * JOr, JOr + _DPL_MAX_FLOOR_OFFSET),
+            -2,
         )
     else:
         return round(

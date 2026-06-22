@@ -27,14 +27,18 @@ class TestModelsList:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_arbitrary_dir_without_session_id_returns_400(self, authenticated_client, tmp_path):
+    async def test_arbitrary_dir_without_session_id_returns_400(
+        self, authenticated_client, tmp_path
+    ):
         # P0-4: `root` / `dir` is meaningless without a session_id to scope it
         # against; the endpoint refuses cross-tenant exploration with 400.
         r = await authenticated_client.get(f"/api/models/list?dir={tmp_path}")
         assert r.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_arbitrary_dir_outside_session_returns_403(self, authenticated_client, owned_session_id, tmp_path):
+    async def test_arbitrary_dir_outside_session_returns_403(
+        self, authenticated_client, owned_session_id, tmp_path
+    ):
         # P0-4: even with a valid owned session_id, paths outside the
         # caller's per-session tree are refused with 403.
         r = await authenticated_client.get(

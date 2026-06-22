@@ -6,9 +6,10 @@ stats (compute). Point d'entree unique consomme par le backend.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import geopandas as gpd
 
@@ -89,7 +90,8 @@ def generate_evolution(
     gdf_t2 = _as_gdf(t2)
 
     matches = matching.match_segments(
-        gdf_t1, gdf_t2,
+        gdf_t1,
+        gdf_t2,
         use_ban=opts.use_ban,
         score_auto=opts.score_auto,
         score_min=opts.score_min,
@@ -101,7 +103,9 @@ def generate_evolution(
 
     progress(0.95, "build")
     geojson = compute.build_evolution_geojson(
-        gdf_t1, gdf_t2, matches,
+        gdf_t1,
+        gdf_t2,
+        matches,
         plancher_t1=opts.plancher_t1,
         clamp_pct=opts.clamp_pct,
         with_sig=opts.with_sig,

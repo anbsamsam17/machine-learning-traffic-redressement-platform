@@ -12,7 +12,6 @@ import importlib
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Routeurs (tous les modules dans app.routers/*.py)
 # ---------------------------------------------------------------------------
@@ -128,9 +127,11 @@ def test_core_app_modules_import(module_name):
 # Sanity : app.main contient app FastAPI
 # ---------------------------------------------------------------------------
 
+
 def test_app_main_has_fastapi_app():
     """app.main expose un objet `app` FastAPI utilisable."""
     from app.main import app
+
     assert app is not None
     # FastAPI = sous-classe de Starlette ; on verifie au moins routes attribute
     assert hasattr(app, "routes")

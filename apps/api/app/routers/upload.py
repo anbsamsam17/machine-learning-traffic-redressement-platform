@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from ..auth import UserRecord, get_current_user, require_owned_session
@@ -18,7 +18,6 @@ from ..config import get_settings
 from ..error_messages import user_message
 from ..rate_limit import limit_upload
 from ..session import session_manager
-from .sessions import get_current_user_optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/upload", tags=["upload"])
@@ -36,15 +35,16 @@ def _check_zip_bomb(content: bytes) -> None:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Archive suspecte: taille decompressee "
-                           f"({total_uncompressed // (1024*1024)} MB) depasse la limite de 1 GB.",
+                    f"({total_uncompressed // (1024*1024)} MB) depasse la limite de 1 GB.",
                 )
     except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="Archive ZIP invalide.")
+        raise HTTPException(status_code=400, detail="Archive ZIP invalide.") from None
 
 
 # ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
+
 
 class UploadResponse(BaseModel):
     session_id: str
@@ -70,6 +70,7 @@ class ModelUploadResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
     """Parse raw bytes into a pandas DataFrame (GeoJSON, CSV, SHP, or Parquet).
 
@@ -91,12 +92,11 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
     if suffix == ".parquet":
         try:
             import geopandas as gpd
+
             gdf = gpd.read_parquet(io.BytesIO(content))
             df = pd.DataFrame(gdf.drop(columns="geometry", errors="ignore"))
             if "geometry" in gdf.columns:
-                df["geometry"] = gdf["geometry"].apply(
-                    lambda g: g.__geo_interface__ if g else None
-                )
+                df["geometry"] = gdf["geometry"].apply(lambda g: g.__geo_interface__ if g else None)
                 df["__geometry_json"] = gdf["geometry"].apply(
                     lambda g: json.dumps(g.__geo_interface__) if g else None
                 )
@@ -142,6 +142,7 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
                 raise ValueError("No .shp file found in the ZIP archive.")
             try:
                 import geopandas as gpd
+
                 gdf = gpd.read_file(str(shp_files[0]))
                 df = pd.DataFrame(gdf.drop(columns="geometry", errors="ignore"))
                 if "geometry" in gdf.columns:
@@ -153,7 +154,7 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
                     )
                 return df
             except Exception as exc:
-                raise ValueError(f"Impossible de lire le Shapefile: {exc}")
+                raise ValueError(f"Impossible de lire le Shapefile: {exc}") from exc
 
     raise ValueError(f"Format de fichier non supporte: {suffix}")
 
@@ -161,6 +162,7 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.post("", response_model=UploadResponse)
 @limit_upload()
@@ -182,7 +184,7 @@ async def upload_data(
         raise HTTPException(
             status_code=413,
             detail=f"Fichier trop volumineux ({len(content) // (1024*1024)} MB). "
-                   f"Maximum autorise: {settings.MAX_UPLOAD_MB} MB.",
+            f"Maximum autorise: {settings.MAX_UPLOAD_MB} MB.",
         )
 
     try:
@@ -191,7 +193,7 @@ async def upload_data(
         raise
     except Exception as exc:
         logger.exception("upload_data: failed to parse file %s", file.filename)
-        raise HTTPException(status_code=400, detail=user_message(exc))
+        raise HTTPException(status_code=400, detail=user_message(exc)) from exc
 
     # P0-1: bind the session to the authenticated user so subsequent calls
     # can enforce ownership via `require_owned_session(...)`. Without the
@@ -208,7 +210,9 @@ async def upload_data(
     try:
         session_manager.set_user_session(current_user.user_id, session.session_id)
     except Exception:
-        logger.exception("Failed to bind session %s to user %s", session.session_id, current_user.user_id)
+        logger.exception(
+            "Failed to bind session %s to user %s", session.session_id, current_user.user_id
+        )
 
     preview = df.head(10).fillna("").to_dict(orient="records")
     # Convert geometry dicts to string in preview for JSON serialization
@@ -219,7 +223,10 @@ async def upload_data(
 
     logger.info(
         "Upload OK: session=%s file=%s rows=%d cols=%d",
-        session.session_id, file.filename, len(df), len(df.columns),
+        session.session_id,
+        file.filename,
+        len(df),
+        len(df.columns),
     )
 
     return UploadResponse(
@@ -240,7 +247,7 @@ async def upload_validation_data(
     """Upload a validation dataset for model evaluation."""
     # P0-2: enforce ownership — refuses cross-tenant access with 404 (not 403
     # to avoid leaking session id existence).
-    session = require_owned_session(session_id, current_user)
+    require_owned_session(session_id, current_user)
 
     settings = get_settings()
     content = await file.read()
@@ -254,9 +261,10 @@ async def upload_validation_data(
     except Exception as exc:
         logger.exception(
             "upload_validation_data: failed to parse file %s (session=%s)",
-            file.filename, session_id,
+            file.filename,
+            session_id,
         )
-        raise HTTPException(status_code=400, detail=user_message(exc))
+        raise HTTPException(status_code=400, detail=user_message(exc)) from exc
 
     session_manager.store_data(session_id, "validation_df", df)
     session_manager.store_data(session_id, "validation_filename", file.filename)
@@ -279,7 +287,7 @@ async def upload_model(
 ) -> ModelUploadResponse:
     """Upload a model archive (.zip containing .h5, .json, .mat)."""
     # P0-2: enforce ownership before touching the session.
-    session = require_owned_session(session_id, current_user)
+    require_owned_session(session_id, current_user)
 
     content = await file.read()
     if not (file.filename or "").lower().endswith(".zip"):
@@ -295,12 +303,13 @@ async def upload_model(
                 if name.endswith((".h5", ".json", ".mat", ".weights.h5")):
                     model_files[name] = zf.read(name)
     except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="Archive ZIP invalide.")
+        raise HTTPException(status_code=400, detail="Archive ZIP invalide.") from None
     except Exception as exc:
         logger.exception(
-            "upload_model: failed to extract model archive (session=%s)", session_id,
+            "upload_model: failed to extract model archive (session=%s)",
+            session_id,
         )
-        raise HTTPException(status_code=400, detail=user_message(exc))
+        raise HTTPException(status_code=400, detail=user_message(exc)) from exc
 
     if not model_files:
         raise HTTPException(

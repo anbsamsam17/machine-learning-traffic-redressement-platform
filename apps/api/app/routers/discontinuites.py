@@ -66,9 +66,15 @@ REQUIRED_GRAPH_COLUMNS: tuple[str, ...] = ("REF_IN_ID", "NREF_IN_ID")
 
 #: Colonnes optionnelles surfaceees au scoring (drivers + topologie).
 OPTIONAL_SEGMENT_COLUMNS: tuple[str, ...] = (
-    "TMJOFCDTV", "TMJOFCDPL", "functional_class", "FC",
-    "RAMP", "ROUNDABOUT",
-    "avg_distance_before_m", "avg_min_distance_m", "truck_avg_distance_before_m",
+    "TMJOFCDTV",
+    "TMJOFCDPL",
+    "functional_class",
+    "FC",
+    "RAMP",
+    "ROUNDABOUT",
+    "avg_distance_before_m",
+    "avg_min_distance_m",
+    "truck_avg_distance_before_m",
 )
 
 
@@ -151,7 +157,8 @@ def _ensure_session(session_id: str | None, user: UserRecord, mode: str = "TV") 
     except Exception:  # noqa: BLE001 — binding best-effort.
         logger.exception(
             "Echec liaison session discontinuites %s a user %s",
-            session.session_id[:8], user.user_id[:8],
+            session.session_id[:8],
+            user.user_id[:8],
         )
     return session.session_id
 
@@ -354,7 +361,9 @@ def _read_segments_geojson(path: Path):
 
 @router.post("/upload-geojson", response_model=UploadGeojsonResponse)
 async def upload_geojson(
-    file: UploadFile = File(..., description="Fichier .geojson / .json / .parquet (aretes LineString)"),
+    file: UploadFile = File(
+        ..., description="Fichier .geojson / .json / .parquet (aretes LineString)"
+    ),
     session_id: str | None = Form(None, description="Session ID existante (sinon nouvelle)"),
     current_user: UserRecord = Depends(get_current_user),
 ) -> UploadGeojsonResponse:
@@ -430,7 +439,11 @@ async def upload_geojson(
 
     logger.info(
         "Discontinuites upload: sid=%s file=%s n_features=%d lines=%d size=%.2fMB",
-        sid[:8], file.filename, n_features, n_lines, file_size_mb,
+        sid[:8],
+        file.filename,
+        n_features,
+        n_lines,
+        file_size_mb,
     )
 
     return UploadGeojsonResponse(
@@ -447,7 +460,9 @@ async def upload_geojson(
 @router.post("/upload-fcd", response_model=UploadFcdResponse)
 async def upload_fcd(
     file: UploadFile = File(..., description="Fichier .parquet FCDREFGLOBAL"),
-    session_id: str = Form(..., description="Session ID existante (un geojson doit deja avoir ete uploade)"),
+    session_id: str = Form(
+        ..., description="Session ID existante (un geojson doit deja avoir ete uploade)"
+    ),
     current_user: UserRecord = Depends(get_current_user),
 ) -> UploadFcdResponse:
     """Stocke un parquet FCDREFGLOBAL en complement du geojson de segments.
@@ -575,7 +590,11 @@ async def upload_fcd(
 
     logger.info(
         "Discontinuites upload-fcd: sid=%s file=%s n_segments=%d cols_joinable=%d size=%.2fMB",
-        session_id[:8], file.filename, n_segments, len(cols_joinable), file_size_mb,
+        session_id[:8],
+        file.filename,
+        n_segments,
+        len(cols_joinable),
+        file_size_mb,
     )
 
     return UploadFcdResponse(
@@ -647,12 +666,14 @@ async def analyze(
             fcd_df = _load_fcd_parquet(fcd_path)
             logger.info(
                 "Discontinuites analyze: sid=%s fcdref.parquet detecte (%d lignes)",
-                session_id[:8], len(fcd_df),
+                session_id[:8],
+                len(fcd_df),
             )
         except Exception as exc:  # noqa: BLE001 — degrade gracefully.
             logger.warning(
                 "Discontinuites analyze: sid=%s fcdref.parquet illisible (%s) — mode degrade",
-                session_id[:8], exc,
+                session_id[:8],
+                exc,
             )
             fcd_df = None
 
@@ -670,9 +691,7 @@ async def analyze(
         nodes_path.write_text(
             json.dumps(fc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
         )
-        stats_path.write_text(
-            json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        stats_path.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError as exc:
         logger.exception("Echec ecriture sorties discontinuites sid=%s", session_id[:8])
         raise HTTPException(status_code=500, detail=f"Ecriture sorties impossible: {exc}") from exc
@@ -680,8 +699,11 @@ async def analyze(
     duration_total = round(time.perf_counter() - t0, 3)
     logger.info(
         "Discontinuites analyze: sid=%s n_nodes=%d duree=%.2fs (pipeline=%.2fs) fcd_joined=%s",
-        session_id[:8], stats["n_features"], duration_total,
-        stats["pipeline_duration_s"], stats.get("fcd_joined", False),
+        session_id[:8],
+        stats["n_features"],
+        duration_total,
+        stats["pipeline_duration_s"],
+        stats.get("fcd_joined", False),
     )
 
     warning: str | None = None

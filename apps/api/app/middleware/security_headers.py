@@ -20,12 +20,11 @@ those) so headers can't pollute the preflight allow-list.
 
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-
 
 # Allow-list of CDNs used by the generated HTML reports. Adding `'unsafe-inline'`
 # for scripts is unfortunate but Plotly/DataTables embed inline init blocks; we

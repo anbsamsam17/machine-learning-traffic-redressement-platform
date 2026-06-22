@@ -39,29 +39,28 @@ so the non-TF parts can be used without TF installed.
 
 from __future__ import annotations
 
+from .data_prep import prepare_training_data, split_train_valid
+from .grid_search import (
+    GridCombination,
+    build_feature_sets,
+    feature_mask_name,
+    generate_all_combinations,
+)
+from .normalize import denormalize, normalize, simple_norm
+
 # --- Always available (no TF dependency) ---
 from .types import (
     CONFIGS,
     HPM_CONFIG,
     HPS_CONFIG,
-    ModelKind,
-    ModelTypeConfig,
     PL_CONFIG,
     TV_CONFIG,
-)
-
-from .normalize import normalize, denormalize, simple_norm
-
-from .data_prep import prepare_training_data, split_train_valid
-
-from .grid_search import (
-    build_feature_sets,
-    feature_mask_name,
-    generate_all_combinations,
-    GridCombination,
+    ModelKind,
+    ModelTypeConfig,
 )
 
 # --- Lazy imports for TF-dependent modules ---
+
 
 def __getattr__(name: str):
     """Lazy-load TensorFlow-dependent symbols on first access."""
@@ -89,6 +88,7 @@ def __getattr__(name: str):
     if name in _tf_symbols:
         module_path, attr = _tf_symbols[name]
         import importlib
+
         mod = importlib.import_module(module_path, __package__)
         return getattr(mod, attr)
 

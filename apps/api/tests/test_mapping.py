@@ -8,9 +8,7 @@ import pytest
 class TestAutoMap:
     @pytest.mark.asyncio
     async def test_auto_map_invalid_session(self, authenticated_client):
-        r = await authenticated_client.post(
-            "/api/mapping/auto", json={"session_id": "nonexistent"}
-        )
+        r = await authenticated_client.post("/api/mapping/auto", json={"session_id": "nonexistent"})
         assert r.status_code == 404
 
     @pytest.mark.asyncio
@@ -53,14 +51,12 @@ class TestAutoMap:
         )
         sid = r1.json()["session_id"]
 
-        data = (await authenticated_client.post(
-            "/api/mapping/auto", json={"session_id": sid}
-        )).json()
+        data = (
+            await authenticated_client.post("/api/mapping/auto", json={"session_id": sid})
+        ).json()
 
         # These columns should be exact matches (canonical HERE names)
-        exact_targets = {
-            m["target"] for m in data["mappings"] if m["confidence"] == "exact"
-        }
+        exact_targets = {m["target"] for m in data["mappings"] if m["confidence"] == "exact"}
         # T2: le csv_content fixture expose TMJOBCTV/TMJOBCPL/TMJOFCDTV/TMJOFCDPL
         # canoniques -> exact matches.
         assert "TMJOBCTV" in exact_targets
@@ -78,15 +74,13 @@ class TestAutoMap:
         )
         sid = r1.json()["session_id"]
 
-        data = (await authenticated_client.post(
-            "/api/mapping/auto", json={"session_id": sid}
-        )).json()
+        data = (
+            await authenticated_client.post("/api/mapping/auto", json={"session_id": sid})
+        ).json()
 
         # Toutes les mappings non-missing pour interrogation
         all_mappings = {
-            m["target"]: m["source"]
-            for m in data["mappings"]
-            if m["source"] is not None
+            m["target"]: m["source"] for m in data["mappings"] if m["source"] is not None
         }
         # TMJOFCDTV est present comme TARGET canonique HERE,
         # source = TMJOFCDTV directement (exact) ou TMJAFCDTV (synonym).
@@ -102,9 +96,9 @@ class TestAutoMap:
         )
         sid = r1.json()["session_id"]
 
-        data = (await authenticated_client.post(
-            "/api/mapping/auto", json={"session_id": sid}
-        )).json()
+        data = (
+            await authenticated_client.post("/api/mapping/auto", json={"session_id": sid})
+        ).json()
 
         missing = [m for m in data["mappings"] if m["confidence"] == "missing"]
         assert len(missing) > 0

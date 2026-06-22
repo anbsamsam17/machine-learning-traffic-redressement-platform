@@ -36,10 +36,10 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import tensorflow as tf  # noqa: E402
 from tensorflow import keras  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Huber (P2A.1)
 # ---------------------------------------------------------------------------
+
 
 @keras.utils.register_keras_serializable(package="mdl_redressement", name="HuberLoss")
 class HuberLoss(keras.losses.Loss):
@@ -81,9 +81,8 @@ class HuberLoss(keras.losses.Loss):
 # Tolerance-aware (P2A.2)
 # ---------------------------------------------------------------------------
 
-@keras.utils.register_keras_serializable(
-    package="mdl_redressement", name="ToleranceAwareLoss"
-)
+
+@keras.utils.register_keras_serializable(package="mdl_redressement", name="ToleranceAwareLoss")
 class ToleranceAwareLoss(keras.losses.Loss):
     """MAE with an extra penalty on out-of-tolerance samples.
 
@@ -148,9 +147,8 @@ class ToleranceAwareLoss(keras.losses.Loss):
 # Pinball / quantile (P2A.3)
 # ---------------------------------------------------------------------------
 
-@keras.utils.register_keras_serializable(
-    package="mdl_redressement", name="PinballP80Loss"
-)
+
+@keras.utils.register_keras_serializable(package="mdl_redressement", name="PinballP80Loss")
 class PinballP80Loss(keras.losses.Loss):
     """Convenience subclass: pinball loss hard-coded to q=0.8.
 
@@ -175,9 +173,7 @@ class PinballP80Loss(keras.losses.Loss):
         return tf.reduce_mean(per_sample, axis=-1)
 
 
-@keras.utils.register_keras_serializable(
-    package="mdl_redressement", name="PinballLoss"
-)
+@keras.utils.register_keras_serializable(package="mdl_redressement", name="PinballLoss")
 class PinballLoss(keras.losses.Loss):
     """Pinball (quantile) loss.
 
@@ -202,9 +198,7 @@ class PinballLoss(keras.losses.Loss):
         reduction: str = "sum_over_batch_size",
     ) -> None:
         if not (0.0 < float(quantile) < 1.0):
-            raise ValueError(
-                f"quantile must lie strictly in (0, 1), got {quantile!r}"
-            )
+            raise ValueError(f"quantile must lie strictly in (0, 1), got {quantile!r}")
         super().__init__(name=name, reduction=reduction)
         self.quantile = float(quantile)
 

@@ -10,8 +10,8 @@ No minimum number of inputs is enforced by default -- the caller can set
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass, field
-from typing import Any, Iterator, Literal
+from dataclasses import dataclass
+from typing import Literal
 
 # Loss names accepted by ``model.compile(loss=...)``. The first three are
 # Keras built-ins; the last three are project-local custom losses defined
@@ -59,9 +59,7 @@ def build_feature_sets(
     mandatory_cols = [c for c in mandatory_cols if c]
     missing_mandatory = [c for c in mandatory_cols if c not in all_input_cols]
     if missing_mandatory:
-        raise ValueError(
-            f"Mandatory columns are not part of input-cols: {missing_mandatory}"
-        )
+        raise ValueError(f"Mandatory columns are not part of input-cols: {missing_mandatory}")
 
     if min_input_count < len(mandatory_cols):
         raise ValueError(
@@ -158,7 +156,7 @@ def generate_all_combinations(
     neurons_factors_list = neurons_factors_list or [[1.0, 1.0]]
     batch_sizes = batch_sizes or [256]
 
-    invalid_losses = [l for l in losses if l not in VALID_LOSSES]
+    invalid_losses = [loss for loss in losses if loss not in VALID_LOSSES]
     if invalid_losses:
         raise ValueError(
             f"Unknown loss(es) requested: {invalid_losses}. "
@@ -170,8 +168,7 @@ def generate_all_combinations(
     invalid_opts = [o for o in optimizers if o not in VALID_OPTIMIZERS]
     if invalid_opts:
         raise ValueError(
-            f"Unknown optimizer(s): {invalid_opts}. "
-            f"Allowed values: {sorted(VALID_OPTIMIZERS)}."
+            f"Unknown optimizer(s): {invalid_opts}. " f"Allowed values: {sorted(VALID_OPTIMIZERS)}."
         )
 
     weight_decays = weight_decays or [0.0]
@@ -200,13 +197,13 @@ def generate_all_combinations(
     # Detect whether each P3 axis was actually varied. When the axis stays
     # at its single legacy value we DON'T append a suffix to run_name (this
     # keeps existing fixture/run names byte-identical to pre-P3 behaviour).
-    suffix_opt   = optimizers != ["adam"]
-    suffix_wd    = weight_decays != [0.0]
-    suffix_skip  = skip_connection_options != [False]
+    suffix_opt = optimizers != ["adam"]
+    suffix_wd = weight_decays != [0.0]
+    suffix_skip = skip_connection_options != [False]
     suffix_sched = dropout_schedules != ["uniform"]
-    suffix_clip  = clipnorms != [None]
-    suffix_norm  = norm_layers != [None]
-    suffix_q     = quantile_head_options != [False]
+    suffix_clip = clipnorms != [None]
+    suffix_norm = norm_layers != [None]
+    suffix_q = quantile_head_options != [False]
 
     combos: list[GridCombination] = []
 
@@ -226,7 +223,9 @@ def generate_all_combinations(
                                                     for clip in clipnorms:
                                                         for norm in norm_layers:
                                                             for q_head in quantile_head_options:
-                                                                nf_label = "x".join(str(f) for f in nf)
+                                                                nf_label = "x".join(
+                                                                    str(f) for f in nf
+                                                                )
                                                                 run_name = (
                                                                     f"{activation}_lr{lr}"
                                                                     f"_ep{mne}_{loss_name}"

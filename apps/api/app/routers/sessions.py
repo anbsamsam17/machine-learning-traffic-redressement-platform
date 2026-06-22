@@ -15,7 +15,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
-from ..auth import UserRecord, verify_token, user_store
+from ..auth import UserRecord, user_store, verify_token
 from ..session import session_manager
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,10 @@ def _derive_step(session_data: dict) -> str:
     persisted in the session and return the most advanced one reached.
     """
     # Evaluation: an evaluation result was stored
-    if session_data.get("eval_result") is not None or session_data.get("evaluation_metrics") is not None:
+    if (
+        session_data.get("eval_result") is not None
+        or session_data.get("evaluation_metrics") is not None
+    ):
         return "evaluation"
     # Training kicked off
     if session_data.get("training_task_id") or session_data.get("output_dir"):
@@ -94,7 +97,10 @@ def _derive_step(session_data: dict) -> str:
     if session_data.get("training_config") is not None:
         return "config"
     # Mapping was validated => learning_df was built
-    if session_data.get("learning_df") is not None or session_data.get("confirmed_mapping") is not None:
+    if (
+        session_data.get("learning_df") is not None
+        or session_data.get("confirmed_mapping") is not None
+    ):
         return "preview"
     # Raw file uploaded
     if session_data.get("raw_df") is not None or session_data.get("filename"):
@@ -172,7 +178,9 @@ async def get_current_session(
     file_name = data.get("filename")
     rows = _safe_rows(data)
     columns_count = _safe_cols(data)
-    mapping_validated = data.get("learning_df") is not None or data.get("confirmed_mapping") is not None
+    mapping_validated = (
+        data.get("learning_df") is not None or data.get("confirmed_mapping") is not None
+    )
     training_task_id = data.get("training_task_id")
     output_dir = data.get("output_dir")
 

@@ -16,14 +16,14 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from threading import Lock
 from typing import Annotated
 
+import bcrypt
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-import bcrypt
 from pydantic import BaseModel, EmailStr
 
 from .config import get_settings
@@ -58,7 +58,7 @@ _TOKEN_EXPIRE_HOURS = 24
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     settings = get_settings()
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(hours=_TOKEN_EXPIRE_HOURS))
+    expire = datetime.now(UTC) + (expires_delta or timedelta(hours=_TOKEN_EXPIRE_HOURS))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=_ALGORITHM)
 
@@ -80,6 +80,7 @@ def verify_token(token: str) -> dict:
 # In-memory user store (swap for DB later)
 # ---------------------------------------------------------------------------
 
+
 class UserRecord:
     __slots__ = ("user_id", "email", "hashed_password", "created_at")
 
@@ -96,6 +97,7 @@ class UserStore:
     Redis storage ensures users persist across API restarts and are shared
     across multiple uvicorn workers.
     """
+
     _REDIS_PREFIX = "user:"
     _REDIS_ID_PREFIX = "userid:"
 
@@ -107,6 +109,7 @@ class UserStore:
         if redis_url:
             try:
                 import redis
+
                 self._redis = redis.from_url(redis_url, decode_responses=False)
                 self._redis.ping()
                 logger.info("UserStore using Redis backend")
@@ -116,15 +119,19 @@ class UserStore:
 
     def _serialize(self, user: UserRecord) -> bytes:
         import json as _json
-        return _json.dumps({
-            "user_id": user.user_id,
-            "email": user.email,
-            "hashed_password": user.hashed_password,
-            "created_at": user.created_at,
-        }).encode("utf-8")
+
+        return _json.dumps(
+            {
+                "user_id": user.user_id,
+                "email": user.email,
+                "hashed_password": user.hashed_password,
+                "created_at": user.created_at,
+            }
+        ).encode("utf-8")
 
     def _deserialize(self, raw: bytes) -> UserRecord:
         import json as _json
+
         d = _json.loads(raw.decode("utf-8"))
         user = UserRecord.__new__(UserRecord)
         user.user_id = d["user_id"]
@@ -226,6 +233,7 @@ async def get_current_user(
 # Dependency: get_owned_session (A2 — closes IDOR P1-2)
 # ---------------------------------------------------------------------------
 
+
 def get_owned_session(
     session_id: str,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
@@ -249,7 +257,8 @@ def get_owned_session(
         # Log the cross-tenant attempt for monitoring (truncated ids only).
         logger.warning(
             "IDOR refused: user=%s tried to access session owned by %s",
-            current_user.user_id[:8], sess.owner_user_id[:8],
+            current_user.user_id[:8],
+            sess.owner_user_id[:8],
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -258,7 +267,7 @@ def get_owned_session(
     return sess
 
 
-def require_owned_session(session_id: str, user: "UserRecord") -> Session:
+def require_owned_session(session_id: str, user: UserRecord) -> Session:
     """Imperative helper variant of ``get_owned_session``.
 
     Used by routers that resolve ``session_id`` from a body payload (instead
@@ -274,7 +283,8 @@ def require_owned_session(session_id: str, user: "UserRecord") -> Session:
     if sess.owner_user_id and sess.owner_user_id != user.user_id:
         logger.warning(
             "IDOR refused: user=%s tried to access session owned by %s",
-            user.user_id[:8], sess.owner_user_id[:8],
+            user.user_id[:8],
+            sess.owner_user_id[:8],
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -286,6 +296,7 @@ def require_owned_session(session_id: str, user: "UserRecord") -> Session:
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -315,6 +326,7 @@ class UserResponse(BaseModel):
 # `limiter.limit(...)` decorator after the limiter exists. We expose hooks
 # here for the future router-level decorators expected by A6.
 
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @limit_auth_register()
 async def register(request: Request, body: RegisterRequest) -> UserResponse:
@@ -327,7 +339,7 @@ async def register(request: Request, body: RegisterRequest) -> UserResponse:
     try:
         user = user_store.register(body.email, body.password)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     logger.info("User registered: user_id=%s", user.user_id[:8])
     return UserResponse(user_id=user.user_id, email=user.email)
 

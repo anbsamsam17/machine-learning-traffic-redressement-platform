@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 import os
 import random
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +45,7 @@ def seed_everything(seed: int, *, enable_op_determinism: bool = True) -> None:
     # NumPy
     try:
         import numpy as np
+
         np.random.seed(seed)
     except ImportError:
         logger.debug("numpy not installed; skipping np.random.seed")
@@ -53,9 +53,11 @@ def seed_everything(seed: int, *, enable_op_determinism: bool = True) -> None:
     # TensorFlow + Keras
     try:
         import tensorflow as tf
+
         tf.random.set_seed(seed)
         try:
             import keras
+
             keras.utils.set_random_seed(seed)
         except ImportError:
             # Keras 3 vs tf.keras shim
@@ -67,7 +69,8 @@ def seed_everything(seed: int, *, enable_op_determinism: bool = True) -> None:
             except (RuntimeError, AttributeError) as exc:
                 # Older TF or already-init = ignore
                 logger.debug(
-                    "enable_op_determinism skipped: %s", exc,
+                    "enable_op_determinism skipped: %s",
+                    exc,
                 )
     except ImportError:
         logger.debug("tensorflow not installed; skipping tf seed")

@@ -94,6 +94,7 @@ def _read_status(session_id: str) -> dict[str, Any] | None:
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class EvolutionUploadResponse(BaseModel):
     session_id: str
 
@@ -121,6 +122,7 @@ class EvolutionStatusResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _read_geojson_upload(file: UploadFile, label: str) -> bytes:
     """Lire et valider sommairement un upload GeoJSON (taille + extension + JSON).
@@ -153,7 +155,7 @@ async def _read_geojson_upload(file: UploadFile, label: str) -> bytes:
     try:
         head = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=400, detail=f"{label} : GeoJSON invalide ({exc}).")
+        raise HTTPException(status_code=400, detail=f"{label} : GeoJSON invalide ({exc}).") from exc
     if not isinstance(head, dict) or head.get("type") != "FeatureCollection":
         raise HTTPException(
             status_code=400,
@@ -207,10 +209,7 @@ def _run_generation(
 
         if not include_new:
             feats = geojson.get("features", []) if isinstance(geojson, dict) else []
-            kept = [
-                f for f in feats
-                if (f.get("properties") or {}).get("categorie") != "nouveau"
-            ]
+            kept = [f for f in feats if (f.get("properties") or {}).get("categorie") != "nouveau"]
             geojson = {**geojson, "features": kept}
 
         # Persistance du resultat dans la session (survit au worker, TTL gere).
@@ -268,6 +267,7 @@ async def _generation_task(
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.post("/upload", response_model=EvolutionUploadResponse)
 async def upload_cartes(
     file_t1: UploadFile = File(..., description="Carte de debits annee 1 (T1) — GeoJSON"),
@@ -296,14 +296,17 @@ async def upload_cartes(
     except Exception:  # noqa: BLE001
         logger.exception(
             "Failed to bind evolution session %s to user %s",
-            session.session_id[:8], current_user.user_id[:8],
+            session.session_id[:8],
+            current_user.user_id[:8],
         )
 
     _init_status(session.session_id)
 
     logger.info(
         "Evolution upload OK: session=%s t1=%dB t2=%dB",
-        session.session_id[:8], len(t1_bytes), len(t2_bytes),
+        session.session_id[:8],
+        len(t1_bytes),
+        len(t2_bytes),
     )
     return EvolutionUploadResponse(session_id=session.session_id)
 
@@ -325,7 +328,7 @@ async def generate_evolution_route(
         t1_bytes = session_manager.get_data(body.session_id, _KEY_T1)
         t2_bytes = session_manager.get_data(body.session_id, _KEY_T2)
     except KeyError:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.") from None
 
     if not t1_bytes or not t2_bytes:
         raise HTTPException(
@@ -346,7 +349,7 @@ async def generate_evolution_route(
     try:
         session_manager.store_data(body.session_id, _KEY_STATUS, "running")
     except KeyError:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.") from None
 
     # Lancement non bloquant : la tache survit a la reponse HTTP.
     asyncio.create_task(
@@ -362,7 +365,10 @@ async def generate_evolution_route(
 
     logger.info(
         "Evolution generation started: session=%s use_ban=%s plancher=%.1f include_new=%s",
-        body.session_id[:8], body.use_ban, body.plancher_t1, body.include_new,
+        body.session_id[:8],
+        body.use_ban,
+        body.plancher_t1,
+        body.include_new,
     )
     return EvolutionGenerateResponse(session_id=body.session_id, started=True)
 
@@ -383,13 +389,21 @@ async def evolution_status(
             stats = session_manager.get_data(session_id, _KEY_STATS, None)
             result = session_manager.get_data(session_id, _KEY_RESULT, None)
         except KeyError:
-            raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+            raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.") from None
         if result is not None:
             return EvolutionStatusResponse(
-                stage="done", progress=100.0, done=True, error=None, stats=stats,
+                stage="done",
+                progress=100.0,
+                done=True,
+                error=None,
+                stats=stats,
             )
         return EvolutionStatusResponse(
-            stage="idle", progress=0.0, done=False, error=None, stats=None,
+            stage="idle",
+            progress=0.0,
+            done=False,
+            error=None,
+            stats=None,
         )
 
     return EvolutionStatusResponse(
@@ -412,7 +426,7 @@ async def evolution_result(
     try:
         geojson = session_manager.get_data(session_id, _KEY_RESULT, None)
     except KeyError:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.") from None
 
     if geojson is None:
         raise HTTPException(
@@ -433,7 +447,7 @@ async def evolution_download(
     try:
         geojson = session_manager.get_data(session_id, _KEY_RESULT, None)
     except KeyError:
-        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.")
+        raise HTTPException(status_code=404, detail="Session non trouvee ou expiree.") from None
 
     if geojson is None:
         raise HTTPException(
@@ -448,8 +462,6 @@ async def evolution_download(
         content=body,
         media_type="application/geo+json",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="evolution_{session_id[:8]}.geojson"'
-            ),
+            "Content-Disposition": (f'attachment; filename="evolution_{session_id[:8]}.geojson"'),
         },
     )

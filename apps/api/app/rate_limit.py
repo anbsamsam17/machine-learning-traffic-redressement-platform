@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Callable
+from collections.abc import Callable
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -68,6 +68,7 @@ limiter = Limiter(
 
 # Convenience decorator factories — keeps router code readable and lets
 # us tweak limits in a single place if Oracle Cloud capacity changes.
+
 
 def limit_auth_login() -> Callable:
     return limiter.limit("10/minute", key_func=get_remote_address)

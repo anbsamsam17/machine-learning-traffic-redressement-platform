@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.ml.types import TV_CONFIG, PL_CONFIG, ModelTypeConfig
-
+from app.services.ml.types import PL_CONFIG, TV_CONFIG, ModelTypeConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,6 +39,7 @@ REQUIRED_FIELDS = [
 # ---------------------------------------------------------------------------
 # TV_CONFIG
 # ---------------------------------------------------------------------------
+
 
 class TestTVConfig:
     def test_is_model_type_config(self):
@@ -140,6 +140,7 @@ class TestTVConfig:
 # ---------------------------------------------------------------------------
 # PL_CONFIG
 # ---------------------------------------------------------------------------
+
 
 class TestPLConfig:
     def test_is_model_type_config(self):

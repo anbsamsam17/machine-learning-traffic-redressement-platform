@@ -35,8 +35,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..auth import UserRecord, get_current_user, require_owned_session
@@ -71,25 +71,45 @@ REQUIRED_SEGMENT_COLUMNS: tuple[str, ...] = REQUIRED_SEGMENT_BASE + ("JOr",)
 #: keep displaying without warnings.
 OPTIONAL_SEGMENT_COLUMNS: tuple[str, ...] = (
     # Legacy TVr (retro-compat with pre-2026-05 carte exports).
-    "TVrmin", "TVrmax",
+    "TVrmin",
+    "TVrmax",
     # New canonical jour-ouvre flow (JOr replaces TVr).
-    "JOrmin", "JOrmax",
+    "JOrmin",
+    "JOrmax",
     # PL flow (unchanged from legacy schema).
-    "DPL", "DPLmin", "DPLmax", "PL", "PLred", "VLred",
+    "DPL",
+    "DPLmin",
+    "DPLmax",
+    "PL",
+    "PLred",
+    "VLred",
     # HPM (heure de pointe matin) — only present if HPM model loaded.
-    "PM", "PMmin", "PMmax",
+    "PM",
+    "PMmin",
+    "PMmax",
     # HPS (heure de pointe soir) — only present if HPS model loaded.
-    "PS", "PSmin", "PSmax",
+    "PS",
+    "PSmin",
+    "PSmax",
     # Direction / heading produced by the new carte pipeline.
-    "DD", "HD",
+    "DD",
+    "HD",
     # Saturation v3 diagnostic columns (alpha effective + critical zone flag).
-    "alpha_eff", "alpha_source", "is_critical_zone",
+    "alpha_eff",
+    "alpha_source",
+    "is_critical_zone",
     # Topology / functional class (unchanged).
-    "FC", "RAMP", "ROUNDABOUT", "functional_class",
+    "FC",
+    "RAMP",
+    "ROUNDABOUT",
+    "functional_class",
     # FCD raw inputs (legacy).
-    "TMJOFCDTV", "TMJOFCDPL",
-    "avg_distance_car", "avg_distance_truck",
-    "truck_avg_speed", "car_avg_speed",
+    "TMJOFCDTV",
+    "TMJOFCDPL",
+    "avg_distance_car",
+    "avg_distance_truck",
+    "truck_avg_speed",
+    "car_avg_speed",
     "length_m",
 )
 
@@ -107,10 +127,24 @@ SENSOR_REQUIRED_COLUMNS: tuple[str, ...] = (
 
 #: Aliases accepted for latitude / longitude detection (lowercased compare).
 _LAT_ALIASES: tuple[str, ...] = (
-    "lat", "latitude", "y", "ycoord", "y_coord", "coord_y", "wgs84_lat",
+    "lat",
+    "latitude",
+    "y",
+    "ycoord",
+    "y_coord",
+    "coord_y",
+    "wgs84_lat",
 )
 _LON_ALIASES: tuple[str, ...] = (
-    "lon", "long", "longitude", "lng", "x", "xcoord", "x_coord", "coord_x", "wgs84_lon",
+    "lon",
+    "long",
+    "longitude",
+    "lng",
+    "x",
+    "xcoord",
+    "x_coord",
+    "coord_x",
+    "wgs84_lon",
 )
 
 #: Canonical frontend keys — the map circle layers (apps/web/lib/map/setup.ts,
@@ -127,8 +161,8 @@ CANONICAL_PL_KEY: str = "TMJA Poids Lourds (veh/jour)"
 #: output name, then a few reasonable shorthand variants. NOTE: none of these
 #: may contain "poids lourds" — that would collide with the PL detection.
 _TV_DEBIT_ALIASES: tuple[str, ...] = (
-    "tmja tous vehicules (veh/jour)",          # canonique
-    "moyenne jours ouvrable (veh/jour)",        # counting-loops.geojson
+    "tmja tous vehicules (veh/jour)",  # canonique
+    "moyenne jours ouvrable (veh/jour)",  # counting-loops.geojson
     "tmjobctv",
     "tmjatv",
     "tmja tv",
@@ -137,8 +171,8 @@ _TV_DEBIT_ALIASES: tuple[str, ...] = (
 
 #: Aliases accepted for the PL (poids lourds) debit column (lowercased compare).
 _PL_DEBIT_ALIASES: tuple[str, ...] = (
-    "tmja poids lourds (veh/jour)",                       # canonique
-    "moyenne poids lourds jours ouvrable (veh/jour)",      # counting-loops-pl.geojson
+    "tmja poids lourds (veh/jour)",  # canonique
+    "moyenne poids lourds jours ouvrable (veh/jour)",  # counting-loops-pl.geojson
     "tmjobcpl",
     "tmjapl",
     "tmja pl",
@@ -257,7 +291,8 @@ def _ensure_session(session_id: str | None, user: UserRecord, mode: str = "TV") 
     except Exception:  # noqa: BLE001 — non-fatal; binding is best-effort.
         logger.exception(
             "Failed to bind visualisation session %s to user %s",
-            session.session_id[:8], user.user_id[:8],
+            session.session_id[:8],
+            user.user_id[:8],
         )
     return session.session_id
 
@@ -466,7 +501,9 @@ def _parse_sensors_dataframe(raw_bytes: bytes, filename: str) -> pd.DataFrame:
                 continue
             except Exception as exc:  # noqa: BLE001 — try next encoding then surface.
                 logger.debug("CSV parse with %s failed: %s", enc, exc)
-        raise HTTPException(status_code=400, detail="Impossible de decoder le CSV (UTF-8 / latin-1 / cp1252).")
+        raise HTTPException(
+            status_code=400, detail="Impossible de decoder le CSV (UTF-8 / latin-1 / cp1252)."
+        )
 
     if suffix in {".xlsx", ".xls"}:
         try:
@@ -639,11 +676,13 @@ def _build_point_fc_from_geojson(parsed: dict) -> tuple[dict, int, int, int, lis
         props = _normalise_sensor_props(raw_props)
         # Emit canonical TV/PL keys so the frontend circle filter matches.
         props = _inject_canonical_debit_keys(props)
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [lon, lat]},
-            "properties": props,
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": props,
+            }
+        )
 
     if n_total == 0:
         raise HTTPException(
@@ -655,9 +694,7 @@ def _build_point_fc_from_geojson(parsed: dict) -> tuple[dict, int, int, int, lis
     if n_points * 2 < n_total:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Geometries majoritairement non-Point. Attendu: capteurs ponctuels (Point)."
-            ),
+            detail=("Geometries majoritairement non-Point. Attendu: capteurs ponctuels (Point)."),
         )
     if not features:
         raise HTTPException(
@@ -806,11 +843,13 @@ def _build_sensors_geojson(
             if v_pl is not None and v_pl > 0:
                 n_pl += 1
 
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [lon, lat]},
-            "properties": props,
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": props,
+            }
+        )
 
     bbox = _bbox_from_coords(xs, ys)
     fc = {"type": "FeatureCollection", "features": features}
@@ -844,8 +883,12 @@ def _write_meta_sidecar(viz: Path, kind: str, payload: dict) -> None:
 
 @router.post("/upload-geojson", response_model=GeojsonUploadResponse)
 async def upload_geojson(
-    file: UploadFile = File(..., description="Fichier .geojson / .json / .parquet de segments LineString"),
-    session_id: str | None = Form(None, description="Session ID existante (omettre pour en creer une)"),
+    file: UploadFile = File(
+        ..., description="Fichier .geojson / .json / .parquet de segments LineString"
+    ),
+    session_id: str | None = Form(
+        None, description="Session ID existante (omettre pour en creer une)"
+    ),
     current_user: UserRecord = Depends(get_current_user),
 ) -> GeojsonUploadResponse:
     """Receive a segments GeoJSON / Parquet and persist it on disk.
@@ -896,18 +939,26 @@ async def upload_geojson(
 
     file_size_mb = round(len(payload_bytes) / (1024 * 1024), 3)
 
-    _write_meta_sidecar(viz, "segments", {
-        "n_features": n_features,
-        "n_line_features": n_line_features,
-        "bbox": bbox,
-        "columns": columns,
-        "file_size_mb": file_size_mb,
-        "filename": file.filename,
-    })
+    _write_meta_sidecar(
+        viz,
+        "segments",
+        {
+            "n_features": n_features,
+            "n_line_features": n_line_features,
+            "bbox": bbox,
+            "columns": columns,
+            "file_size_mb": file_size_mb,
+            "filename": file.filename,
+        },
+    )
 
     logger.info(
         "Visualisation geojson uploaded: sid=%s file=%s n_features=%d lines=%d size=%.2fMB",
-        sid[:8], file.filename, n_features, n_line_features, file_size_mb,
+        sid[:8],
+        file.filename,
+        n_features,
+        n_line_features,
+        file_size_mb,
     )
 
     return GeojsonUploadResponse(
@@ -1016,7 +1067,8 @@ async def upload_sensors(
         if missing_optional:
             logger.warning(
                 "Visualisation sensors: colonnes attendues manquantes (sid=%s): %s",
-                sid[:8], missing_optional,
+                sid[:8],
+                missing_optional,
             )
 
         fc, n_sensors, n_tv, n_pl, bbox = _build_sensors_geojson(df, lon_col, lat_col)
@@ -1042,22 +1094,32 @@ async def upload_sensors(
         raise HTTPException(status_code=500, detail=f"Ecriture impossible: {exc}") from exc
 
     file_size_mb = round(len(payload_bytes) / (1024 * 1024), 3)
-    _write_meta_sidecar(viz, "sensors", {
-        "n_sensors": n_sensors,
-        "n_tv": n_tv,
-        "n_pl": n_pl,
-        "bbox": bbox,
-        "file_size_mb": file_size_mb,
-        "filename": file.filename,
-        "lon_col": lon_col,
-        "lat_col": lat_col,
-        "missing_optional_columns": missing_optional,
-        "source_format": suffix.lstrip("."),
-    })
+    _write_meta_sidecar(
+        viz,
+        "sensors",
+        {
+            "n_sensors": n_sensors,
+            "n_tv": n_tv,
+            "n_pl": n_pl,
+            "bbox": bbox,
+            "file_size_mb": file_size_mb,
+            "filename": file.filename,
+            "lon_col": lon_col,
+            "lat_col": lat_col,
+            "missing_optional_columns": missing_optional,
+            "source_format": suffix.lstrip("."),
+        },
+    )
 
     logger.info(
         "Visualisation sensors uploaded: sid=%s file=%s fmt=%s n=%d tv=%d pl=%d size=%.2fMB",
-        sid[:8], file.filename, suffix.lstrip("."), n_sensors, n_tv, n_pl, file_size_mb,
+        sid[:8],
+        file.filename,
+        suffix.lstrip("."),
+        n_sensors,
+        n_tv,
+        n_pl,
+        file_size_mb,
     )
 
     return SensorsUploadResponse(

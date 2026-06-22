@@ -22,15 +22,14 @@ can be unit-tested without importing TensorFlow.
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Iterator
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 
 from .config import get_settings
-
 
 # ---------------------------------------------------------------------------
 # Per-user concurrency lock
@@ -90,6 +89,7 @@ def release_training_slot(user_id: str) -> None:
 # Grid-size cap
 # ---------------------------------------------------------------------------
 
+
 def enforce_grid_cap(n_combinations: int) -> None:
     """Refuse grids larger than `settings.MAX_GRID_COMBINATIONS`.
 
@@ -113,6 +113,7 @@ def enforce_grid_cap(n_combinations: int) -> None:
 # Wall-clock deadline
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TrainingDeadline:
     """Absolute deadline for a single training run.
@@ -122,7 +123,7 @@ class TrainingDeadline:
     `MAX_TRAINING_MINUTES` is exceeded.
     """
 
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     max_minutes: int = field(default_factory=lambda: get_settings().MAX_TRAINING_MINUTES)
 
     @property
@@ -130,7 +131,7 @@ class TrainingDeadline:
         return self.started_at + timedelta(minutes=self.max_minutes)
 
     def should_stop(self, now: datetime | None = None) -> bool:
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         return current >= self.deadline
 
 

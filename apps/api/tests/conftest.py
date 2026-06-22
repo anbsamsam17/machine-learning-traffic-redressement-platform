@@ -99,53 +99,55 @@ def geojson_content() -> str:
 
     Schema modernise (T2) avec retrocompat legacy (cf csv_content).
     """
-    return json.dumps({
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [2.35, 48.86]},
-                "properties": {
-                    "Type": "Permanent",
-                    "Identifiant": "001",
-                    # Noms canoniques HERE/JOr
-                    "TMJOFCDTV": 100,
-                    "TMJOFCDPL": 10,
-                    "TMJOBCTV": 5000,
-                    "TMJOBCPL": 500,
-                    # Alias legacy (retro-compat tests)
-                    "TMJAFCDTV": 100,
-                    "TMJAFCDPL": 10,
-                    "TMJABCTV": 5000,
-                    "TMJABCPL": 500,
-                    "car_average_speed_kmh": 60,
-                    "car_average_distance_km": 30,
-                    "truck_average_speed_kmh": 55,
-                    "truck_min_average_distance_km": 3,
+    return json.dumps(
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [2.35, 48.86]},
+                    "properties": {
+                        "Type": "Permanent",
+                        "Identifiant": "001",
+                        # Noms canoniques HERE/JOr
+                        "TMJOFCDTV": 100,
+                        "TMJOFCDPL": 10,
+                        "TMJOBCTV": 5000,
+                        "TMJOBCPL": 500,
+                        # Alias legacy (retro-compat tests)
+                        "TMJAFCDTV": 100,
+                        "TMJAFCDPL": 10,
+                        "TMJABCTV": 5000,
+                        "TMJABCPL": 500,
+                        "car_average_speed_kmh": 60,
+                        "car_average_distance_km": 30,
+                        "truck_average_speed_kmh": 55,
+                        "truck_min_average_distance_km": 3,
+                    },
                 },
-            },
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [2.36, 48.87]},
-                "properties": {
-                    "Type": "Temporaire",
-                    "Identifiant": "002",
-                    "TMJOFCDTV": 200,
-                    "TMJOFCDPL": 20,
-                    "TMJOBCTV": 8000,
-                    "TMJOBCPL": 800,
-                    "TMJAFCDTV": 200,
-                    "TMJAFCDPL": 20,
-                    "TMJABCTV": 8000,
-                    "TMJABCPL": 800,
-                    "car_average_speed_kmh": 65,
-                    "car_average_distance_km": 35,
-                    "truck_average_speed_kmh": 58,
-                    "truck_min_average_distance_km": 4,
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [2.36, 48.87]},
+                    "properties": {
+                        "Type": "Temporaire",
+                        "Identifiant": "002",
+                        "TMJOFCDTV": 200,
+                        "TMJOFCDPL": 20,
+                        "TMJOBCTV": 8000,
+                        "TMJOBCPL": 800,
+                        "TMJAFCDTV": 200,
+                        "TMJAFCDPL": 20,
+                        "TMJABCTV": 8000,
+                        "TMJABCPL": 800,
+                        "car_average_speed_kmh": 65,
+                        "car_average_distance_km": 35,
+                        "truck_average_speed_kmh": 58,
+                        "truck_min_average_distance_km": 4,
+                    },
                 },
-            },
-        ],
-    })
+            ],
+        }
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -174,6 +176,7 @@ def csv_session_id(authenticated_client, csv_content):
     Used by router tests that need an existing session with a learning_df.
     Returns an async callable that performs the upload on demand.
     """
+
     async def _get():
         r = await authenticated_client.post(
             "/api/upload",
@@ -181,6 +184,7 @@ def csv_session_id(authenticated_client, csv_content):
             data={"mode": "TV"},
         )
         return r.json()["session_id"]
+
     return _get
 
 
@@ -200,6 +204,7 @@ async def owned_session_id(authenticated_client, csv_content):
 def tmp_workspace(tmp_path, monkeypatch):
     """Override WORKSPACE_ROOT to a temporary directory for the duration of the test."""
     from app.config import get_settings
+
     monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path))
     get_settings.cache_clear()
     yield tmp_path

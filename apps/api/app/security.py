@@ -44,9 +44,7 @@ def session_root(user_id: str, session_id: str) -> Path:
     return root
 
 
-_ALLOWED_SEGMENT_CHARS = set(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
-)
+_ALLOWED_SEGMENT_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 
 
 def _ensure_safe_segment(value: str, name: str) -> None:
@@ -102,7 +100,7 @@ def validate_path(user_path: str, allowed_root: str | Path | None = None) -> Pat
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Chemin invalide: {exc}",
-        )
+        ) from exc
 
     # Check the path is under root (or IS root). `is_relative_to` (py 3.9+)
     # is symlink-safe because we already called `.resolve()` on both sides.
@@ -112,7 +110,7 @@ def validate_path(user_path: str, allowed_root: str | Path | None = None) -> Pat
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acces refuse: le chemin sort du repertoire autorise",
-        )
+        ) from None
 
     return resolved
 

@@ -27,7 +27,6 @@ import pandas as pd
 import pytest
 from shapely.geometry import LineString
 
-from app.services import evolution
 from app.services.evolution import compute, io, matching, service
 
 SEED = 1750
@@ -60,45 +59,132 @@ def _make_pair() -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     base_lon, base_lat = 4.83, 45.74
 
     def seg(i, dl=0.0010):
-        return _line(base_lon + i * 0.002, base_lat,
-                     base_lon + i * 0.002 + dl, base_lat)
+        return _line(base_lon + i * 0.002, base_lat, base_lon + i * 0.002 + dl, base_lat)
 
     t1_rows = [
         # A : appariable par cle exacte (agregId 'A-F'), T1=4000
-        {"agregId": "A-F", "JOr": 4000, "JO": 90, "FC": 3, "HD": 90,
-         "JOrmin": 3800, "JOrmax": 4200, "geometry": seg(0)},
+        {
+            "agregId": "A-F",
+            "JOr": 4000,
+            "JO": 90,
+            "FC": 3,
+            "HD": 90,
+            "JOrmin": 3800,
+            "JOrmax": 4200,
+            "geometry": seg(0),
+        },
         # B : geometriquement matchable (agregId different), T1=8000
-        {"agregId": "B1", "JOr": 8000, "JO": 120, "FC": 2, "HD": 90,
-         "JOrmin": 7800, "JOrmax": 8200, "geometry": seg(1)},
+        {
+            "agregId": "B1",
+            "JOr": 8000,
+            "JO": 120,
+            "FC": 2,
+            "HD": 90,
+            "JOrmin": 7800,
+            "JOrmax": 8200,
+            "geometry": seg(1),
+        },
         # C : emergent (T1 sous plancher), T1=30
-        {"agregId": "C-T", "JOr": 30, "JO": 5, "FC": 4, "HD": 90,
-         "JOrmin": 20, "JOrmax": 40, "geometry": seg(2)},
+        {
+            "agregId": "C-T",
+            "JOr": 30,
+            "JO": 5,
+            "FC": 4,
+            "HD": 90,
+            "JOrmin": 20,
+            "JOrmax": 40,
+            "geometry": seg(2),
+        },
         # D : T1 nul -> non_redresse
-        {"agregId": "D1", "JOr": 0, "JO": 0, "FC": 5, "HD": 90,
-         "JOrmin": None, "JOrmax": None, "geometry": seg(3)},
+        {
+            "agregId": "D1",
+            "JOr": 0,
+            "JO": 0,
+            "FC": 5,
+            "HD": 90,
+            "JOrmin": None,
+            "JOrmax": None,
+            "geometry": seg(3),
+        },
         # E : IC disjoints pour sig=1 (T1=1000 [950,1050])
-        {"agregId": "E-F", "JOr": 1000, "JO": 60, "FC": 3, "HD": 90,
-         "JOrmin": 950, "JOrmax": 1050, "geometry": seg(4)},
+        {
+            "agregId": "E-F",
+            "JOr": 1000,
+            "JO": 60,
+            "FC": 3,
+            "HD": 90,
+            "JOrmin": 950,
+            "JOrmax": 1050,
+            "geometry": seg(4),
+        },
     ]
     t2_rows = [
         # A : cle exacte, T2=4400 -> +10.0%
-        {"agregId": "A-F", "JOr": 4400, "JO": 88, "FC": "3", "HD": 90,
-         "JOrmin": 4200, "JOrmax": 4600, "geometry": seg(0)},
+        {
+            "agregId": "A-F",
+            "JOr": 4400,
+            "JO": 88,
+            "FC": "3",
+            "HD": 90,
+            "JOrmin": 4200,
+            "JOrmax": 4600,
+            "geometry": seg(0),
+        },
         # B : meme geometrie que B1 mais agregId different 'B2' -> geo match
-        {"agregId": "B2", "JOr": 6800, "JO": 110, "FC": "2", "HD": 90,
-         "JOrmin": 6600, "JOrmax": 7000, "geometry": seg(1)},
+        {
+            "agregId": "B2",
+            "JOr": 6800,
+            "JO": 110,
+            "FC": "2",
+            "HD": 90,
+            "JOrmin": 6600,
+            "JOrmax": 7000,
+            "geometry": seg(1),
+        },
         # C : emergent, T2=300
-        {"agregId": "C-T", "JOr": 300, "JO": 40, "FC": "4", "HD": 90,
-         "JOrmin": 250, "JOrmax": 350, "geometry": seg(2)},
+        {
+            "agregId": "C-T",
+            "JOr": 300,
+            "JO": 40,
+            "FC": "4",
+            "HD": 90,
+            "JOrmin": 250,
+            "JOrmax": 350,
+            "geometry": seg(2),
+        },
         # D : T1 nul -> non_redresse, T2=500
-        {"agregId": "D1", "JOr": 500, "JO": 50, "FC": "5", "HD": 90,
-         "JOrmin": 450, "JOrmax": 550, "geometry": seg(3)},
+        {
+            "agregId": "D1",
+            "JOr": 500,
+            "JO": 50,
+            "FC": "5",
+            "HD": 90,
+            "JOrmin": 450,
+            "JOrmax": 550,
+            "geometry": seg(3),
+        },
         # E : IC disjoints, T2=1500 [1450,1550] -> +50%
-        {"agregId": "E-F", "JOr": 1500, "JO": 80, "FC": "3", "HD": 90,
-         "JOrmin": 1450, "JOrmax": 1550, "geometry": seg(4)},
+        {
+            "agregId": "E-F",
+            "JOr": 1500,
+            "JO": 80,
+            "FC": "3",
+            "HD": 90,
+            "JOrmin": 1450,
+            "JOrmax": 1550,
+            "geometry": seg(4),
+        },
         # F : nouveau (aucun T1)
-        {"agregId": "F-new", "JOr": 2000, "JO": 70, "FC": "3", "HD": 90,
-         "JOrmin": 1900, "JOrmax": 2100, "geometry": seg(5)},
+        {
+            "agregId": "F-new",
+            "JOr": 2000,
+            "JO": 70,
+            "FC": "3",
+            "HD": 90,
+            "JOrmin": 1900,
+            "JOrmax": 2100,
+            "geometry": seg(5),
+        },
     ]
     return _gdf(t1_rows), _gdf(t2_rows)
 
@@ -115,13 +201,17 @@ def test_io_normalizes_types(tmp_path):
     fc = {
         "type": "FeatureCollection",
         "features": [
-            {"type": "Feature",
-             "geometry": {"type": "LineString", "coordinates": [[4.83, 45.74], [4.84, 45.75]]},
-             "properties": {"agregId": 12345, "FC": 3, "JOr": 4000}},
+            {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": [[4.83, 45.74], [4.84, 45.75]]},
+                "properties": {"agregId": 12345, "FC": 3, "JOr": 4000},
+            },
             # geometrie Point -> ecartee
-            {"type": "Feature",
-             "geometry": {"type": "Point", "coordinates": [4.8, 45.7]},
-             "properties": {"agregId": "x", "FC": "3"}},
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [4.8, 45.7]},
+                "properties": {"agregId": "x", "FC": "3"},
+            },
         ],
     }
     p = tmp_path / "c.geojson"
@@ -160,14 +250,12 @@ def test_match_cle_and_geom():
     assert pd.isna(by_id.loc["F-new", "id_t1"])
 
     # tracabilite : 100% des features ont un match_level valide
-    assert set(res["match_level"]).issubset(
-        {"CLE", "GEOM_AUTO", "GEOM_VERIF", "NON_MATCH"}
-    )
+    assert set(res["match_level"]).issubset({"CLE", "GEOM_AUTO", "GEOM_VERIF", "NON_MATCH"})
     # match_score float pour GEOM_*, None pour CLE/NON_MATCH (acces colonne
     # direct : iterrows() homogeneiserait la Series objet en float).
     levels = res["match_level"].tolist()
     scores = res["match_score"].tolist()
-    for lvl, sc in zip(levels, scores):
+    for lvl, sc in zip(levels, scores, strict=False):
         if lvl in ("GEOM_AUTO", "GEOM_VERIF"):
             assert isinstance(sc, float)
         else:
@@ -185,7 +273,7 @@ def test_match_uniqueness():
 def test_seuils_calibres():
     t1, t2 = _make_pair()
     res = matching.match_segments(t1, t2, use_ban=False)
-    for lvl, sc in zip(res["match_level"].tolist(), res["match_score"].tolist()):
+    for lvl, sc in zip(res["match_level"].tolist(), res["match_score"].tolist(), strict=False):
         if lvl == "GEOM_AUTO":
             assert sc >= matching.THR_AUTO - 1e-9
         if lvl in ("GEOM_AUTO", "GEOM_VERIF"):
@@ -204,9 +292,24 @@ def test_build_geojson_formula_and_guards():
     assert len(gj["features"]) == len(t2)
     props = {ft["properties"]["agregId"]: ft["properties"] for ft in gj["features"]}
 
-    required = {"agregId", "FC", "HD", "DD", "T2", "T1", "JO_T2", "JO_T1", "JOr",
-                "dJOr", "sig", "categorie", "match_level", "match_score",
-                "ban_concordance", "FC_change"}
+    required = {
+        "agregId",
+        "FC",
+        "HD",
+        "DD",
+        "T2",
+        "T1",
+        "JO_T2",
+        "JO_T1",
+        "JOr",
+        "dJOr",
+        "sig",
+        "categorie",
+        "match_level",
+        "match_score",
+        "ban_concordance",
+        "FC_change",
+    }
     for p in props.values():
         assert required.issubset(p.keys())
         assert isinstance(p["FC"], (str, type(None)))
@@ -266,10 +369,34 @@ def test_no_nan_infinity_strict_json():
 
 def test_clamp_display_preserves_raw():
     # T1=50 (>= plancher), T2=15000 -> +29900% : brut conserve, display clampe.
-    t1 = _gdf([{"agregId": "X1", "JOr": 50, "JO": 5, "FC": 3, "HD": 0,
-                "JOrmin": 40, "JOrmax": 60, "geometry": _line(4.83, 45.74, 4.831, 45.74)}])
-    t2 = _gdf([{"agregId": "X1", "JOr": 15000, "JO": 200, "FC": "3", "HD": 0,
-                "JOrmin": 14000, "JOrmax": 16000, "geometry": _line(4.83, 45.74, 4.831, 45.74)}])
+    t1 = _gdf(
+        [
+            {
+                "agregId": "X1",
+                "JOr": 50,
+                "JO": 5,
+                "FC": 3,
+                "HD": 0,
+                "JOrmin": 40,
+                "JOrmax": 60,
+                "geometry": _line(4.83, 45.74, 4.831, 45.74),
+            }
+        ]
+    )
+    t2 = _gdf(
+        [
+            {
+                "agregId": "X1",
+                "JOr": 15000,
+                "JO": 200,
+                "FC": "3",
+                "HD": 0,
+                "JOrmin": 14000,
+                "JOrmax": 16000,
+                "geometry": _line(4.83, 45.74, 4.831, 45.74),
+            }
+        ]
+    )
     res = matching.match_segments(t1, t2, use_ban=False)
     gj = compute.build_evolution_geojson(t1, t2, res, plancher_t1=50.0, clamp_pct=100.0)
     p = gj["features"][0]["properties"]
@@ -280,10 +407,34 @@ def test_clamp_display_preserves_raw():
 
 def test_sig_default_when_ic_missing():
     # IC manquant cote T1 -> sig=0 (prudence)
-    t1 = _gdf([{"agregId": "Z1", "JOr": 1000, "JO": 50, "FC": 3, "HD": 0,
-                "JOrmin": None, "JOrmax": None, "geometry": _line(4.83, 45.74, 4.831, 45.74)}])
-    t2 = _gdf([{"agregId": "Z1", "JOr": 2000, "JO": 60, "FC": "3", "HD": 0,
-                "JOrmin": 1900, "JOrmax": 2100, "geometry": _line(4.83, 45.74, 4.831, 45.74)}])
+    t1 = _gdf(
+        [
+            {
+                "agregId": "Z1",
+                "JOr": 1000,
+                "JO": 50,
+                "FC": 3,
+                "HD": 0,
+                "JOrmin": None,
+                "JOrmax": None,
+                "geometry": _line(4.83, 45.74, 4.831, 45.74),
+            }
+        ]
+    )
+    t2 = _gdf(
+        [
+            {
+                "agregId": "Z1",
+                "JOr": 2000,
+                "JO": 60,
+                "FC": "3",
+                "HD": 0,
+                "JOrmin": 1900,
+                "JOrmax": 2100,
+                "geometry": _line(4.83, 45.74, 4.831, 45.74),
+            }
+        ]
+    )
     res = matching.match_segments(t1, t2, use_ban=False)
     gj = compute.build_evolution_geojson(t1, t2, res)
     assert gj["features"][0]["properties"]["sig"] == 0
@@ -294,9 +445,7 @@ def test_sig_default_when_ic_missing():
 # --------------------------------------------------------------------------- #
 def test_generate_evolution_stats():
     t1, t2 = _make_pair()
-    gj, stats = service.generate_evolution(
-        t1, t2, options=service.EvolutionOptions(use_ban=False)
-    )
+    gj, stats = service.generate_evolution(t1, t2, options=service.EvolutionOptions(use_ban=False))
     assert stats["n_total"] == len(t2)
     assert stats["n_cle"] >= 1
     assert stats["n_emergent"] >= 1
@@ -307,18 +456,24 @@ def test_generate_evolution_stats():
 # Contrat de stats consomme par le front (/status) : tout ajout/retrait de clef
 # casserait le mapping. Les clefs de comptage attendues sont figees ici.
 EXPECTED_STATS_KEYS = {
-    "n_total", "n_cle", "n_geom_auto", "n_geom_verif", "n_non_match",
-    "n_emergent", "n_sig", "n_ban_indisponible",
-    "jor_min", "jor_median", "jor_max",
+    "n_total",
+    "n_cle",
+    "n_geom_auto",
+    "n_geom_verif",
+    "n_non_match",
+    "n_emergent",
+    "n_sig",
+    "n_ban_indisponible",
+    "jor_min",
+    "jor_median",
+    "jor_max",
 }
 
 
 def test_stats_contract_keys():
     """Le dict de stats expose EXACTEMENT les clefs du contrat front/back."""
     t1, t2 = _make_pair()
-    gj, stats = service.generate_evolution(
-        t1, t2, options=service.EvolutionOptions(use_ban=False)
-    )
+    gj, stats = service.generate_evolution(t1, t2, options=service.EvolutionOptions(use_ban=False))
     assert set(stats.keys()) == EXPECTED_STATS_KEYS
     # compute_stats seul doit produire le meme jeu de clefs.
     assert set(compute.compute_stats(gj).keys()) == EXPECTED_STATS_KEYS
@@ -331,18 +486,29 @@ def test_match_segments_does_not_mutate_module_globals():
     intacts pour les generations concurrentes (asyncio.to_thread).
     """
     before = (
-        matching.THR_AUTO, matching.THR_REVIEW, matching.MARGIN_MIN,
-        matching.GATE_HARD_REJECT_DEG, matching.DIR_PENALTY_SCALE_DEG,
+        matching.THR_AUTO,
+        matching.THR_REVIEW,
+        matching.MARGIN_MIN,
+        matching.GATE_HARD_REJECT_DEG,
+        matching.DIR_PENALTY_SCALE_DEG,
     )
     t1, t2 = _make_pair()
     # Seuils volontairement differents des defauts pour exposer toute mutation.
     matching.match_segments(
-        t1, t2, use_ban=False,
-        score_auto=0.80, score_min=0.40, margin=0.20, dtheta_reject=90.0,
+        t1,
+        t2,
+        use_ban=False,
+        score_auto=0.80,
+        score_min=0.40,
+        margin=0.20,
+        dtheta_reject=90.0,
     )
     after = (
-        matching.THR_AUTO, matching.THR_REVIEW, matching.MARGIN_MIN,
-        matching.GATE_HARD_REJECT_DEG, matching.DIR_PENALTY_SCALE_DEG,
+        matching.THR_AUTO,
+        matching.THR_REVIEW,
+        matching.MARGIN_MIN,
+        matching.GATE_HARD_REJECT_DEG,
+        matching.DIR_PENALTY_SCALE_DEG,
     )
     assert before == after
 
@@ -354,6 +520,7 @@ def test_ban_noop_without_street_name_column():
     qui leverait s'il etait appele. Toutes les concordances GEOM_* valent
     INDISPONIBLE et le compteur n_ban_indisponible reflete ce comptage.
     """
+
     def _boom(*a, **k):  # pragma: no cover - ne doit jamais etre appele
         raise AssertionError("validate_ban a tente un appel reseau BAN")
 

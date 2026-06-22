@@ -48,6 +48,7 @@ def _sid_log(sid: str) -> str:
 # Session data class (used by both backends)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Session:
     """One user session — bound to its owner for tenant isolation (A2)."""
@@ -78,6 +79,7 @@ class Session:
 # Helpers — DataFrame normalisation for safe serialisation (A3)
 # ---------------------------------------------------------------------------
 
+
 def _df_to_parquet_safe(df: pd.DataFrame) -> bytes:
     """Serialise *df* to Parquet, casting non-Parquet-compatible cells to JSON str.
 
@@ -95,7 +97,9 @@ def _df_to_parquet_safe(df: pd.DataFrame) -> bytes:
         sample = series.dropna().head(20)
         if any(isinstance(v, (dict, list, set, tuple)) for v in sample):
             safe[col] = series.apply(
-                lambda v: json.dumps(v, default=str) if isinstance(v, (dict, list, set, tuple)) else v
+                lambda v: (
+                    json.dumps(v, default=str) if isinstance(v, (dict, list, set, tuple)) else v
+                )
             )
 
     buf = io.BytesIO()
@@ -106,6 +110,7 @@ def _df_to_parquet_safe(df: pd.DataFrame) -> bytes:
 # ---------------------------------------------------------------------------
 # Backend interface
 # ---------------------------------------------------------------------------
+
 
 class SessionBackend:
     """Abstract base for session storage."""
@@ -146,6 +151,7 @@ class SessionBackend:
 # In-memory backend
 # ---------------------------------------------------------------------------
 
+
 class MemoryBackend(SessionBackend):
     """Thread-safe, in-memory session store with TTL-based cleanup."""
 
@@ -160,8 +166,9 @@ class MemoryBackend(SessionBackend):
         session = Session(session_id=sid, mode=mode, owner_user_id=owner_user_id)
         with self._lock:
             self._sessions[sid] = session
-        logger.info("Session created: sid=%s mode=%s owner=%s",
-                    _sid_log(sid), mode, _sid_log(owner_user_id))
+        logger.info(
+            "Session created: sid=%s mode=%s owner=%s", _sid_log(sid), mode, _sid_log(owner_user_id)
+        )
         return session
 
     # -- User <-> session mapping (used by /api/sessions/current) --------------
@@ -238,6 +245,7 @@ class MemoryBackend(SessionBackend):
 # Redis backend
 # ---------------------------------------------------------------------------
 
+
 class _RedisDataProxy(dict):
     """Dict-like proxy that lazily loads values from Redis on access.
 
@@ -245,7 +253,7 @@ class _RedisDataProxy(dict):
     backend, just like it does with MemoryBackend.
     """
 
-    def __init__(self, backend: "RedisBackend", session_id: str) -> None:
+    def __init__(self, backend: RedisBackend, session_id: str) -> None:
         super().__init__()
         self._backend = backend
         self._sid = session_id
@@ -265,8 +273,7 @@ class _RedisDataProxy(dict):
             # is corrupt instead of silently returning default.
             raise
         except Exception:
-            logger.exception("Redis read failed for key=%s sid=%s",
-                             key, _sid_log(self._sid))
+            logger.exception("Redis read failed for key=%s sid=%s", key, _sid_log(self._sid))
         return default
 
     def __getitem__(self, key: str) -> Any:
@@ -290,16 +297,16 @@ class _RedisDataProxy(dict):
             )
             self._cache[key] = value
         except Exception:
-            logger.exception("Redis write-through failed for key=%s sid=%s; cache only",
-                             key, _sid_log(self._sid))
+            logger.exception(
+                "Redis write-through failed for key=%s sid=%s; cache only", key, _sid_log(self._sid)
+            )
             self._cache[key] = value
 
     def pop(self, key: str, *args: Any) -> Any:
         try:
             self._backend._r.delete(self._backend._data_key(self._sid, key))
         except Exception:
-            logger.exception("Redis delete failed for key=%s sid=%s",
-                             key, _sid_log(self._sid))
+            logger.exception("Redis delete failed for key=%s sid=%s", key, _sid_log(self._sid))
         return self._cache.pop(key, *args)
 
     def update(self, *args: Any, **kwargs: Any) -> None:
@@ -365,15 +372,21 @@ class RedisBackend(SessionBackend):
             created_at=now,
             last_accessed=now,
         )
-        meta = json.dumps({
-            "mode": mode,
-            "owner_user_id": owner_user_id,
-            "created_at": now,
-            "last_accessed": now,
-        })
+        meta = json.dumps(
+            {
+                "mode": mode,
+                "owner_user_id": owner_user_id,
+                "created_at": now,
+                "last_accessed": now,
+            }
+        )
         self._r.setex(self._session_key(sid), self._ttl, meta.encode("utf-8"))
-        logger.info("Session created (redis): sid=%s mode=%s owner=%s",
-                    _sid_log(sid), mode, _sid_log(owner_user_id))
+        logger.info(
+            "Session created (redis): sid=%s mode=%s owner=%s",
+            _sid_log(sid),
+            mode,
+            _sid_log(owner_user_id),
+        )
         return session
 
     def get_session(self, session_id: str) -> Session | None:
@@ -479,6 +492,7 @@ class RedisBackend(SessionBackend):
 # ---------------------------------------------------------------------------
 # Session manager facade
 # ---------------------------------------------------------------------------
+
 
 class SessionManager:
     """Unified facade — delegates to Redis or memory backend."""

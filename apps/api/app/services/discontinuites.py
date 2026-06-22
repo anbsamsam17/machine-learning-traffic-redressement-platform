@@ -38,7 +38,7 @@ import logging
 import math
 import time
 from collections import Counter
-from typing import Any, Iterable
+from typing import Any
 
 import geopandas as gpd
 import numpy as np
@@ -316,9 +316,7 @@ def _build_directed_edges(gdf: gpd.GeoDataFrame) -> pd.DataFrame:
 
     # Drop endpoints invalides et auto-boucles
     mask_valid = (
-        df["REF_IN_ID"].notna()
-        & df["NREF_IN_ID"].notna()
-        & (df["REF_IN_ID"] != df["NREF_IN_ID"])
+        df["REF_IN_ID"].notna() & df["NREF_IN_ID"].notna() & (df["REF_IN_ID"] != df["NREF_IN_ID"])
     )
     n_dropped = int((~mask_valid).sum())
     if n_dropped:
@@ -334,8 +332,12 @@ def _build_directed_edges(gdf: gpd.GeoDataFrame) -> pd.DataFrame:
     # Direction depuis suffixe -F/-T (cf. methodologie § 4.2)
     suffix = df["agregId"].astype(str).str.extract(r"-([FT])$", expand=False)
     is_T = (suffix == "T").fillna(False).to_numpy()
-    df["in_node"] = np.where(is_T, df["NREF_IN_ID"].to_numpy(), df["REF_IN_ID"].to_numpy()).astype("int64")
-    df["out_node"] = np.where(is_T, df["REF_IN_ID"].to_numpy(), df["NREF_IN_ID"].to_numpy()).astype("int64")
+    df["in_node"] = np.where(is_T, df["NREF_IN_ID"].to_numpy(), df["REF_IN_ID"].to_numpy()).astype(
+        "int64"
+    )
+    df["out_node"] = np.where(is_T, df["REF_IN_ID"].to_numpy(), df["NREF_IN_ID"].to_numpy()).astype(
+        "int64"
+    )
 
     # Endpoints geometriques pour reconstruire les coords des noeuds.
     # Convention : pour un edge T, l'in_node est NREF (= last coord), l'out_node REF (= first coord).
@@ -347,7 +349,7 @@ def _build_directed_edges(gdf: gpd.GeoDataFrame) -> pd.DataFrame:
 
     in_node_coords: list[tuple[float, float] | None] = []
     out_node_coords: list[tuple[float, float] | None] = []
-    for (first_pt, last_pt), is_T_row in zip(coords_pairs, is_T):
+    for (first_pt, last_pt), is_T_row in zip(coords_pairs, is_T, strict=False):
         if is_T_row:
             in_node_coords.append(last_pt)
             out_node_coords.append(first_pt)
@@ -430,9 +432,7 @@ def _build_node_table(edges: pd.DataFrame) -> pd.DataFrame:
         USER_RULE_LOW_THRESHOLD,
     )
     nodes["is_flagged"] = (~nodes["is_boundary"]) & (nodes["ecart"] > nodes["threshold"])
-    nodes["tier"] = np.where(
-        nodes["ecart"] >= 2 * nodes["threshold"], "red", "orange"
-    )
+    nodes["tier"] = np.where(nodes["ecart"] >= 2 * nodes["threshold"], "red", "orange")
 
     # Coords noeud — premiere coord trouvee via les edges incidents.
     # On rassemble (node_id -> (lon, lat)) en parcourant les edges.
@@ -441,13 +441,13 @@ def _build_node_table(edges: pd.DataFrame) -> pd.DataFrame:
     out_node_arr = edges["out_node"].to_numpy()
     in_coords = edges["in_node_coord"].to_numpy()
     out_coords = edges["out_node_coord"].to_numpy()
-    for nid, coord in zip(in_node_arr, in_coords):
+    for nid, coord in zip(in_node_arr, in_coords, strict=False):
         if coord is None:
             continue
         nid_i = int(nid)
         if nid_i not in node_coords:
             node_coords[nid_i] = coord
-    for nid, coord in zip(out_node_arr, out_coords):
+    for nid, coord in zip(out_node_arr, out_coords, strict=False):
         if coord is None:
             continue
         nid_i = int(nid)
@@ -584,11 +584,18 @@ def _classify_principal_cause(
     if has_rdb_y and has_rdb_n:
         return "ROUNDABOUT_asymmetry"
 
-    all_edges = pd.concat([in_edges, out_edges], ignore_index=True) \
-        if (len(in_edges) or len(out_edges)) else in_edges.iloc[0:0]
+    all_edges = (
+        pd.concat([in_edges, out_edges], ignore_index=True)
+        if (len(in_edges) or len(out_edges))
+        else in_edges.iloc[0:0]
+    )
     if len(all_edges) > 0:
-        tv = pd.to_numeric(all_edges.get("TMJOFCDTV", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
-        pl = pd.to_numeric(all_edges.get("TMJOFCDPL", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
+        tv = pd.to_numeric(
+            all_edges.get("TMJOFCDTV", pd.Series(dtype=float)), errors="coerce"
+        ).fillna(0.0)
+        pl = pd.to_numeric(
+            all_edges.get("TMJOFCDPL", pd.Series(dtype=float)), errors="coerce"
+        ).fillna(0.0)
         if ((tv < TMJOFCDTV_ZERO) | (pl < TMJOFCDPL_ZERO)).any():
             return "Coverage_gap"
 
@@ -625,6 +632,7 @@ def _build_narrative(
     ecart: float,
 ) -> str:
     """Narrative compacte avec les valeurs reelles du driver dominant."""
+
     def s(k: str) -> dict[str, Any]:
         return scores.get(k, {})
 
@@ -651,10 +659,7 @@ def _build_narrative(
     if cause == "RAMP_asymmetry":
         return "Bretelle asymetrique entre branches (R=Y/N)."
     if cause == "ROUNDABOUT_asymmetry":
-        return (
-            f"Rond-point asymetrique (R=Y/N) avec ecart "
-            f"{_format_int(ecart)} v/j."
-        )
+        return f"Rond-point asymetrique (R=Y/N) avec ecart " f"{_format_int(ecart)} v/j."
     if cause == "Distance_anomaly":
         for col in ("avg_distance_before_m", "avg_min_distance_m", "truck_avg_distance_before_m"):
             if col in scores:
@@ -703,9 +708,7 @@ def _edge_payload(row: pd.Series) -> dict[str, Any]:
     }
 
 
-def _sort_and_cap_edges(
-    edges_df: pd.DataFrame, side_prefix: str
-) -> list[dict[str, Any]]:
+def _sort_and_cap_edges(edges_df: pd.DataFrame, side_prefix: str) -> list[dict[str, Any]]:
     """Trie par TVr desc, libelle E1..E4/S1..S4, ajoute "(+N autres)" en tail."""
     if edges_df is None or edges_df.empty:
         return []
@@ -769,8 +772,11 @@ def compute_node_causality(
     Renvoie un dict pret a etre injecte comme ``properties`` d'une feature
     GeoJSON (cf. schema v3).
     """
-    all_edges = pd.concat([in_edges, out_edges], ignore_index=True) \
-        if (len(in_edges) or len(out_edges)) else in_edges.iloc[0:0]
+    all_edges = (
+        pd.concat([in_edges, out_edges], ignore_index=True)
+        if (len(in_edges) or len(out_edges))
+        else in_edges.iloc[0:0]
+    )
     drivers, driver_scores = _detect_drivers(all_edges)
     principal_cause = _classify_principal_cause(drivers, in_edges, out_edges)
     topology = _classify_topology(in_edges, out_edges)
@@ -910,11 +916,11 @@ def _classify_principal_cause_from_arrays(
         ramp_slice = ramp_arr[indices_all]
         if ramp_slice.any() and not ramp_slice.all():
             # any Y AND any N
-            if ((ramp_slice == 1).any() and (ramp_slice == 0).any()):
+            if (ramp_slice == 1).any() and (ramp_slice == 0).any():
                 return "RAMP_asymmetry"
         rdb_slice = rdb_arr[indices_all]
         if rdb_slice.any() and not rdb_slice.all():
-            if ((rdb_slice == 1).any() and (rdb_slice == 0).any()):
+            if (rdb_slice == 1).any() and (rdb_slice == 0).any():
                 return "ROUNDABOUT_asymmetry"
 
         tv = tv_arr[indices_all]
@@ -935,9 +941,8 @@ def _classify_principal_cause_from_arrays(
 
         coverage_threshold = 0.5  # >= moitie des arcs sans donnee
         true_coverage_gap = (
-            (n_tv_missing / n_total >= coverage_threshold and tv_max_observed < 10.0)
-            or (n_pl_missing / n_total >= coverage_threshold and pl_max_observed < 5.0)
-        )
+            n_tv_missing / n_total >= coverage_threshold and tv_max_observed < 10.0
+        ) or (n_pl_missing / n_total >= coverage_threshold and pl_max_observed < 5.0)
         if true_coverage_gap:
             return "Coverage_gap"
 
@@ -1093,12 +1098,14 @@ def _build_edges_payload_from_arrays(
             else:
                 inputs[col] = round(float(v), 3 if col in ("TMJOFCDTV", "TMJOFCDPL") else 1)
         tvr_v = tvr_arr[pos]
-        out_list.append({
-            "agregId": str(agreg_arr[pos]),
-            "TVr": (None if not np.isfinite(tvr_v) else round(float(tvr_v), 1)),
-            "inputs": inputs,
-            "label": f"{side_prefix}{i}",
-        })
+        out_list.append(
+            {
+                "agregId": str(agreg_arr[pos]),
+                "TVr": (None if not np.isfinite(tvr_v) else round(float(tvr_v), 1)),
+                "inputs": inputs,
+                "label": f"{side_prefix}{i}",
+            }
+        )
     n_extra = n_total - len(out_list)
     if n_extra > 0 and out_list:
         out_list[-1]["label"] = f"{out_list[-1]['label']} (+{n_extra} autres)"
@@ -1196,9 +1203,7 @@ def join_fcdref(
     for source_col, (target_col, scale) in selected.items():
         if scale != 1.0:
             # Numeric coercion + scale (NaN propage)
-            fcd_subset[target_col] = pd.to_numeric(
-                fcd_subset[source_col], errors="coerce"
-            ) * scale
+            fcd_subset[target_col] = pd.to_numeric(fcd_subset[source_col], errors="coerce") * scale
         elif target_col != source_col:
             fcd_subset[target_col] = fcd_subset[source_col]
         # else : source == target, deja en place
@@ -1248,7 +1253,10 @@ def join_fcdref(
     }
     logger.info(
         "Discontinuites: jointure FCD - %d colonnes canoniques (%s), %d lignes matchees / %d aretes",
-        len(canonical_cols), ",".join(canonical_cols), n_matched, len(merged),
+        len(canonical_cols),
+        ",".join(canonical_cols),
+        n_matched,
+        len(merged),
     )
     return merged, info
 
@@ -1321,7 +1329,9 @@ def run_full_pipeline(
     flagged_nodes = nodes[nodes["is_flagged"]].copy()
     logger.info(
         "Discontinuites: %d noeuds total, %d frontaliers, %d flagues",
-        n_total_nodes, n_boundary, len(flagged_nodes),
+        n_total_nodes,
+        n_boundary,
+        len(flagged_nodes),
     )
 
     # 3) Pre-extraction des arrays numpy — payes UNE FOIS pour tout le reseau.
@@ -1336,11 +1346,13 @@ def run_full_pipeline(
     # RAMP / ROUNDABOUT en boolean int8 (1 = Y, 0 = N/autre)
     ramp_arr = (
         edges["RAMP"].astype(str).str.upper().eq("Y").to_numpy(dtype=np.int8)
-        if "RAMP" in edges.columns else np.zeros(n_edges, dtype=np.int8)
+        if "RAMP" in edges.columns
+        else np.zeros(n_edges, dtype=np.int8)
     )
     rdb_arr = (
         edges["ROUNDABOUT"].astype(str).str.upper().eq("Y").to_numpy(dtype=np.int8)
-        if "ROUNDABOUT" in edges.columns else np.zeros(n_edges, dtype=np.int8)
+        if "ROUNDABOUT" in edges.columns
+        else np.zeros(n_edges, dtype=np.int8)
     )
 
     # Build index map : node_id -> array d'indices d'edges (in/out)
@@ -1356,8 +1368,8 @@ def run_full_pipeline(
             out[int(sorted_keys[start])] = order[start:end]
         return out
 
-    in_idx_by_node = _group_indices(out_node_arr)   # edges ARRIVANT au noeud
-    out_idx_by_node = _group_indices(in_node_arr)   # edges QUITTANT le noeud
+    in_idx_by_node = _group_indices(out_node_arr)  # edges ARRIVANT au noeud
+    out_idx_by_node = _group_indices(in_node_arr)  # edges QUITTANT le noeud
 
     features: list[dict[str, Any]] = []
     cause_counter: Counter[str] = Counter()
@@ -1386,7 +1398,10 @@ def run_full_pipeline(
 
         drivers, driver_scores = _detect_drivers_from_arrays(all_idx, arr_by_col)
         principal_cause = _classify_principal_cause_from_arrays(
-            drivers, all_idx, ramp_arr, rdb_arr,
+            drivers,
+            all_idx,
+            ramp_arr,
+            rdb_arr,
             arr_by_col.get("TMJOFCDTV", np.full(n_edges, np.nan)),
             arr_by_col.get("TMJOFCDPL", np.full(n_edges, np.nan)),
         )
@@ -1405,9 +1420,7 @@ def run_full_pipeline(
         )
         # Agregats FCD + distances au niveau noeud (cf. _node_level_aggregates).
         node_aggregates = _node_level_aggregates(in_idx, out_idx, tvr_arr, arr_by_col)
-        narrative = _build_narrative(
-            principal_cause, drivers, driver_scores, float(fn_ecart[i])
-        )
+        narrative = _build_narrative(principal_cause, drivers, driver_scores, float(fn_ecart[i]))
 
         lon = _safe_float(fn_lon[i])
         lat = _safe_float(fn_lat[i])
@@ -1435,14 +1448,16 @@ def run_full_pipeline(
             **node_aggregates,
         }
 
-        features.append({
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [round(lon, 6), round(lat, 6)],
-            },
-            "properties": props,
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [round(lon, 6), round(lat, 6)],
+                },
+                "properties": props,
+            }
+        )
         cause_counter[principal_cause] += 1
         topo_counter[topology] += 1
         cross_counter[(principal_cause, topology)] += 1
@@ -1450,7 +1465,9 @@ def run_full_pipeline(
 
     duration = round(time.perf_counter() - t_start, 3)
     logger.info(
-        "Discontinuites: pipeline complet en %.2fs (%d features)", duration, len(features),
+        "Discontinuites: pipeline complet en %.2fs (%d features)",
+        duration,
+        len(features),
     )
 
     metadata = {

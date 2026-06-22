@@ -6,6 +6,8 @@ A8 (sanitized 500 + minimal /health) and A9 (training_guard helpers).
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 
@@ -95,8 +97,9 @@ class TestTrainingGuard:
     """A9: per-user lock + grid cap + deadline."""
 
     def test_acquire_training_slot_blocks_concurrent_runs(self):
-        from app.training_guard import acquire_training_slot
         from fastapi import HTTPException
+
+        from app.training_guard import acquire_training_slot
 
         user_id = "guard_user_a"
         with acquire_training_slot(user_id):
@@ -132,8 +135,9 @@ class TestTrainingGuard:
         enforce_grid_cap(50)  # should not raise
 
     def test_enforce_grid_cap_raises_over_limit(self, monkeypatch):
-        from app.training_guard import enforce_grid_cap
         from fastapi import HTTPException
+
+        from app.training_guard import enforce_grid_cap
 
         monkeypatch.setattr(
             "app.training_guard.get_settings",
@@ -145,20 +149,20 @@ class TestTrainingGuard:
         assert "depasse" in exc.value.detail or "500" in exc.value.detail
 
     def test_training_deadline_fires_after_window(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from app.training_guard import TrainingDeadline
 
-        start = datetime.now(timezone.utc) - timedelta(minutes=120)
+        start = datetime.now(UTC) - timedelta(minutes=120)
         d = TrainingDeadline(started_at=start, max_minutes=30)
         assert d.should_stop()
 
     def test_training_deadline_not_fired_inside_window(self):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from app.training_guard import TrainingDeadline
 
-        d = TrainingDeadline(started_at=datetime.now(timezone.utc), max_minutes=30)
+        d = TrainingDeadline(started_at=datetime.now(UTC), max_minutes=30)
         assert not d.should_stop()
 
 

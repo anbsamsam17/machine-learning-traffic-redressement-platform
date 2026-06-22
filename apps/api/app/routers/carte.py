@@ -23,7 +23,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, model_validator
 
 from ..auth import UserRecord, get_current_user, require_owned_session
@@ -31,18 +31,40 @@ from ..config import get_settings
 from ..rate_limit import limit_carte_generate
 from ..security import validate_path
 
-from ..session import session_manager
-
 # Helpers extracted into dedicated service modules (cf refonte pre-execution).
 # Re-exported as module-level names below to preserve the public surface of
-# carte.py for any code that might import these helpers directly.
-from ..services.geo import (
+# carte.py for any code that might import these helpers directly. The ``noqa``
+# markers keep these intentional re-exports from being flagged as unused (F401).
+from ..services.geo import (  # noqa: F401
     _calculate_heading,
-    _parse_and_heading as _parse_and_heading_helper,
     _parse_geom_shapely,
+)
+from ..services.geo import (
+    _parse_and_heading as _parse_and_heading_helper,
+)
+from ..services.geo import (
     _round_coords as _round_coords_helper,
 )
-from ..services.ml.saturation import (
+from ..services.ml.inference import (  # noqa: F401
+    _apply_year_mapping,
+    _ensure_hourly_fcd_column,
+    _load_model,
+    _my_denorm,
+    _my_norm,
+    _normalize_input_cols,
+    _peak_hour_err_pct,
+    release_tf_model,
+)
+from ..services.ml.inference import (
+    _predict_peak_hour as _predict_peak_hour_impl,
+)
+from ..services.ml.rounding import (  # noqa: F401
+    _appliquer_arrondi_avec_coherence,
+    _calculer_DPLmax,
+    _calculer_DPLmin,
+    _round_progressive,
+)
+from ..services.ml.saturation import (  # noqa: F401
     DEFAULT_ALPHA_FC,
     DEFAULT_ALPHA_FC_MIN,
     DEFAULT_ALPHA_HPM_FC,
@@ -65,23 +87,7 @@ from ..services.ml.saturation import (
     _saturer_horaire_hierarchique,
     _saturer_pl_hierarchique,
 )
-from ..services.ml.rounding import (
-    _appliquer_arrondi_avec_coherence,
-    _calculer_DPLmax,
-    _calculer_DPLmin,
-    _round_progressive,
-)
-from ..services.ml.inference import (
-    _apply_year_mapping,
-    _ensure_hourly_fcd_column,
-    _load_model,
-    _my_denorm,
-    _my_norm,
-    _normalize_input_cols,
-    _peak_hour_err_pct,
-    _predict_peak_hour as _predict_peak_hour_impl,
-    release_tf_model,
-)
+from ..session import session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/carte", tags=["carte"])
@@ -96,10 +102,10 @@ router = APIRouter(prefix="/api/carte", tags=["carte"])
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
 
 class ErrorThresholds(BaseModel):
     # IC JOr par defaut (tranches de debit JOr v/j) : 20 / 15 / 15 / 10 %.
@@ -167,8 +173,7 @@ class CarteGenerateRequest(BaseModel):
     pl_saturation_enabled: bool = Field(
         default=True,
         description=(
-            "Activer la saturation PL v2 hybride (cap absolu FC + ratio "
-            "adaptatif base FCD)."
+            "Activer la saturation PL v2 hybride (cap absolu FC + ratio " "adaptatif base FCD)."
         ),
     )
     bornes_fc_abs: dict[int, float] = Field(
@@ -277,7 +282,7 @@ class CarteGenerateRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _map_v1_to_v2(self) -> "CarteGenerateRequest":  # noqa: D401
+    def _map_v1_to_v2(self) -> CarteGenerateRequest:  # noqa: D401
         """Bridge v1 field names (bornes_fc / alpha_fc) -> v2 (bornes_fc_abs /
         alpha_fc_min) silencieusement. Les valeurs v2 explicites gardent la
         priorite si elles different des defaults.
@@ -377,6 +382,7 @@ class ModelValidateResponse(BaseModel):
 # _my_norm / _my_denorm / _apply_year_mapping / _calculate_heading sont
 # desormais importes depuis ``services.ml.inference`` et ``services.geo``
 # (cf imports en tete de module).
+
 
 def _erreur_pourcentage(jor: float, thresholds: ErrorThresholds) -> float:
     """Dynamic error % based on JOr (TV redresse journalier) thresholds."""
@@ -554,6 +560,7 @@ async def _predict_peak_hour(
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.post("/validate-model", response_model=ModelValidateResponse)
 async def validate_model(
     body: ModelValidateRequest,
@@ -665,7 +672,8 @@ async def upload_carte_model(
         if declared_kind and declared_kind != expected_kind:
             logger.warning(
                 "Carte model upload kind mismatch: slot=%s, training_config model_kind=%s",
-                expected_kind, declared_kind,
+                expected_kind,
+                declared_kind,
             )
 
     logger.info("Carte model upload (%s): valid=%s, dir=%s", model_type, valid, model_dir)
@@ -680,7 +688,9 @@ async def upload_carte_model(
 
 @router.post("/upload-model-folder", response_model=CarteModelUploadResponse)
 async def upload_carte_model_folder(
-    files: list[UploadFile] = File(..., description="Fichiers du dossier de modele (via webkitdirectory)"),
+    files: list[UploadFile] = File(
+        ..., description="Fichiers du dossier de modele (via webkitdirectory)"
+    ),
     session_id: str = Form(..., description="Session ID"),
     model_type: str = Form(..., description="Type de modele: tv, pl, hpm ou hps"),
     current_user: UserRecord = Depends(get_current_user),
@@ -718,7 +728,9 @@ async def upload_carte_model_folder(
         contents = await upload_file.read()
         target.write_bytes(contents)
 
-    logger.info("Carte model folder upload (%s): wrote %d files to %s", model_type, len(files), dest_dir)
+    logger.info(
+        "Carte model folder upload (%s): wrote %d files to %s", model_type, len(files), dest_dir
+    )
 
     # Remove macOS artefacts
     macosx = dest_dir / "__MACOSX"
@@ -753,7 +765,8 @@ async def upload_carte_model_folder(
         if declared_kind and declared_kind != expected_kind:
             logger.warning(
                 "Carte model folder upload kind mismatch: slot=%s, training_config model_kind=%s",
-                expected_kind, declared_kind,
+                expected_kind,
+                declared_kind,
             )
 
     logger.info("Carte model folder upload (%s): valid=%s, dir=%s", model_type, valid, model_dir)
@@ -812,10 +825,11 @@ async def upload_capteurs_pl(
     # Validation rapide via geopandas (lazy import comme upload.py).
     try:
         import geopandas as gpd
+
         gdf = gpd.read_file(dest_path)
     except Exception as exc:  # noqa: BLE001
         dest_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=f"GeoJSON invalide : {exc}")
+        raise HTTPException(status_code=400, detail=f"GeoJSON invalide : {exc}") from exc
 
     required_cols = {"TMJOBCPL", "TMJOBCTV", "annee"}
     missing = required_cols - set(gdf.columns)
@@ -835,13 +849,15 @@ async def upload_capteurs_pl(
         )
 
     annees_dispo = sorted(
-        pd.to_numeric(gdf["annee"], errors="coerce")
-        .dropna().astype(int).unique().tolist()
+        pd.to_numeric(gdf["annee"], errors="coerce").dropna().astype(int).unique().tolist()
     )
 
     logger.info(
         "Capteurs PL uploades : session=%s n=%d annees=%s path=%s",
-        session_id, len(gdf), annees_dispo, dest_path,
+        session_id,
+        len(gdf),
+        annees_dispo,
+        dest_path,
     )
 
     return CapteursPLUploadResponse(
@@ -871,7 +887,10 @@ async def generate_carte(
     # 2. Load raw data from session
     raw_df: pd.DataFrame | None = session.data.get("raw_df")
     if raw_df is None:
-        raise HTTPException(status_code=400, detail="Aucune donnee FCD dans la session. Uploadez un fichier d'abord.")
+        raise HTTPException(
+            status_code=400,
+            detail="Aucune donnee FCD dans la session. Uploadez un fichier d'abord.",
+        )
 
     # 3. Load TV model (toujours requis). Le modele PL est OPTIONNEL : il n'est
     #    charge que si ``model_pl_dir`` est non-vide (None/""/whitespace = pas
@@ -880,7 +899,7 @@ async def generate_carte(
     try:
         model_tv, coeff_tv, config_tv = await asyncio.to_thread(_load_model, body.model_tv_dir)
     except (FileNotFoundError, Exception) as e:
-        raise HTTPException(status_code=400, detail=f"Erreur chargement modele TV: {e}")
+        raise HTTPException(status_code=400, detail=f"Erreur chargement modele TV: {e}") from e
 
     pl_enabled = bool(body.model_pl_dir and body.model_pl_dir.strip())
 
@@ -889,7 +908,7 @@ async def generate_carte(
         try:
             model_pl, coeff_pl, config_pl = await asyncio.to_thread(_load_model, body.model_pl_dir)
         except (FileNotFoundError, Exception) as e:
-            raise HTTPException(status_code=400, detail=f"Erreur chargement modele PL: {e}")
+            raise HTTPException(status_code=400, detail=f"Erreur chargement modele PL: {e}") from e
 
     # 4. Extract norm coefficients
     muY_tv = coeff_tv["muY"][0]
@@ -919,7 +938,8 @@ async def generate_carte(
 
     # Apply year mapping for TV (overrides body > training_config si fournis)
     data = _apply_year_mapping(
-        data, config_tv,
+        data,
+        config_tv,
         year_column_override=body.year_column_name,
         year_mapping_override=body.year_value_mapping,
     )
@@ -929,8 +949,12 @@ async def generate_carte(
         input_cols_tv = _normalize_input_cols(config_tv["input_cols"])
     else:
         input_cols_tv = [
-            "TMJOFCDTV", "TMJOFCDPL", "avg_distance_m", "avg_speed_kmh",
-            "truck_avg_min_distance_m", "truck_avg_speed_kmh",
+            "TMJOFCDTV",
+            "TMJOFCDPL",
+            "avg_distance_m",
+            "avg_speed_kmh",
+            "truck_avg_min_distance_m",
+            "truck_avg_speed_kmh",
         ]
 
     missing_tv = [c for c in input_cols_tv if c not in data.columns]
@@ -972,11 +996,13 @@ async def generate_carte(
     # the carte GeoJSON output. JOr remplace TVr (rename interne complet,
     # cf module docstring). PL FCD brute renomme PL_brute_interne pour signaler
     # qu'elle n'est plus exposee en sortie.
-    data = data.rename(columns={
-        "TMJOFCDPL": "PL_brute_interne",
-        "JOrpred": "JOr",
-        "functional_class": "FC",
-    })
+    data = data.rename(
+        columns={
+            "TMJOFCDPL": "PL_brute_interne",
+            "JOrpred": "JOr",
+            "functional_class": "FC",
+        }
+    )
 
     # Handle AgregId (already normalised from agregId by _normalize_source_columns)
     if "AgregId" not in data.columns and "id" in data.columns:
@@ -999,7 +1025,9 @@ async def generate_carte(
 
     if "HD" in data.columns and pd.to_numeric(data["HD"], errors="coerce").notna().sum() > 0:
         # HD fourni par la source (FCDREFGLOBAL ou colonne mappee) — on l'utilise tel quel.
-        data["HD"] = pd.to_numeric(data["HD"], errors="coerce").fillna(0).round().astype(int).mod(360)
+        data["HD"] = (
+            pd.to_numeric(data["HD"], errors="coerce").fillna(0).round().astype(int).mod(360)
+        )
     elif geom_col in data.columns:
         # Fallback : derive HD from LineString geometry via the geo service helper
         # (factorise ; cf ``services.geo._parse_and_heading``).
@@ -1011,10 +1039,19 @@ async def generate_carte(
     # Select columns for intermediate result (using canonical names).
     # PL FCD brute n'est PLUS exposee (cf changement 2) ; VL/TP supprimes.
     selected_columns = [
-        "AgregId", "FC", "JOr", "DD", "HD",
-        "car_count", "avg_speed_kmh", "avg_distance_m",
-        "truck_count", "truck_avg_speed_kmh", "truck_avg_min_distance_m",
-        "geometry", "__geometry_json",
+        "AgregId",
+        "FC",
+        "JOr",
+        "DD",
+        "HD",
+        "car_count",
+        "avg_speed_kmh",
+        "avg_distance_m",
+        "truck_count",
+        "truck_avg_speed_kmh",
+        "truck_avg_min_distance_m",
+        "geometry",
+        "__geometry_json",
     ]
     available_cols = [c for c in selected_columns if c in data.columns]
     prod = data[available_cols].copy()
@@ -1031,7 +1068,8 @@ async def generate_carte(
         data_pl = _normalize_source_columns(data_pl)
         data_pl = _apply_column_aliases(data_pl)
         data_pl = _apply_year_mapping(
-            data_pl, config_pl,
+            data_pl,
+            config_pl,
             year_column_override=body.year_column_name,
             year_mapping_override=body.year_value_mapping,
         )
@@ -1040,8 +1078,11 @@ async def generate_carte(
             input_cols_pl = _normalize_input_cols(config_pl["input_cols"])
         else:
             input_cols_pl = [
-                "TMJOFCDPL", "avg_distance_m", "avg_speed_kmh",
-                "truck_avg_min_distance_m", "truck_avg_speed_kmh",
+                "TMJOFCDPL",
+                "avg_distance_m",
+                "avg_speed_kmh",
+                "truck_avg_min_distance_m",
+                "truck_avg_speed_kmh",
             ]
 
         missing_pl = [c for c in input_cols_pl if c not in data_pl.columns]
@@ -1080,8 +1121,13 @@ async def generate_carte(
     # fallback silencieux — l'utilisateur doit savoir).
     if body.model_hpm_dir:
         _hpm_fallback_inputs = [
-            "FCD_HPM_TV", "TMJOFCDPL", "avg_distance_m", "avg_speed_kmh",
-            "truck_avg_min_distance_m", "truck_avg_speed_kmh", "functional_class",
+            "FCD_HPM_TV",
+            "TMJOFCDPL",
+            "avg_distance_m",
+            "avg_speed_kmh",
+            "truck_avg_min_distance_m",
+            "truck_avg_speed_kmh",
+            "functional_class",
         ]
         _hpm_aliases = ("FCDTV_h08", "FCDTV_HPM", "FCD_HPM")
         _, debit_pm = await _predict_peak_hour(
@@ -1113,8 +1159,13 @@ async def generate_carte(
     # cf CONFIGS["HPS"] / FCD_HPS_TV = FCDTV_h17. Symetrique de HPM ci-dessus.
     if body.model_hps_dir:
         _hps_fallback_inputs = [
-            "FCD_HPS_TV", "TMJOFCDPL", "avg_distance_m", "avg_speed_kmh",
-            "truck_avg_min_distance_m", "truck_avg_speed_kmh", "functional_class",
+            "FCD_HPS_TV",
+            "TMJOFCDPL",
+            "avg_distance_m",
+            "avg_speed_kmh",
+            "truck_avg_min_distance_m",
+            "truck_avg_speed_kmh",
+            "functional_class",
         ]
         _hps_aliases = ("FCDTV_h17", "FCDTV_HPS", "FCD_HPS")
         _, debit_ps = await _predict_peak_hour(
@@ -1215,15 +1266,25 @@ async def generate_carte(
     #
     # No-op si pl_saturation_enabled=False, ou si DPL/FC absents (backward compat).
     if body.pl_saturation_enabled and "DPL" in prod.columns and "FC" in prod.columns:
-        jor_series = pd.to_numeric(prod["JOr"], errors="coerce") if "JOr" in prod.columns else pd.Series(0.0, index=prod.index)
-        jormin_series = pd.to_numeric(prod["JOrmin"], errors="coerce") if "JOrmin" in prod.columns else jor_series
-        jormax_series = pd.to_numeric(prod["JOrmax"], errors="coerce") if "JOrmax" in prod.columns else jor_series
+        jor_series = (
+            pd.to_numeric(prod["JOr"], errors="coerce")
+            if "JOr" in prod.columns
+            else pd.Series(0.0, index=prod.index)
+        )
+        jormin_series = (
+            pd.to_numeric(prod["JOrmin"], errors="coerce")
+            if "JOrmin" in prod.columns
+            else jor_series
+        )
+        jormax_series = (
+            pd.to_numeric(prod["JOrmax"], errors="coerce")
+            if "JOrmax" in prod.columns
+            else jor_series
+        )
         fc_series = pd.to_numeric(prod["FC"], errors="coerce")
 
         # ── Dispatch v1/v2/v3 selon les inputs disponibles ─────────────────
-        _has_fcd_inputs = (
-            "TMJOFCDPL" in data_pl.columns and "TMJOFCDTV" in data_pl.columns
-        )
+        _has_fcd_inputs = "TMJOFCDPL" in data_pl.columns and "TMJOFCDTV" in data_pl.columns
 
         # Capteurs SIREDO : present uniquement si l'utilisateur a uploade
         # un fichier capteurs_pl.geojson via /upload-capteurs-pl ET active
@@ -1311,12 +1372,12 @@ async def generate_carte(
                     pct_crit = (100.0 * n_crit / len(prod)) if len(prod) > 0 else 0.0
                     logger.info(
                         "PL saturation v3 : %d segments en zone critique (%.2f%%)",
-                        n_crit, pct_crit,
+                        n_crit,
+                        pct_crit,
                     )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "PL saturation v3 : echec detection zones critiques (%s) "
-                    "-> fallback v2.",
+                    "PL saturation v3 : echec detection zones critiques (%s) " "-> fallback v2.",
                     exc,
                 )
                 version = "v2"
@@ -1325,10 +1386,12 @@ async def generate_carte(
         # ── ETAPES 1/2/3 : calcul alpha_eff (v2/v3 = adaptatif ; v1 = plancher FC) ──
         if version in ("v2", "v3"):
             fcd_pl_series = pd.to_numeric(
-                data_pl["TMJOFCDPL"], errors="coerce",
+                data_pl["TMJOFCDPL"],
+                errors="coerce",
             ).reindex(prod.index)
             fcd_tv_series = pd.to_numeric(
-                data_pl["TMJOFCDTV"], errors="coerce",
+                data_pl["TMJOFCDTV"],
+                errors="coerce",
             ).reindex(prod.index)
             alpha_eff, alpha_source = _alpha_v3(
                 fcd_pl_series,
@@ -1367,7 +1430,8 @@ async def generate_carte(
         dplmin_sat = _saturer_avec_alpha(prod["DPLmin"], jormin_series)
         dplmax_sat = _saturer_avec_alpha(prod["DPLmax"], jormax_series)
         mask_dpl = pd.Series(
-            dpl_sat.to_numpy() != dpl_orig_int.to_numpy(), index=prod.index,
+            dpl_sat.to_numpy() != dpl_orig_int.to_numpy(),
+            index=prod.index,
         )
 
         # Coherence DPLmin <= DPL <= DPLmax post-saturation (cf spec § cas limites §5).
@@ -1395,7 +1459,10 @@ async def generate_carte(
         pct_sat = float(100 * mask_dpl.mean()) if n_total > 0 else 0.0
         logger.info(
             "PL saturation %s: %d segments satures sur %d (%.2f%%)",
-            version, n_sat, n_total, pct_sat,
+            version,
+            n_sat,
+            n_total,
+            pct_sat,
         )
 
         # Repartition par source d'alpha (5 valeurs en v3, 4 en v2, 1 en v1).
@@ -1404,11 +1471,14 @@ async def generate_carte(
             pct = (100.0 * count / n_total) if n_total > 0 else 0.0
             logger.info(
                 "PL saturation %s source=%s: %d (%.2f%%)",
-                version, src_name, count, pct,
+                version,
+                src_name,
+                count,
+                pct,
             )
 
         for fc_class in (1, 2, 3, 4, 5):
-            mask_fc = (fc_series == fc_class)
+            mask_fc = fc_series == fc_class
             n_fc = int(mask_fc.sum())
             if n_fc == 0:
                 continue
@@ -1423,7 +1493,11 @@ async def generate_carte(
             logger.log(
                 level,
                 "PL saturation %s FC%d: %d/%d (%.2f%%)",
-                version, fc_class, n_sat_fc, n_fc, pct_fc,
+                version,
+                fc_class,
+                n_sat_fc,
+                n_fc,
+                pct_fc,
             )
 
     # 10.c — Saturation hierarchique du HPM (cf SATURATION_HPM_HPS_specs.md).
@@ -1443,19 +1517,43 @@ async def generate_carte(
     # No-op si hpm_saturation_enabled=False ou si PM/FC absents (backward
     # compat avec les generations sans modele HPM).
     if body.hpm_saturation_enabled and "PM" in prod.columns and "FC" in prod.columns:
-        jor_h_series = pd.to_numeric(prod["JOr"], errors="coerce") if "JOr" in prod.columns else pd.Series(0.0, index=prod.index)
-        jormin_h_series = pd.to_numeric(prod["JOrmin"], errors="coerce") if "JOrmin" in prod.columns else jor_h_series
-        jormax_h_series = pd.to_numeric(prod["JOrmax"], errors="coerce") if "JOrmax" in prod.columns else jor_h_series
+        jor_h_series = (
+            pd.to_numeric(prod["JOr"], errors="coerce")
+            if "JOr" in prod.columns
+            else pd.Series(0.0, index=prod.index)
+        )
+        jormin_h_series = (
+            pd.to_numeric(prod["JOrmin"], errors="coerce")
+            if "JOrmin" in prod.columns
+            else jor_h_series
+        )
+        jormax_h_series = (
+            pd.to_numeric(prod["JOrmax"], errors="coerce")
+            if "JOrmax" in prod.columns
+            else jor_h_series
+        )
         fc_h_series = pd.to_numeric(prod["FC"], errors="coerce")
 
         pm_sat, mask_pm = _saturer_horaire_hierarchique(
-            prod["PM"], jor_h_series, fc_h_series, body.borne_hpm_fc, body.alpha_hpm_fc,
+            prod["PM"],
+            jor_h_series,
+            fc_h_series,
+            body.borne_hpm_fc,
+            body.alpha_hpm_fc,
         )
         pmmin_sat, _ = _saturer_horaire_hierarchique(
-            prod["PMmin"], jormin_h_series, fc_h_series, body.borne_hpm_fc, body.alpha_hpm_fc,
+            prod["PMmin"],
+            jormin_h_series,
+            fc_h_series,
+            body.borne_hpm_fc,
+            body.alpha_hpm_fc,
         )
         pmmax_sat, _ = _saturer_horaire_hierarchique(
-            prod["PMmax"], jormax_h_series, fc_h_series, body.borne_hpm_fc, body.alpha_hpm_fc,
+            prod["PMmax"],
+            jormax_h_series,
+            fc_h_series,
+            body.borne_hpm_fc,
+            body.alpha_hpm_fc,
         )
 
         # Coherence PMmin <= PM <= PMmax (cf spec section "cas limites" §4).
@@ -1478,10 +1576,12 @@ async def generate_carte(
         pct_sat_hpm = float(100 * mask_pm.mean()) if n_total_hpm > 0 else 0.0
         logger.info(
             "HPM saturation: %d segments satures sur %d (%.2f%%)",
-            n_sat_hpm, n_total_hpm, pct_sat_hpm,
+            n_sat_hpm,
+            n_total_hpm,
+            pct_sat_hpm,
         )
         for fc_class in (1, 2, 3, 4, 5):
-            mask_fc_hpm = (fc_h_series == fc_class)
+            mask_fc_hpm = fc_h_series == fc_class
             n_fc_hpm = int(mask_fc_hpm.sum())
             if n_fc_hpm == 0:
                 continue
@@ -1491,14 +1591,15 @@ async def generate_carte(
             # Seuils d'alerte cf spec section "Metriques de monitoring" :
             #   FC1 > 5%   -> calibration FC1 a revoir
             #   FC5 > 30%  -> modele local instable (extrapolation)
-            is_warn_hpm = (fc_class == 1 and pct_fc_hpm > 5) or (
-                fc_class == 5 and pct_fc_hpm > 30
-            )
+            is_warn_hpm = (fc_class == 1 and pct_fc_hpm > 5) or (fc_class == 5 and pct_fc_hpm > 30)
             level_hpm = logging.WARNING if is_warn_hpm else logging.INFO
             logger.log(
                 level_hpm,
                 "HPM saturation FC%d: %d/%d (%.2f%%)",
-                fc_class, n_sat_fc_hpm, n_fc_hpm, pct_fc_hpm,
+                fc_class,
+                n_sat_fc_hpm,
+                n_fc_hpm,
+                pct_fc_hpm,
             )
 
     # 10.d — Saturation hierarchique du HPS (cf SATURATION_HPM_HPS_specs.md).
@@ -1510,19 +1611,43 @@ async def generate_carte(
     #
     # No-op si hps_saturation_enabled=False ou si PS/FC absents.
     if body.hps_saturation_enabled and "PS" in prod.columns and "FC" in prod.columns:
-        jor_h_series = pd.to_numeric(prod["JOr"], errors="coerce") if "JOr" in prod.columns else pd.Series(0.0, index=prod.index)
-        jormin_h_series = pd.to_numeric(prod["JOrmin"], errors="coerce") if "JOrmin" in prod.columns else jor_h_series
-        jormax_h_series = pd.to_numeric(prod["JOrmax"], errors="coerce") if "JOrmax" in prod.columns else jor_h_series
+        jor_h_series = (
+            pd.to_numeric(prod["JOr"], errors="coerce")
+            if "JOr" in prod.columns
+            else pd.Series(0.0, index=prod.index)
+        )
+        jormin_h_series = (
+            pd.to_numeric(prod["JOrmin"], errors="coerce")
+            if "JOrmin" in prod.columns
+            else jor_h_series
+        )
+        jormax_h_series = (
+            pd.to_numeric(prod["JOrmax"], errors="coerce")
+            if "JOrmax" in prod.columns
+            else jor_h_series
+        )
         fc_h_series = pd.to_numeric(prod["FC"], errors="coerce")
 
         ps_sat, mask_ps = _saturer_horaire_hierarchique(
-            prod["PS"], jor_h_series, fc_h_series, body.borne_hps_fc, body.alpha_hps_fc,
+            prod["PS"],
+            jor_h_series,
+            fc_h_series,
+            body.borne_hps_fc,
+            body.alpha_hps_fc,
         )
         psmin_sat, _ = _saturer_horaire_hierarchique(
-            prod["PSmin"], jormin_h_series, fc_h_series, body.borne_hps_fc, body.alpha_hps_fc,
+            prod["PSmin"],
+            jormin_h_series,
+            fc_h_series,
+            body.borne_hps_fc,
+            body.alpha_hps_fc,
         )
         psmax_sat, _ = _saturer_horaire_hierarchique(
-            prod["PSmax"], jormax_h_series, fc_h_series, body.borne_hps_fc, body.alpha_hps_fc,
+            prod["PSmax"],
+            jormax_h_series,
+            fc_h_series,
+            body.borne_hps_fc,
+            body.alpha_hps_fc,
         )
 
         # Coherence PSmin <= PS <= PSmax (cf spec section "cas limites" §4).
@@ -1545,24 +1670,27 @@ async def generate_carte(
         pct_sat_hps = float(100 * mask_ps.mean()) if n_total_hps > 0 else 0.0
         logger.info(
             "HPS saturation: %d segments satures sur %d (%.2f%%)",
-            n_sat_hps, n_total_hps, pct_sat_hps,
+            n_sat_hps,
+            n_total_hps,
+            pct_sat_hps,
         )
         for fc_class in (1, 2, 3, 4, 5):
-            mask_fc_hps = (fc_h_series == fc_class)
+            mask_fc_hps = fc_h_series == fc_class
             n_fc_hps = int(mask_fc_hps.sum())
             if n_fc_hps == 0:
                 continue
             sat_fc_hps = mask_ps[mask_fc_hps]
             n_sat_fc_hps = int(sat_fc_hps.sum())
             pct_fc_hps = float(100 * sat_fc_hps.mean())
-            is_warn_hps = (fc_class == 1 and pct_fc_hps > 5) or (
-                fc_class == 5 and pct_fc_hps > 30
-            )
+            is_warn_hps = (fc_class == 1 and pct_fc_hps > 5) or (fc_class == 5 and pct_fc_hps > 30)
             level_hps = logging.WARNING if is_warn_hps else logging.INFO
             logger.log(
                 level_hps,
                 "HPS saturation FC%d: %d/%d (%.2f%%)",
-                fc_class, n_sat_fc_hps, n_fc_hps, pct_fc_hps,
+                fc_class,
+                n_sat_fc_hps,
+                n_fc_hps,
+                pct_fc_hps,
             )
 
     # 11. Cleanup pre-arrondi : non-finite + clamps >=0 (cf changement 4 spec).
@@ -1629,7 +1757,9 @@ async def generate_carte(
                     col_med = int(pd.to_numeric(prod[c], errors="coerce").fillna(0).median())
                     logger.info(
                         "Arrondi progressif applique sur %s (max=%d, median=%d)",
-                        c, col_max, col_med,
+                        c,
+                        col_max,
+                        col_med,
                     )
         logger.info(
             "Recomposition post-arrondi : PLred=DPL, VLred=round(max(JOr-DPL,0))",
@@ -1660,7 +1790,8 @@ async def generate_carte(
         if "DPL" in prod.columns:
             prod["PLred"] = prod["DPL"].astype("int32")
             prod["VLred"] = np.maximum(
-                prod["JOr"].astype("int64") - prod["DPL"].astype("int64"), 0,
+                prod["JOr"].astype("int64") - prod["DPL"].astype("int64"),
+                0,
             ).astype("int32")
 
     # Integer-cast residuel pour HD, PM/PS (au cas ou).
@@ -1679,7 +1810,9 @@ async def generate_carte(
     # le cast est idempotent.
     if "HD" in prod.columns:
         # Modulo 360 : 360 degres reboucle vers 0 (cap geographique borne sur [0, 359]).
-        prod["HD"] = pd.to_numeric(prod["HD"], errors="coerce").fillna(0).round().astype(int).mod(360)
+        prod["HD"] = (
+            pd.to_numeric(prod["HD"], errors="coerce").fillna(0).round().astype(int).mod(360)
+        )
 
     prod = prod.rename(columns={"AgregId": "agregId"})
 
@@ -1716,14 +1849,19 @@ async def generate_carte(
     # (pl_enabled=False) — elles n'ont pas de sens sans prediction PL.
     output_columns = [
         "agregId",
-        "JOr", "JOrmin", "JOrmax",
+        "JOr",
+        "JOrmin",
+        "JOrmax",
     ]
     if "DPL" in prod.columns:
         output_columns.extend(["DPL", "DPLmin", "DPLmax", "PLred", "VLred"])
-    output_columns.extend([
-        "FC",
-        "DD", "HD",
-    ])
+    output_columns.extend(
+        [
+            "FC",
+            "DD",
+            "HD",
+        ]
+    )
     if "PM" in prod.columns:
         output_columns.extend(["PM", "PMmin", "PMmax"])
     if "PS" in prod.columns:
@@ -1805,7 +1943,11 @@ async def generate_carte(
 
     logger.info(
         "Carte generated: session=%s total=%d filtered=%d mean_jor=%s mean_dpl=%s",
-        body.session_id, count_before, len(prod), mean_jor, mean_dpl,
+        body.session_id,
+        count_before,
+        len(prod),
+        mean_jor,
+        mean_dpl,
     )
 
     return CarteGenerateResponse(
@@ -1827,7 +1969,9 @@ async def download_carte(
 
     geojson = session.data.get("carte_geojson")
     if geojson is None:
-        raise HTTPException(status_code=400, detail="Aucune carte generee. Lancez la generation d'abord.")
+        raise HTTPException(
+            status_code=400, detail="Aucune carte generee. Lancez la generation d'abord."
+        )
 
     return JSONResponse(
         content=geojson,
@@ -1855,6 +1999,7 @@ async def download_carte(
 # Both serve ``application/geo+json`` inline (no Content-Disposition: attachment)
 # so the browser hands the bytes to the MapLibre source instead of opening
 # the save-as dialog.
+
 
 def _find_light_geojson() -> Path | None:
     """Return the first existing light geojson candidate, or None.
@@ -1887,7 +2032,10 @@ def _find_light_geojson() -> Path | None:
 
     # 3. Repo (scripts/map_2025_light/) — fallback dev / CI.
     candidates.append(
-        Path(__file__).resolve().parents[3] / "scripts" / "map_2025_light" / "2025_light.min.geojson",
+        Path(__file__).resolve().parents[3]
+        / "scripts"
+        / "map_2025_light"
+        / "2025_light.min.geojson",
     )
 
     for cand in candidates:

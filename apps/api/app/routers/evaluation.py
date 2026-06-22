@@ -31,7 +31,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..auth import UserRecord, get_current_user, require_owned_session
-from ..session import session_manager
 
 # Advanced metrics — extracted to services/ml/metrics_advanced.py (T2).
 from ..services.ml.metrics_advanced import (
@@ -47,7 +46,10 @@ from ..services.ml.metrics_advanced import (
 )
 
 # HTML report generators + shared display helpers — extracted to services/reports/.
-from ..services.reports import (
+# Several helpers below are re-exported (not used directly in this module) to
+# preserve the public surface of the router and keep them monkeypatchable in
+# tests; the ``noqa: F401`` markers document that intent.
+from ..services.reports import (  # noqa: F401
     _add_tolerance_columns,
     _build_sensitivity_section_html,
     _compute_flow_metrics,
@@ -58,7 +60,7 @@ from ..services.reports import (
     _make_drift_by_year_html,
     _make_residuals_by_fc_html,
 )
-from ..services.reports.html_peak import (
+from ..services.reports.html_peak import (  # noqa: F401
     _add_tolerance_columns_HPM_HPS,
     _build_sensitivity_section_html_HPM_HPS,
     _compute_flow_metrics_HPM_HPS,
@@ -67,16 +69,17 @@ from ..services.reports.html_peak import (
     _make_folium_map_html_HPM_HPS,
     generate_html_report_peak,
 )
-from ..services.reports.html_pl import (
+from ..services.reports.html_pl import (  # noqa: F401
     _make_barplot_html_PL,
     _make_folium_map_html_PL,
     generate_html_report_pl,
 )
-from ..services.reports.html_tv import (
+from ..services.reports.html_tv import (  # noqa: F401
     _make_barplot_html,
     _make_folium_map_html,
     generate_html_report_tv,
 )
+from ..session import session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/evaluation", tags=["evaluation"])
@@ -116,12 +119,18 @@ _VAL_RENAMES_UPLOAD: dict[str, str] = {
 
 _VAL_RENAMES_RUN: dict[str, str] = {
     # FCD throughput aliases
-    "TMJATV": "TMJAFCDTV", "TMJFCDTV": "TMJAFCDTV", "TMJOFCDTV": "TMJAFCDTV",
-    "TMJAPL": "TMJAFCDPL", "TMJFCDPL": "TMJAFCDPL", "TMJOFCDPL": "TMJAFCDPL",
+    "TMJATV": "TMJAFCDTV",
+    "TMJFCDTV": "TMJAFCDTV",
+    "TMJOFCDTV": "TMJAFCDTV",
+    "TMJAPL": "TMJAFCDPL",
+    "TMJFCDPL": "TMJAFCDPL",
+    "TMJOFCDPL": "TMJAFCDPL",
     # Sensor counts (Boucle Comptage)
-    "TMJOBCTV": "TMJABCTV", "TMJOBCPL": "TMJABCPL",
+    "TMJOBCTV": "TMJABCTV",
+    "TMJOBCPL": "TMJABCPL",
     # Penetration rates
-    "TxPen": "TxPenTVRef", "TxPenPL": "TxPenPLRef",
+    "TxPen": "TxPenTVRef",
+    "TxPenPL": "TxPenPLRef",
 }
 
 
@@ -143,6 +152,7 @@ def _generate_html_report_kind(*args, **kwargs) -> str:
 def _generate_html_report_HPM(*args, **kwargs) -> str:
     """Thin alias — HPM rapport (h08-h09, v/h, ref TMJOBCTV_HPM)."""
     from ..services.ml.types import HPM_CONFIG
+
     kwargs.pop("type_config", None)
     return generate_html_report_peak(*args, type_config=HPM_CONFIG, **kwargs)
 
@@ -150,6 +160,7 @@ def _generate_html_report_HPM(*args, **kwargs) -> str:
 def _generate_html_report_HPS(*args, **kwargs) -> str:
     """Thin alias — HPS rapport (h17-h18, v/h, ref TMJOBCTV_HPS)."""
     from ..services.ml.types import HPS_CONFIG
+
     kwargs.pop("type_config", None)
     return generate_html_report_peak(*args, type_config=HPS_CONFIG, **kwargs)
 
@@ -157,6 +168,7 @@ def _generate_html_report_HPS(*args, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
 
 class EvalRequest(BaseModel):
     session_id: str
@@ -266,6 +278,7 @@ class KFoldRequest(BaseModel):
 # Metrics helpers
 # ---------------------------------------------------------------------------
 
+
 def _geh(observed: np.ndarray, predicted: np.ndarray) -> np.ndarray:
     """GEH statistic (traffic engineering).
 
@@ -315,17 +328,25 @@ def _compute_metrics(
     ``None`` (no crash, no misleading number).
     """
     residuals = y_true - y_pred
-    rmse = float(np.sqrt(np.mean(residuals ** 2)))
+    rmse = float(np.sqrt(np.mean(residuals**2)))
     mae = float(np.mean(np.abs(residuals)))
 
     # MAPE
     nonzero = y_true != 0
-    mape = float(np.mean(np.abs(residuals[nonzero] / y_true[nonzero])) * 100) if nonzero.any() else None
+    mape = (
+        float(np.mean(np.abs(residuals[nonzero] / y_true[nonzero])) * 100)
+        if nonzero.any()
+        else None
+    )
 
     # Median relative error
-    median_rel = float(np.median(np.abs(residuals[nonzero] / y_true[nonzero])) * 100) if nonzero.any() else None
+    median_rel = (
+        float(np.median(np.abs(residuals[nonzero] / y_true[nonzero])) * 100)
+        if nonzero.any()
+        else None
+    )
 
-    ss_res = np.sum(residuals ** 2)
+    ss_res = np.sum(residuals**2)
     ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
     r2 = float(1 - ss_res / ss_tot) if ss_tot > 0 else 0.0
 
@@ -396,20 +417,31 @@ def _compute_metrics_hourly(
 
     if obs.size == 0:
         return MetricsResult(
-            rmse=0.0, mae=0.0, mape=None, r_squared=0.0,
-            geh_mean=0.0, geh_pct_below_5=0.0, n_samples=0,
-            hd_rmse=None, ld_rmse=None, median_relative_error=None,
+            rmse=0.0,
+            mae=0.0,
+            mape=None,
+            r_squared=0.0,
+            geh_mean=0.0,
+            geh_pct_below_5=0.0,
+            n_samples=0,
+            hd_rmse=None,
+            ld_rmse=None,
+            median_relative_error=None,
         )
 
     residuals = obs - pred
-    rmse = float(np.sqrt(np.mean(residuals ** 2)))
+    rmse = float(np.sqrt(np.mean(residuals**2)))
     mae = float(np.mean(np.abs(residuals)))
 
     nonzero = obs != 0
-    mape = float(np.mean(np.abs(residuals[nonzero] / obs[nonzero])) * 100) if nonzero.any() else None
-    median_rel = float(np.median(np.abs(residuals[nonzero] / obs[nonzero])) * 100) if nonzero.any() else None
+    mape = (
+        float(np.mean(np.abs(residuals[nonzero] / obs[nonzero])) * 100) if nonzero.any() else None
+    )
+    median_rel = (
+        float(np.median(np.abs(residuals[nonzero] / obs[nonzero])) * 100) if nonzero.any() else None
+    )
 
-    ss_res = np.sum(residuals ** 2)
+    ss_res = np.sum(residuals**2)
     ss_tot = np.sum((obs - np.mean(obs)) ** 2)
     r2 = float(1 - ss_res / ss_tot) if ss_tot > 0 else 0.0
 
@@ -419,9 +451,7 @@ def _compute_metrics_hourly(
     # finite number aligned with the report card (which uses dropna upstream).
     geh_finite = geh_vals[np.isfinite(geh_vals)]
     geh_mean = float(np.mean(geh_finite)) if geh_finite.size else 0.0
-    geh_below_5 = (
-        float(np.mean(geh_finite < 5) * 100) if geh_finite.size else 0.0
-    )
+    geh_below_5 = float(np.mean(geh_finite < 5) * 100) if geh_finite.size else 0.0
 
     # HD / LD split on the observed counter (v/h). high_threshold should be
     # the kind-specific peak-hour threshold (HPM/HPS default 80 v/h).
@@ -448,6 +478,7 @@ def _compute_metrics_hourly(
 # Helper: load model from disk
 # ---------------------------------------------------------------------------
 
+
 def _load_model_from_dir(model_path: Path) -> tuple[Any, dict]:
     """Load a Keras model + norm coefficients from a model directory on disk.
 
@@ -456,10 +487,12 @@ def _load_model_from_dir(model_path: Path) -> tuple[Any, dict]:
     are supported transparently (C4).
     """
     import os
+
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
     from ..services.ml.packaging import load_model_compat
+
     model = load_model_compat(model_path)
 
     # Load norm coefficients
@@ -499,6 +532,7 @@ def _read_uploaded_df(session_id: str) -> pd.DataFrame:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.post("/upload-validation")
 async def upload_validation(
     file: UploadFile = File(...),
@@ -507,7 +541,7 @@ async def upload_validation(
     current_user: UserRecord = Depends(get_current_user),
 ) -> dict:
     """Upload a validation file (GeoJSON or CSV) and store it in the session."""
-    session = require_owned_session(session_id, current_user)
+    require_owned_session(session_id, current_user)
 
     content = await file.read()
     filename = file.filename or "validation"
@@ -517,6 +551,7 @@ async def upload_validation(
             df = pd.read_csv(io.BytesIO(content))
         elif filename.lower().endswith((".geojson", ".json")):
             import geopandas as gpd
+
             df = gpd.read_file(io.BytesIO(content))
             # Extract lat/lon from Point geometry before dropping
             if "geometry" in df.columns:
@@ -536,7 +571,7 @@ async def upload_validation(
         raise HTTPException(
             status_code=400,
             detail=f"Impossible de lire le fichier : {exc}",
-        )
+        ) from exc
 
     # Column renames for compatibility (same aliases as training scripts).
     # Adds FCD HERE → legacy Bordeaux mapping so the eval report renders.
@@ -547,11 +582,20 @@ async def upload_validation(
     # Also try case-insensitive matching for columns the model expects
     col_lower_map = {c.lower(): c for c in df.columns}
     common_cols = [
-        "TMJAFCDTV", "TMJAFCDPL", "TMJABCTV", "TMJABCPL",
-        "car_average_speed_kmh", "car_average_distance_km",
-        "truck_average_speed_kmh", "truck_min_average_distance_km",
-        "car_count", "truck_count", "variabilite_FCD",
-        "TxPenTVRef", "TxPenPLRef", "flag_comptage",
+        "TMJAFCDTV",
+        "TMJAFCDPL",
+        "TMJABCTV",
+        "TMJABCPL",
+        "car_average_speed_kmh",
+        "car_average_distance_km",
+        "truck_average_speed_kmh",
+        "truck_min_average_distance_km",
+        "car_count",
+        "truck_count",
+        "variabilite_FCD",
+        "TxPenTVRef",
+        "TxPenPLRef",
+        "flag_comptage",
     ]
     for target in common_cols:
         if target not in df.columns and target.lower() in col_lower_map:
@@ -573,6 +617,7 @@ async def upload_validation(
     # Idempotent : ne reecrit jamais les colonnes existantes.
     try:
         from ..services.ml.data_prep import derive_hpm_hps_columns
+
         df = derive_hpm_hps_columns(df)
     except Exception as _hpm_exc:  # noqa: BLE001
         logger.debug(
@@ -585,7 +630,10 @@ async def upload_validation(
 
     logger.info(
         "Validation file uploaded: session=%s file=%s rows=%d cols=%d",
-        session_id, filename, len(df), len(df.columns),
+        session_id,
+        filename,
+        len(df),
+        len(df.columns),
     )
 
     return {
@@ -643,19 +691,17 @@ async def run_evaluation(
     if bootstrap_iter != 0 and bootstrap_iter < 100:
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"bootstrap_iter must be 0 or within [100, 10000]; got {bootstrap_iter}."
-            ),
+            detail=(f"bootstrap_iter must be 0 or within [100, 10000]; got {bootstrap_iter}."),
         )
     import os
+
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
-    session = require_owned_session(body.session_id, current_user)
+    require_owned_session(body.session_id, current_user)
 
     # --- Determine model source ---
     model = None
-    norm_params = None
     training_config = None
     model_name = body.model_name or "model"
 
@@ -692,10 +738,11 @@ async def run_evaluation(
             )
         try:
             model, norm_raw, training_config = await asyncio.to_thread(
-                _load_model_from_dir, model_path,
+                _load_model_from_dir,
+                model_path,
             )
         except FileNotFoundError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         # Parse norm coefficients from disk format (muX/SX/muY/SY)
         x_mean = np.array(norm_raw["muX"][0], dtype=np.float64)
@@ -731,6 +778,7 @@ async def run_evaluation(
             )
 
         from tensorflow.keras.models import model_from_json
+
         model = model_from_json(model_json_str)
 
         with tempfile.NamedTemporaryFile(suffix=".weights.h5", delete=False) as tmp:
@@ -750,7 +798,7 @@ async def run_evaluation(
     try:
         df = _read_uploaded_df(body.session_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Apply user-provided column mapping first (from frontend)
     if body.column_mapping:
@@ -772,6 +820,7 @@ async def run_evaluation(
     # presentes. Idempotent : si les colonnes existent deja, ne touche pas.
     try:
         from ..services.ml.data_prep import derive_hpm_hps_columns
+
         df = derive_hpm_hps_columns(df)
     except Exception as _hpm_exc:  # noqa: BLE001
         logger.debug("derive_hpm_hps_columns failed at eval (non-blocking): %s", _hpm_exc)
@@ -794,16 +843,17 @@ async def run_evaluation(
                 if cand in df.columns:
                     year_col = cand
                     break
-        year_mapping = body.year_value_mapping or (training_config or {}).get("year_value_mapping") or {}
+        year_mapping = (
+            body.year_value_mapping or (training_config or {}).get("year_value_mapping") or {}
+        )
         if year_col and year_mapping:
             from ..services.ml.inference import (
                 _normalize_year_keys,
                 _normalize_year_mapping_keys,
             )
+
             _year_keys = _normalize_year_keys(df[year_col])
-            df["year_mapped"] = _year_keys.map(
-                _normalize_year_mapping_keys(year_mapping)
-            )
+            df["year_mapped"] = _year_keys.map(_normalize_year_mapping_keys(year_mapping))
             if df["year_mapped"].isna().any():
                 df["year_mapped"] = df["year_mapped"].fillna(df["year_mapped"].median())
             logger.info(
@@ -845,6 +895,7 @@ async def run_evaluation(
                 _apply_log_transform_cols,
                 _one_hot_functional_class,
             )
+
             if bool(_fe.get("add_pl_tv_ratio", False)):
                 df = _add_pl_tv_ratio(df)
             log_cols = list(_fe.get("log_transform_cols") or [])
@@ -859,7 +910,9 @@ async def run_evaluation(
     missing = [c for c in input_cols + [output_col] if c not in df.columns]
     if missing:
         # Log available columns for debugging
-        logger.error("Colonnes manquantes: %s. Colonnes disponibles: %s", missing, list(df.columns)[:30])
+        logger.error(
+            "Colonnes manquantes: %s. Colonnes disponibles: %s", missing, list(df.columns)[:30]
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Colonnes manquantes dans les donnees de validation : {missing}. Colonnes disponibles : {list(df.columns)[:20]}",
@@ -922,6 +975,7 @@ async def run_evaluation(
     # bit-identical to the legacy path. Larger tta_iter averages predictions
     # over several noisy forward passes for smoother inference.
     from ..services.ml.evaluation_pipeline import apply_model_tta
+
     y_pred_norm = (
         await asyncio.to_thread(
             apply_model_tta,
@@ -994,10 +1048,11 @@ async def run_evaluation(
         # Reference compteur : TMJOBCTV_HPM / TMJOBCTV_HPS (jamais TMJOBCTV daily).
         # Unite : v/h. Pas de variante PL pour ces kinds.
         from ..services.ml.types import CONFIGS as _CONFIGS
+
         _hourly_cfg = _CONFIGS[_model_kind]
-        _fcd_col_h = _hourly_cfg.fcd_col                   # FCD_HPM_TV / FCD_HPS_TV
-        _ref_col_h = _hourly_cfg.eval_reference_col         # TMJOBCTV_HPM / TMJOBCTV_HPS
-        _pred_col_h = _hourly_cfg.eval_predicted_col        # HPM_FCDr / HPS_FCDr
+        _fcd_col_h = _hourly_cfg.fcd_col  # FCD_HPM_TV / FCD_HPS_TV
+        _ref_col_h = _hourly_cfg.eval_reference_col  # TMJOBCTV_HPM / TMJOBCTV_HPS
+        _pred_col_h = _hourly_cfg.eval_predicted_col  # HPM_FCDr / HPS_FCDr
 
         if _fcd_col_h and _fcd_col_h in report_df.columns:
             report_df[_pred_col_h] = (
@@ -1013,12 +1068,12 @@ async def run_evaluation(
 
         if _pred_col_h in report_df.columns and _ref_col_h in report_df.columns:
             report_df["Erreur absolue"] = (
-                report_df[_pred_col_h] - report_df[_ref_col_h]
-            ).abs().round(1)
+                (report_df[_pred_col_h] - report_df[_ref_col_h]).abs().round(1)
+            )
             denom = report_df[_ref_col_h].replace([np.inf, -np.inf], np.nan)
-            report_df["Erreur %"] = (
-                report_df["Erreur absolue"] / denom * 100.0
-            ).replace([np.inf, -np.inf], np.nan)
+            report_df["Erreur %"] = (report_df["Erreur absolue"] / denom * 100.0).replace(
+                [np.inf, -np.inf], np.nan
+            )
         else:
             report_df["Erreur absolue"] = np.nan
             report_df["Erreur %"] = np.nan
@@ -1030,7 +1085,9 @@ async def run_evaluation(
             b = pd.to_numeric(report_df[_ref_col_h], errors="coerce")
             with np.errstate(divide="ignore", invalid="ignore"):
                 geh_vals = np.sqrt(2.0 * (a - b) ** 2 / (a + b))
-            report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace([np.inf, -np.inf], np.nan)
+            report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace(
+                [np.inf, -np.inf], np.nan
+            )
 
         # lat / lon
         if "__lat" in report_df.columns and "lat" not in report_df.columns:
@@ -1044,6 +1101,7 @@ async def run_evaluation(
     elif _is_pl_model:
         # ── PL branch ── DPL = TMJOFCDPL / TP_redressement * 100, reference = TMJOBCPL.
         from ..services.ml.types import PL_CONFIG
+
         tmja_fcd_col = None
         for cand in ("TMJAFCDPL", "TMJOFCDPL"):
             if cand in report_df.columns:
@@ -1074,9 +1132,9 @@ async def run_evaluation(
         if "DPL" in report_df.columns and "TMJOBCPL" in report_df.columns:
             report_df["Erreur absolue"] = (report_df["DPL"] - report_df["TMJOBCPL"]).abs().round(1)
             denom = report_df["TMJOBCPL"].replace([np.inf, -np.inf], np.nan)
-            report_df["Erreur %"] = (
-                report_df["Erreur absolue"] / denom * 100.0
-            ).replace([np.inf, -np.inf], np.nan)
+            report_df["Erreur %"] = (report_df["Erreur absolue"] / denom * 100.0).replace(
+                [np.inf, -np.inf], np.nan
+            )
         else:
             report_df["Erreur absolue"] = np.nan
             report_df["Erreur %"] = np.nan
@@ -1087,7 +1145,9 @@ async def run_evaluation(
             b = report_df["TMJOBCPL"]
             with np.errstate(divide="ignore", invalid="ignore"):
                 geh_vals = np.sqrt(2.0 * (a - b) ** 2 / (a + b))
-            report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace([np.inf, -np.inf], np.nan)
+            report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace(
+                [np.inf, -np.inf], np.nan
+            )
 
         # lat/lon
         if "__lat" in report_df.columns and "lat" not in report_df.columns:
@@ -1121,9 +1181,9 @@ async def run_evaluation(
         if "TVr" in report_df.columns and "TMJABCTV" in report_df.columns:
             report_df["Erreur absolue"] = (report_df["TVr"] - report_df["TMJABCTV"]).abs().round(1)
             denom = report_df["TMJABCTV"].replace([np.inf, -np.inf], np.nan)
-            report_df["Erreur %"] = (
-                report_df["Erreur absolue"] / denom * 100.0
-            ).replace([np.inf, -np.inf], np.nan)
+            report_df["Erreur %"] = (report_df["Erreur absolue"] / denom * 100.0).replace(
+                [np.inf, -np.inf], np.nan
+            )
         else:
             report_df["Erreur absolue"] = np.nan
             report_df["Erreur %"] = np.nan
@@ -1133,7 +1193,9 @@ async def run_evaluation(
             b = report_df["TMJABCTV"] / 24.0
             with np.errstate(divide="ignore", invalid="ignore"):
                 geh_vals = np.sqrt(2.0 * (a - b) ** 2 / (a + b))
-            report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace([np.inf, -np.inf], np.nan)
+            report_df["GEH"] = pd.to_numeric(geh_vals, errors="coerce").replace(
+                [np.inf, -np.inf], np.nan
+            )
 
         if "__lat" in report_df.columns and "lat" not in report_df.columns:
             report_df["lat"] = pd.to_numeric(report_df["__lat"], errors="coerce")
@@ -1156,24 +1218,34 @@ async def run_evaluation(
     # original metrics object is correct as-is.
     if _is_hourly_kind:
         from ..services.ml.types import CONFIGS as _CONFIGS_M
+
         _hcfg = _CONFIGS_M[_model_kind]
-        _pred_col_m = _hcfg.eval_predicted_col   # HPM_FCDr / HPS_FCDr
-        _ref_col_m = _hcfg.eval_reference_col    # TMJOBCTV_HPM / TMJOBCTV_HPS
+        _pred_col_m = _hcfg.eval_predicted_col  # HPM_FCDr / HPS_FCDr
+        _ref_col_m = _hcfg.eval_reference_col  # TMJOBCTV_HPM / TMJOBCTV_HPS
         if _pred_col_m in report_df.columns and _ref_col_m in report_df.columns:
-            _obs_vh = pd.to_numeric(report_df[_ref_col_m], errors="coerce").to_numpy(dtype=np.float64)
-            _pred_vh = pd.to_numeric(report_df[_pred_col_m], errors="coerce").to_numpy(dtype=np.float64)
+            _obs_vh = pd.to_numeric(report_df[_ref_col_m], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
+            _pred_vh = pd.to_numeric(report_df[_pred_col_m], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
             # HPM/HPS HD/LD threshold lives on the kind config (80 v/h by default).
             _hourly_thr = float(getattr(_hcfg, "default_high_flow_threshold", 80.0) or 80.0)
             metrics = _compute_metrics_hourly(_obs_vh, _pred_vh, _hourly_thr)
             logger.info(
                 "Metrics realigned on %s/%s (v/h) for %s: RMSE=%.2f GEH<5=%.2f%% n=%d",
-                _pred_col_m, _ref_col_m, _model_kind,
-                metrics.rmse, metrics.geh_pct_below_5, metrics.n_samples,
+                _pred_col_m,
+                _ref_col_m,
+                _model_kind,
+                metrics.rmse,
+                metrics.geh_pct_below_5,
+                metrics.n_samples,
             )
         else:
             logger.warning(
                 "%s/%s missing from report_df — MetricsResult left on TxPen scale (API/report may diverge)",
-                _pred_col_m, _ref_col_m,
+                _pred_col_m,
+                _ref_col_m,
             )
 
     # P1.1 - Bootstrap CI95 for tol_in_pct, p80 (err_rel), R-squared.
@@ -1187,25 +1259,25 @@ async def run_evaluation(
 
         # R-squared - bootstrap on (y_true, y_pred) directly.
         r2_res = await asyncio.to_thread(
-            bootstrap_ci95, _metric_r2, y_true, y_pred, None, bootstrap_iter, 1750,
+            bootstrap_ci95,
+            _metric_r2,
+            y_true,
+            y_pred,
+            None,
+            bootstrap_iter,
+            1750,
         )
-        metrics_ci95["r2"] = (
-            [round(r2_res[1], 6), round(r2_res[2], 6)] if r2_res else None
-        )
+        metrics_ci95["r2"] = [round(r2_res[1], 6), round(r2_res[2], 6)] if r2_res else None
 
         # p80 of relative error - bootstrap on the (TMJABCTV, TVr) pair so it
         # matches the reported err_rel_p80. Fall back to (y_true, y_pred)
         # when the report columns aren't available (matches the report's own
         # fallback path).
-        if (
-            "TMJABCTV" in report_df.columns and "TVr" in report_df.columns
-        ):
+        if "TMJABCTV" in report_df.columns and "TVr" in report_df.columns:
             obs_p80 = pd.to_numeric(report_df["TMJABCTV"], errors="coerce").to_numpy(
                 dtype=np.float64
             )
-            pred_p80 = pd.to_numeric(report_df["TVr"], errors="coerce").to_numpy(
-                dtype=np.float64
-            )
+            pred_p80 = pd.to_numeric(report_df["TVr"], errors="coerce").to_numpy(dtype=np.float64)
             mask = np.isfinite(obs_p80) & np.isfinite(pred_p80)
             obs_p80, pred_p80 = obs_p80[mask], pred_p80[mask]
         else:
@@ -1219,17 +1291,15 @@ async def run_evaluation(
             bootstrap_iter,
             1750,
         )
-        metrics_ci95["p80"] = (
-            [round(p80_res[1], 4), round(p80_res[2], 4)] if p80_res else None
-        )
+        metrics_ci95["p80"] = [round(p80_res[1], 4), round(p80_res[2], 4)] if p80_res else None
 
         # tol_in_pct - bootstrap on Tolerance_IN_OUT codes (1/2/3). We pass
         # the codes as ``observed`` and a dummy zero array as ``predicted``;
         # the adapter only reads ``observed`` (see _metric_tol_in_pct).
         if "Tolerance_IN_OUT" in report_df.columns:
-            tol_codes = pd.to_numeric(
-                report_df["Tolerance_IN_OUT"], errors="coerce"
-            ).to_numpy(dtype=np.float64)
+            tol_codes = pd.to_numeric(report_df["Tolerance_IN_OUT"], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
             tol_codes = tol_codes[~np.isnan(tol_codes)]
             if tol_codes.size > 0:
                 dummy = np.zeros_like(tol_codes)
@@ -1268,11 +1338,15 @@ async def run_evaluation(
     else:
         try:
             metrics_by_tmja_bucket = _stratify_by_tmja(
-                report_df, strat_flow_col, y_true, y_pred,
+                report_df,
+                strat_flow_col,
+                y_true,
+                y_pred,
             )
         except Exception as exc:  # noqa: BLE001 — non-blocking by design
             logger.warning(
-                "TMJA stratification failed (non-blocking): %s", exc,
+                "TMJA stratification failed (non-blocking): %s",
+                exc,
             )
             metrics_by_tmja_bucket = []
 
@@ -1294,8 +1368,7 @@ async def run_evaluation(
         residuals_by_fc = _compute_residuals_by_fc(report_df, y_true, y_pred)
         if not residuals_by_fc:
             logger.debug(
-                "Residuals by FC skipped: functional_class column absent "
-                "from validation data."
+                "Residuals by FC skipped: functional_class column absent " "from validation data."
             )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Residuals-by-FC computation failed (non-blocking): %s", exc)
@@ -1307,17 +1380,18 @@ async def run_evaluation(
     drift_by_year: list[dict[str, Any]] = []
     try:
         _year_mapping = (
-            body.year_value_mapping
-            or (training_config or {}).get("year_value_mapping")
-            or {}
+            body.year_value_mapping or (training_config or {}).get("year_value_mapping") or {}
         )
         drift_by_year = _compute_drift_by_year(
-            report_df, y_true, y_pred, year_value_mapping=_year_mapping,
+            report_df,
+            y_true,
+            y_pred,
+            year_value_mapping=_year_mapping,
         )
         if not drift_by_year:
             logger.debug(
-                "Drift by year skipped: year_mapped absent or no year has "
-                "at least %d samples.", _DRIFT_MIN_SAMPLES,
+                "Drift by year skipped: year_mapped absent or no year has " "at least %d samples.",
+                _DRIFT_MIN_SAMPLES,
             )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Drift-by-year computation failed (non-blocking): %s", exc)
@@ -1336,18 +1410,29 @@ async def run_evaluation(
             s_y_arr = np.array(y_std, dtype=np.float64)
             from ..services.ml.types import CONFIGS as _CONFIGS_S
             from ..services.ml.types import PL_CONFIG, TV_CONFIG
+
             if _is_hourly_kind:
                 sensitivity_html = _build_sensitivity_section_html_HPM_HPS(
-                    df=report_df, model=model,
-                    mu_x=mu_x_arr, s_x=s_x_arr, mu_y=mu_y_arr, s_y=s_y_arr,
-                    input_cols=input_cols, type_config=_CONFIGS_S[_model_kind],
+                    df=report_df,
+                    model=model,
+                    mu_x=mu_x_arr,
+                    s_x=s_x_arr,
+                    mu_y=mu_y_arr,
+                    s_y=s_y_arr,
+                    input_cols=input_cols,
+                    type_config=_CONFIGS_S[_model_kind],
                 )
             else:
                 _sens_type_config = PL_CONFIG if _is_pl_model else TV_CONFIG
                 sensitivity_html = _build_sensitivity_section_html(
-                    df=report_df, model=model,
-                    mu_x=mu_x_arr, s_x=s_x_arr, mu_y=mu_y_arr, s_y=s_y_arr,
-                    input_cols=input_cols, type_config=_sens_type_config,
+                    df=report_df,
+                    model=model,
+                    mu_x=mu_x_arr,
+                    s_x=s_x_arr,
+                    mu_y=mu_y_arr,
+                    s_y=s_y_arr,
+                    input_cols=input_cols,
+                    type_config=_sens_type_config,
                 )
     except Exception as exc:
         logger.warning("Sensitivity analysis failed (non-blocking): %s", exc)
@@ -1360,38 +1445,62 @@ async def run_evaluation(
     #   HPS -> _generate_html_report_HPS       (h17-h18, v/h, HPS_FCDr / TMJOBCTV_HPS)
     if _model_kind == "HPM":
         report_html = _generate_html_report_HPM(
-            metrics=metrics, model_name=model_name, training_config=training_config,
-            y_true=y_true, y_pred=y_pred, df=report_df,
-            sensitivity_html=sensitivity_html, metrics_ci95=metrics_ci95,
+            metrics=metrics,
+            model_name=model_name,
+            training_config=training_config,
+            y_true=y_true,
+            y_pred=y_pred,
+            df=report_df,
+            sensitivity_html=sensitivity_html,
+            metrics_ci95=metrics_ci95,
             metrics_by_tmja_bucket=metrics_by_tmja_bucket,
-            calibration_data=calibration_data, residuals_by_fc=residuals_by_fc,
+            calibration_data=calibration_data,
+            residuals_by_fc=residuals_by_fc,
             drift_by_year=drift_by_year,
         )
     elif _model_kind == "HPS":
         report_html = _generate_html_report_HPS(
-            metrics=metrics, model_name=model_name, training_config=training_config,
-            y_true=y_true, y_pred=y_pred, df=report_df,
-            sensitivity_html=sensitivity_html, metrics_ci95=metrics_ci95,
+            metrics=metrics,
+            model_name=model_name,
+            training_config=training_config,
+            y_true=y_true,
+            y_pred=y_pred,
+            df=report_df,
+            sensitivity_html=sensitivity_html,
+            metrics_ci95=metrics_ci95,
             metrics_by_tmja_bucket=metrics_by_tmja_bucket,
-            calibration_data=calibration_data, residuals_by_fc=residuals_by_fc,
+            calibration_data=calibration_data,
+            residuals_by_fc=residuals_by_fc,
             drift_by_year=drift_by_year,
         )
     elif _model_kind == "PL":
         report_html = generate_html_report_pl(
-            metrics=metrics, model_name=model_name, training_config=training_config,
-            y_true=y_true, y_pred=y_pred, df=report_df,
-            sensitivity_html=sensitivity_html, metrics_ci95=metrics_ci95,
+            metrics=metrics,
+            model_name=model_name,
+            training_config=training_config,
+            y_true=y_true,
+            y_pred=y_pred,
+            df=report_df,
+            sensitivity_html=sensitivity_html,
+            metrics_ci95=metrics_ci95,
             metrics_by_tmja_bucket=metrics_by_tmja_bucket,
-            calibration_data=calibration_data, residuals_by_fc=residuals_by_fc,
+            calibration_data=calibration_data,
+            residuals_by_fc=residuals_by_fc,
             drift_by_year=drift_by_year,
         )
     else:
         report_html = generate_html_report_tv(
-            metrics=metrics, model_name=model_name, training_config=training_config,
-            y_true=y_true, y_pred=y_pred, df=report_df,
-            sensitivity_html=sensitivity_html, metrics_ci95=metrics_ci95,
+            metrics=metrics,
+            model_name=model_name,
+            training_config=training_config,
+            y_true=y_true,
+            y_pred=y_pred,
+            df=report_df,
+            sensitivity_html=sensitivity_html,
+            metrics_ci95=metrics_ci95,
             metrics_by_tmja_bucket=metrics_by_tmja_bucket,
-            calibration_data=calibration_data, residuals_by_fc=residuals_by_fc,
+            calibration_data=calibration_data,
+            residuals_by_fc=residuals_by_fc,
             drift_by_year=drift_by_year,
         )
 
@@ -1410,19 +1519,27 @@ async def run_evaluation(
     # P1.2 — always persist, even when empty list, so consumers can rely
     # on the key existing after a successful /run.
     session_manager.store_data(
-        body.session_id, "metrics_by_tmja_bucket", metrics_by_tmja_bucket,
+        body.session_id,
+        "metrics_by_tmja_bucket",
+        metrics_by_tmja_bucket,
     )
     # P4.1/4.2/4.3 — persist the new sections so /report/{session_id}
     # replays them without recomputing. ``calibration_data`` may be None
     # (empty obs/pred); store None explicitly to keep the key shape stable.
     session_manager.store_data(
-        body.session_id, "calibration_data", calibration_data,
+        body.session_id,
+        "calibration_data",
+        calibration_data,
     )
     session_manager.store_data(
-        body.session_id, "residuals_by_fc", residuals_by_fc,
+        body.session_id,
+        "residuals_by_fc",
+        residuals_by_fc,
     )
     session_manager.store_data(
-        body.session_id, "drift_by_year", drift_by_year,
+        body.session_id,
+        "drift_by_year",
+        drift_by_year,
     )
 
     # P1.4 — persist per-model evaluation artifacts so /api/evaluation/compare
@@ -1450,8 +1567,14 @@ async def run_evaluation(
     logger.info(
         "Evaluation done: session=%s model=%s RMSE=%.4f R2=%.4f GEH<5=%.1f%% "
         "bootstrap_iter=%d tta_iter=%d tta_noise_std=%.4f",
-        body.session_id, model_name, metrics.rmse, metrics.r_squared, metrics.geh_pct_below_5,
-        bootstrap_iter, tta_iter, tta_noise_std,
+        body.session_id,
+        model_name,
+        metrics.rmse,
+        metrics.r_squared,
+        metrics.geh_pct_below_5,
+        bootstrap_iter,
+        tta_iter,
+        tta_noise_std,
     )
 
     return EvalResponse(
@@ -1473,14 +1596,16 @@ async def get_report(
     current_user: UserRecord = Depends(get_current_user),
 ) -> ReportResponse:
     """Return the generated HTML evaluation report."""
-    session = require_owned_session(session_id, current_user)
+    require_owned_session(session_id, current_user)
 
     report_html = session_manager.get_data(session_id, "eval_report_html")
     if report_html is None:
         # Fallback: generate a minimal report from stored metrics
         metrics_dict = session_manager.get_data(session_id, "eval_metrics")
         if metrics_dict is None:
-            raise HTTPException(status_code=400, detail="Lancez l'evaluation d'abord (/api/evaluation/run).")
+            raise HTTPException(
+                status_code=400, detail="Lancez l'evaluation d'abord (/api/evaluation/run)."
+            )
 
         metrics = MetricsResult(**metrics_dict)
         model_name = session_manager.get_data(session_id, "eval_model_name", "modele")
@@ -1488,21 +1613,13 @@ async def get_report(
         y_pred = np.array(session_manager.get_data(session_id, "eval_y_pred", []))
         # P1.2 — replay the persisted stratification if available so the
         # regenerated fallback report still shows the bucket table.
-        cached_buckets = session_manager.get_data(
-            session_id, "metrics_by_tmja_bucket", []
-        )
+        cached_buckets = session_manager.get_data(session_id, "metrics_by_tmja_bucket", [])
         # P4.1 / P4.2 / P4.3 — replay the new sections from session storage
         # so the cached fallback report has the same shape as the freshly
         # generated one.
-        cached_calibration = session_manager.get_data(
-            session_id, "calibration_data", None
-        )
-        cached_residuals_fc = session_manager.get_data(
-            session_id, "residuals_by_fc", []
-        )
-        cached_drift = session_manager.get_data(
-            session_id, "drift_by_year", []
-        )
+        cached_calibration = session_manager.get_data(session_id, "calibration_data", None)
+        cached_residuals_fc = session_manager.get_data(session_id, "residuals_by_fc", [])
+        cached_drift = session_manager.get_data(session_id, "drift_by_year", [])
 
         report_html = generate_html_report_tv(
             metrics=metrics,
@@ -1582,6 +1699,7 @@ async def download_model(
 # P1.4 — McNemar paired comparison of two evaluated models
 # ---------------------------------------------------------------------------
 
+
 @router.post("/compare")
 async def compare_models_endpoint(
     body: CompareRequest,
@@ -1602,9 +1720,7 @@ async def compare_models_endpoint(
     if not (0.0 < body.tolerance_pct <= 100.0):
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"tolerance_pct doit etre dans (0, 100], recu {body.tolerance_pct}."
-            ),
+            detail=(f"tolerance_pct doit etre dans (0, 100], recu {body.tolerance_pct}."),
         )
     if body.run_a == body.run_b:
         raise HTTPException(
@@ -1612,12 +1728,8 @@ async def compare_models_endpoint(
             detail="run_a et run_b doivent etre deux modeles distincts.",
         )
 
-    artifact_a = session_manager.get_data(
-        body.session_id, f"eval_artifact:{body.run_a}"
-    )
-    artifact_b = session_manager.get_data(
-        body.session_id, f"eval_artifact:{body.run_b}"
-    )
+    artifact_a = session_manager.get_data(body.session_id, f"eval_artifact:{body.run_a}")
+    artifact_b = session_manager.get_data(body.session_id, f"eval_artifact:{body.run_b}")
 
     missing: list[str] = []
     if not artifact_a:
@@ -1678,14 +1790,18 @@ async def compare_models_endpoint(
             name_b=body.run_b,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     logger.info(
-        "McNemar compare: session=%s a=%s b=%s tol=%.2f%% "
-        "method=%s p=%.4g sig=%s verdict=%s",
-        body.session_id, body.run_a, body.run_b, body.tolerance_pct,
-        result["method"], result["p_value"],
-        result["significant_at_0.05"], result["verdict"],
+        "McNemar compare: session=%s a=%s b=%s tol=%.2f%% " "method=%s p=%.4g sig=%s verdict=%s",
+        body.session_id,
+        body.run_a,
+        body.run_b,
+        body.tolerance_pct,
+        result["method"],
+        result["p_value"],
+        result["significant_at_0.05"],
+        result["verdict"],
     )
     return result
 
@@ -1712,7 +1828,9 @@ _KFOLD_SLOW_WARN_SECONDS = 600.0
 
 
 def _kfold_resolve_training_config(
-    session_id: str, run_name: str, override_dir: str | None,
+    session_id: str,
+    run_name: str,
+    override_dir: str | None,
 ) -> tuple[dict[str, Any], Path]:
     """Find the ``training_config.json`` for *run_name* under the session
     workspace (or *override_dir* when provided).
@@ -1739,7 +1857,7 @@ def _kfold_resolve_training_config(
                 raise HTTPException(
                     status_code=400,
                     detail=f"training_config.json illisible pour {run_name}: {exc}",
-                )
+                ) from exc
 
     raise HTTPException(
         status_code=404,
@@ -1777,6 +1895,7 @@ async def kfold_cross_validation(
         400 — session has no learning_df, or training_config invalid
     """
     import os
+
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
     import time as _time
@@ -1787,7 +1906,9 @@ async def kfold_cross_validation(
     # 1. Locate the training config + parse hyper-parameters
     # ──────────────────────────────────────────────────────────────────────
     training_config, model_dir = _kfold_resolve_training_config(
-        body.session_id, body.run_name, body.model_dir,
+        body.session_id,
+        body.run_name,
+        body.model_dir,
     )
     if not training_config.get("input_cols"):
         raise HTTPException(
@@ -1864,41 +1985,54 @@ async def kfold_cross_validation(
         # Best-effort: let the thread observe the flag before re-raising.
         await asyncio.sleep(0)
         logger.warning(
-            "kfold cancelled: session=%s run=%s", body.session_id, body.run_name,
+            "kfold cancelled: session=%s run=%s",
+            body.session_id,
+            body.run_name,
         )
         raise
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "kfold failed: session=%s run=%s err=%s",
-            body.session_id, body.run_name, exc,
+            body.session_id,
+            body.run_name,
+            exc,
         )
-        raise HTTPException(status_code=500, detail=f"K-fold a echoue : {exc}")
+        raise HTTPException(status_code=500, detail=f"K-fold a echoue : {exc}") from exc
 
     duration_s = _time.time() - started
     if duration_s > _KFOLD_SLOW_WARN_SECONDS:
         logger.warning(
             "kfold slow: session=%s run=%s k=%d duration=%.1fs > %.0fs",
-            body.session_id, body.run_name, body.k, duration_s,
+            body.session_id,
+            body.run_name,
+            body.k,
+            duration_s,
             _KFOLD_SLOW_WARN_SECONDS,
         )
 
     # Persist for downstream consumers (UI panel, reports).
     try:
         session_manager.store_data(
-            body.session_id, f"kfold_result:{body.run_name}", result,
+            body.session_id,
+            f"kfold_result:{body.run_name}",
+            result,
         )
     except Exception:  # noqa: BLE001 — non-fatal
         logger.exception(
             "Failed to persist kfold result for session=%s run=%s",
-            body.session_id, body.run_name,
+            body.session_id,
+            body.run_name,
         )
 
     logger.info(
         "kfold done: session=%s run=%s k=%d folds_returned=%d duration=%.1fs",
-        body.session_id, body.run_name, body.k,
-        len(result.get("folds") or []), duration_s,
+        body.session_id,
+        body.run_name,
+        body.k,
+        len(result.get("folds") or []),
+        duration_s,
     )
 
     return {
