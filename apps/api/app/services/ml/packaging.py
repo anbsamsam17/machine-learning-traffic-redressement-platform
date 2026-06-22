@@ -7,27 +7,53 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 import platform
 import socket
 import subprocess
 import sys
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import numpy as np
 import pandas as pd
 
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from .training_pipeline import TrainedModelArtifact
 
+logger = logging.getLogger(__name__)
 
-def build_meta(*, seed=None, data_sha256=None, extra=None):
+
+class ImportedModel(TypedDict):
+    """Structured result of :func:`import_model_zip` (a deserialised model bundle)."""
+
+    model: Any
+    mu_x: np.ndarray
+    sigma_x: np.ndarray
+    mu_y: np.ndarray
+    sigma_y: np.ndarray
+    input_cols: list
+    output_cols: list
+    training_config: dict
+    training_metrics: dict
+
+
+def build_meta(
+    *,
+    seed: int | None = None,
+    data_sha256: str | None = None,
+    extra: dict | None = None,
+) -> dict[str, Any]:
+    """Build run metadata: timestamp, env/library versions, host, seed, git SHA.
+
+    Each optional dependency (TensorFlow, Keras, scikit-learn) and the git
+    lookup is probed defensively; failures are recorded in the metadata (or
+    skipped) rather than raised, so packaging never fails on a missing tool.
+    """
     meta = {
-        "saved_at": datetime.utcnow().isoformat() + "Z",
+        "saved_at": datetime.now(timezone.utc).isoformat() + "Z",
         "python_version": sys.version.split()[0],
         "platform": platform.platform(),
         "hostname": socket.gethostname(),
@@ -46,13 +72,13 @@ def build_meta(*, seed=None, data_sha256=None, extra=None):
         meta["keras_version_error"] = str(exc)
     try:
         meta["numpy_version"] = np.__version__
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("build_meta: numpy version unavailable: %s", exc)
     try:
         import sklearn as _sk
         meta["sklearn_version"] = _sk.__version__
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("build_meta: sklearn version unavailable: %s", exc)
     try:
         sha = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
@@ -61,23 +87,27 @@ def build_meta(*, seed=None, data_sha256=None, extra=None):
             timeout=5,
         ).decode().strip()
         meta["git_sha"] = sha
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("build_meta: git SHA unavailable: %s", exc)
         meta["git_sha"] = None
     if extra:
         meta.update(extra)
     return meta
 
 
-def data_sha256_of(df):
+def data_sha256_of(df: pd.DataFrame) -> str:
+    """Return a stable SHA-256 of *df* content, falling back to its shape on error."""
     try:
         return hashlib.sha256(
             pd.util.hash_pandas_object(df, index=True).values.tobytes()
         ).hexdigest()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("data_sha256_of: content hash failed, using shape: %s", exc)
         return hashlib.sha256(repr(df.shape).encode()).hexdigest()
 
 
-def save_model_native(model, target_dir):
+def save_model_native(model: Any, target_dir: Path | str) -> Path:
+    """Save *model* natively as ``model.keras`` under *target_dir*; return its path."""
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     out = target_dir / "model.keras"
@@ -85,7 +115,12 @@ def save_model_native(model, target_dir):
     return out
 
 
-def load_model_compat(model_dir):
+def load_model_compat(model_dir: Path | str) -> Any:
+    """Load a model from *model_dir*, preferring native ``.keras`` over legacy JSON+H5.
+
+    Raises ``FileNotFoundError`` when neither a native model nor an
+    architecture/weights pair can be found.
+    """
     from tensorflow.keras.models import load_model, model_from_json
 
     model_dir = Path(model_dir)
@@ -111,6 +146,11 @@ def load_model_compat(model_dir):
 
 
 def export_model_zip(artifact: "TrainedModelArtifact") -> bytes:
+    """Serialise *artifact* into a legacy-H5 ZIP archive and return its raw bytes.
+
+    The archive bundles the architecture JSON, H5 weights, normalisation
+    coefficients, training config/metrics and run metadata.
+    """
     buf = io.BytesIO()
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -148,7 +188,12 @@ def export_model_zip(artifact: "TrainedModelArtifact") -> bytes:
     return buf.getvalue()
 
 
-def import_model_zip(data):
+def import_model_zip(data: bytes) -> ImportedModel:
+    """Deserialise a model ZIP archive (as produced by :func:`export_model_zip`).
+
+    Returns the rebuilt Keras model alongside its normalisation coefficients,
+    column lists and training config/metrics.
+    """
     import os
     import tempfile
 

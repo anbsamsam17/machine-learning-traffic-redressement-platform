@@ -100,8 +100,9 @@ def _parse_file_to_df(content: bytes, filename: str) -> pd.DataFrame:
                     lambda g: json.dumps(g.__geo_interface__) if g else None
                 )
             return df
-        except Exception:
+        except Exception as exc:
             # Fall back to plain parquet (no geometry)
+            logger.debug("Geo-parquet read failed, falling back to plain parquet: %s", exc)
             return pd.read_parquet(io.BytesIO(content))
 
     if suffix in {".geojson", ".json"}:

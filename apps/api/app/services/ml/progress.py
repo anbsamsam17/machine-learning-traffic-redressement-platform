@@ -6,6 +6,7 @@ on every epoch end, instead of writing to a JSONL file on disk.
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from typing import Any, Callable, Protocol
@@ -15,6 +16,8 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 from tensorflow import keras  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 class ProgressPayload:
@@ -89,7 +92,6 @@ class TrainingProgressCallback(keras.callbacks.Callback):
         try:
             self._cb(payload)
         except Exception as exc:
-            import logging as _l
-            _l.getLogger(__name__).warning(
+            logger.warning(
                 "Progress callback failed at epoch %d: %s", epoch + 1, exc,
             )

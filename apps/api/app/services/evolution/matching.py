@@ -31,8 +31,6 @@ import time
 import unicodedata
 from typing import Callable
 
-logger = logging.getLogger(__name__)
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -41,6 +39,8 @@ from scipy.optimize import linear_sum_assignment
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from shapely import STRtree
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # CRS
