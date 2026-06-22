@@ -28,9 +28,10 @@ Auteur : **Samir Anbri**
 
 ## Aperçu animé
 
-| Connexion (fond animé) | Accueil — grille des modules |
-|:---:|:---:|
-| <img src="docs/screenshots/connexion.gif" width="100%"> | <img src="docs/screenshots/accueil.gif" width="100%"> |
+| Connexion (fond animé) | Accueil — grille des modules | Évaluation statistique |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/connexion.gif" width="100%"> | <img src="docs/screenshots/accueil.gif" width="100%"> | <img src="docs/screenshots/evaluation-2.png" width="100%"> |
+| | | *Évaluation statistique sous contrainte métier (R², taux de tolérance, McNemar)* |
 
 ---
 
@@ -192,6 +193,25 @@ Chaque modèle exporté embarque un `meta.json` construit par `build_meta()` (`p
 
 Chaque sonde est interrogée **défensivement** : un échec est enregistré dans le manifeste plutôt que levé, donc le packaging ne casse jamais sur un outil manquant. Le bundle ZIP embarque architecture, poids, coefficients de normalisation, config et métriques — un artefact autoportant.
 
+Exemple de `meta.json` produit par `build_meta()` (valeurs tronquées, plausibles) :
+
+```json
+{
+  "saved_at": "2026-06-18T14:32:07.481236+00:00Z",
+  "python_version": "3.11.9",
+  "platform": "Linux-6.8.0-45-generic-x86_64-with-glibc2.39",
+  "hostname": "mdl-train-01",
+  "seed": 1750,
+  "data_sha256": "9f4b1c0e7a2d8f6b3e5c1a09d7f24b8e6c0a3d51f9b27e4c8a16d0f3b5e7c9a2",
+  "tf_version": "2.17.0",
+  "keras_version": "3.4.1",
+  "numpy_version": "1.26.4",
+  "sklearn_version": "1.5.1",
+  "git_sha": "c37c213af8e1b4d9026f5a7c3e8b1240d9f6a3e1",
+  "format": "legacy-h5-zip"
+}
+```
+
 ### Évaluation statistique rare pour le domaine
 
 `metrics_advanced.py` et `stats_compare.py` calculent, en pur NumPy/pandas (donc testables unitairement) :
@@ -228,6 +248,8 @@ Au-delà de la seed unique, plusieurs mécanismes concrets garantissent qu'un ru
 
 Le réseau routier du Grand Lyon, c'est **~242 000 brins directionnels HERE** par millésime, **31 propriétés par tronçon**, et une géométrie LineString en EPSG:4326. En sortir une carte web fluide, des comparaisons inter-annuelles fiables et un diagnostic de qualité automatisé exige un pipeline data robuste.
 
+**Convention CRS** : la géométrie est **conservée en EPSG:4326 (WGS84) en entrée comme en sortie** (`evolution/io.py` ne reprojette jamais au chargement) ; la reprojection en **EPSG:2154 (Lambert-93)** n'a lieu **qu'à la demande**, le temps des calculs métriques en mètres du map-matching (`evolution/matching.py`), pour ne jamais altérer la géométrie servie au front.
+
 #### Carte des débits redressés
 
 <p align="center"><img src="docs/screenshots/carte.jpg" width="100%"></p>
@@ -237,6 +259,8 @@ Le réseau routier du Grand Lyon, c'est **~242 000 brins directionnels HERE** pa
 ### Pipeline de données : du FCD brut au GeoJSON servi
 
 Vue d'ensemble du flux, de la source FCD jusqu'aux trois exploitations aval (entraînement, carte, matching d'évolution). Les fonctions citées sont celles réellement appelées dans le code.
+
+**Garde-fous de volume à l'ingestion** : chaque upload est plafonné à **`MAX_UPLOAD_MB` = 500 MB** (rejet HTTP 413 au-delà), les archives shapefile sont contrôlées contre les **zip-bombs** (taille décompressée totale > **1 Go** refusée avant traitement), et le **parsing reste in-memory** (octets bruts → DataFrame, sans écriture disque intermédiaire).
 
 ```mermaid
 flowchart TD
