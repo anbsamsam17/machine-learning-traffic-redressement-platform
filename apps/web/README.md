@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# `apps/web` — Frontend MDL Redressement
 
-## Getting Started
+Interface web de la plateforme de redressement de débits routiers : pipeline d'entraînement/évaluation ML, cartographie interactive et rapports. Application du monorepo Turborepo — voir le [README racine](../../README.md) pour la vue d'ensemble.
 
-First, run the development server:
+## Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Next.js 16** (App Router) + **React 19**
+- **TypeScript 5** en mode `strict` (`tsconfig.json` → `"strict": true`)
+- **Tailwind CSS v4** + **shadcn/ui** (`components.json`, `components/ui/`)
+- **MapLibre GL** — rendu de réseaux routiers volumineux (12–15k segments) en runtime
+- **TanStack React Query** — fetching/cache, hooks métier
+- **Zustand** — store global persistant
+- **Framer Motion** + **GSAP** — animations (respectant `prefers-reduced-motion`)
+- **Recharts** — graphiques d'évaluation
+
+## Structure
+
+```
+app/                  # Routes (App Router)
+  (pipeline)/         # Flux ML : donnees → config → training → evaluation → extrapolation
+  carte/              # Carte de débits (GeoJSON)
+  evolution/          # Carte d'évolution des débits
+  discontinuites/     # Détection de discontinuités TVr
+  visualisation/      # Visualisations
+  compteurs/          # Fichier compteurs
+  login/  register/   # Authentification
+  layout.tsx  providers.tsx  error.tsx  not-found.tsx
+components/           # UI réutilisable
+  ui/                 # Primitives shadcn/ui + composants visuels
+  carte/ map/ charts/ upload/ mapping/ visualisation/ discontinuites/ …
+lib/                  # Logique transverse
+  api.ts              # Client API typé (ApiError, Bearer JWT, AbortController, 401 centralisé)
+  api-url.ts          # Résolution de l'URL de l'API
+  auth.ts             # Token, gestion de session expirée
+  hooks/              # Hooks React Query (upload, training-status, eval-run, carte-generation…)
+  store.ts            # Store Zustand persistant
+  map/ map-palette.ts map-style.ts   # Styles & palettes MapLibre
+  animations/         # Utilitaires d'animation (prefers-reduced-motion)
+  i18n/ content/ types/
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Conventions
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **TypeScript strict** : pas de `any` implicite ; les réponses API sont typées et passent par le client de `lib/api.ts`.
+- **Accès API** : toujours via `lib/api.ts` (injection du `Bearer` JWT, timeouts `AbortController`, gestion centralisée du 401 → redirection `/login`). Ne pas appeler `fetch` brut depuis les composants.
+- **État serveur** via React Query (hooks de `lib/hooks/`) ; **état client** via le store Zustand (`lib/store.ts`).
+- **Accessibilité** : respecter `prefers-reduced-motion` pour toute nouvelle animation (helpers dans `lib/animations/`).
+- **UI** : composants shadcn/ui dans `components/ui/`, styles Tailwind v4.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Commandes
 
-## Learn More
+```bash
+npm run dev      # serveur de développement (http://localhost:3000)
+npm run build    # build de production
+npm run start    # servir le build
+npm run lint     # ESLint (eslint-config-next)
+```
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+L'URL de l'API est lue depuis `NEXT_PUBLIC_API_URL` (cf. `.env.example` à la racine). Depuis la racine du monorepo, `npm run dev` lance web + api en parallèle via Turborepo.
