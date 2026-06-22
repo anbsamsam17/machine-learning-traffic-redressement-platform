@@ -79,7 +79,7 @@ jobs:
 
       # ----- API image (multi-arch) -----
       - name: Build and push API (linux/amd64,linux/arm64)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/Dockerfile.api
@@ -99,7 +99,7 @@ jobs:
 
       # ----- Web image (multi-arch) -----
       - name: Build and push Web (linux/amd64,linux/arm64)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/Dockerfile.web
