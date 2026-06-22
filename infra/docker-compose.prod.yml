@@ -70,7 +70,6 @@ services:
       - WORKSPACE_ROOT=${WORKSPACE_ROOT:-/data/mdl_workdir}
       - SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS:-7200}
       - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-500}
-      - MDL_MAX_TRAINING_MINUTES=${MAX_TRAINING_MINUTES:-60}
       - MAX_TRAINING_MINUTES=${MAX_TRAINING_MINUTES:-60}
       - CORS_ORIGINS=${CORS_ORIGINS:-https://Trafic-Tool.anbri-tools-ia.online}
     volumes:

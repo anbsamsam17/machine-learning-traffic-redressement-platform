@@ -34,8 +34,8 @@ services:
       - CUDA_VISIBLE_DEVICES=-1
       - TF_CPP_MIN_LOG_LEVEL=3
       - TF_ENABLE_ONEDNN_OPTS=0
-      - MDL_MAX_TRAINING_MINUTES=30
-      - MDL_MAX_UPLOAD_MB=500
+      - MAX_TRAINING_MINUTES=30
+      - MAX_UPLOAD_MB=500
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - SENTRY_DSN=${SENTRY_DSN:-}
