@@ -96,9 +96,11 @@ tmp/
 /snapshot*.md
 /snap*.md
 
-# Local QA working directories
+# Local QA working directories & internal process notes
 Audit_Reports/
 .review_scripts/
+audit/
+plans/
 
 # Runtime workspace (derived data)
 tmp_workdir/
