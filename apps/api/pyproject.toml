@@ -4,7 +4,7 @@ version = "2.0.0"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi>=0.138.0",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
     "python-dotenv>=1.0",
