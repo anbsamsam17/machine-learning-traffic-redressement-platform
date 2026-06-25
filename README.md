@@ -28,10 +28,18 @@ Auteur : **Samir Anbri**
 
 ## Aperçu animé
 
-| Connexion (fond animé) | Accueil — grille des modules | Évaluation statistique |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/connexion.gif" width="100%"> | <img src="docs/screenshots/accueil.gif" width="100%"> | <img src="docs/screenshots/evaluation-2.png" width="100%"> |
-| | | *Évaluation statistique sous contrainte métier (R², taux de tolérance, McNemar)* |
+<p align="center"><strong>Connexion — fond animé</strong></p>
+<p align="center"><img src="docs/screenshots/connexion.gif" width="100%"></p>
+
+<br>
+
+<p align="center"><strong>Accueil — grille des modules</strong></p>
+<p align="center"><img src="docs/screenshots/accueil.gif" width="100%"></p>
+
+<br>
+
+<p align="center"><strong>Évaluation statistique sous contrainte métier</strong> — R², taux de tolérance, McNemar</p>
+<p align="center"><img src="docs/screenshots/evaluation-2.png" width="100%"></p>
 
 ---
 
