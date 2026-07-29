@@ -11,18 +11,23 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow%2FKeras-CPU-FF6F00?logo=tensorflow&logoColor=white)](https://www.tensorflow.org)
 [![Turborepo](https://img.shields.io/badge/Turborepo-EF4444?logo=turborepo&logoColor=white)](https://turbo.build)
-[![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
+[![Docker](https://img.shields.io/badge/Docker-amd64-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
 [![CI](https://img.shields.io/github/actions/workflow/status/anbsamsam17/machine-learning-traffic-redressement-platform/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/anbsamsam17/machine-learning-traffic-redressement-platform/actions)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 
 **[Démo en ligne](https://Trafic-Tool.anbri-tools-ia.online)** · **[Méthodologie discontinuités](scripts/discontinuity_methodology/00_METHODOLOGY.md)**
 
-Auteur : **Samir Anbri**
+**Samir Anbri** — Senior Data & AI Engineer · 8 ans d'expérience
 
-[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
-<!-- LinkedIn: <url a ajouter> · CV: <url a ajouter> -->
+[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
 
 </div>
+
+---
+
+> **En bref.** Les données de trafic issues du GPS (*Floating Car Data*) sous-estiment systématiquement les débits réels du réseau. **MDL Redressement** les corrige automatiquement par apprentissage automatique, puis produit une **carte de débits fiable à l'échelle d'un réseau entier** — en gardant chaque étape **reproductible et auditable**, là où ce travail reste d'ordinaire artisanal. Conçue, développée et évaluée de bout en bout par une seule personne.
+>
+> **In short.** GPS-based traffic data (*Floating Car Data*) systematically underestimates real network flows. **MDL Redressement** automatically corrects it with machine learning, then produces a **reliable, network-wide flow map** — keeping every step **reproducible and auditable**, where such work is usually manual and hard to trust. Designed, built and evaluated end-to-end by a single engineer.
 
 ---
 
@@ -67,7 +72,7 @@ Chaque brique est implémentée et vérifiable dans le code. Le tableau ci-desso
 | `meta.json` + seed déterministe + data lineage SHA-256 (`packaging.py`, `seeding.py`) | Traçabilité, rejouabilité, packaging d'artefacts | **MLOps** |
 | Pipeline FCD → GeoJSON + map-matching inter-millésimes (`data_prep.py`, `geo.py`, `evolution/matching.py`) | Ingestion, transformations géospatiales, projections CRS | **Data Engineer (géo)** |
 | Grid search + curriculum / hard-example mining + k-fold (`grid_search.py`, `kfold.py`, `training_pipeline.py`) | Recherche d'hyperparamètres, validation croisée | **ML Engineer** |
-| CI multi-arch + Docker Compose + déploiement SSH (`.github/workflows/ci.yml`, `infra/`) | Conteneurisation, intégration et livraison continues | **DevOps / MLOps** |
+| CI (lint + tests) + CD séparé (build image amd64 + push GHCR + déploiement SSH) + Docker Compose (`.github/workflows/`, `infra/`) | Conteneurisation, intégration et livraison continues | **DevOps / MLOps** |
 | Évaluation McNemar apparié + bootstrap CI95 + drift temporel (`stats_compare.py`, `metrics_advanced.py`) | Statistiques inférentielles, comparaison rigoureuse de modèles | **ML / Stats** |
 | Garde-fous d'entraînement + sécurité (IDOR, path-traversal, zip-bomb) (`training_guard.py`, `security.py`) | Durcissement applicatif, contraintes de production | **Backend / MLOps** |
 
@@ -103,7 +108,7 @@ Monorepo **Turborepo** (`turbo.json`, workspaces `apps/*`) : un frontend **Next.
 | ML | TensorFlow CPU + Keras, NumPy, scikit-learn |
 | Données / état | Redis (sessions, fallback in-memory), PyArrow, GeoJSON / EPSG:4326 |
 | Observabilité | Sentry, Prometheus (`prometheus-fastapi-instrumentator`), logs JSON structurés + request-id |
-| Infra / CI | Docker Compose, Nginx, Caddy, GitHub Actions (build multi-arch amd64/arm64, déploiement SSH) |
+| Infra / CI | Docker Compose, Nginx, Caddy, GitHub Actions (build image amd64 + push GHCR, déploiement SSH) |
 | Qualité | pytest, ruff, black, mypy, ESLint |
 
 ---
@@ -182,7 +187,23 @@ L'enjeu n'est pas seulement d'entraîner un réseau : c'est de pouvoir **prouver
 |:---:|:---:|
 | <img src="docs/screenshots/evaluation-1.png" width="100%"> | <img src="docs/screenshots/evaluation-2.png" width="100%"> |
 
-*À gauche : étape d'évaluation, mapping reproductible de la feature `year_mapped` (table 2019→1 … 2025→7) avant l'évaluation sur données de validation. Ce même encodage annuel alimente le calcul du drift temporel année par année. À droite : rapport d'évaluation sur le jeu de validation — best run sélectionné (R²=0.6015, taux dans tolérance 88.12 %, comptage de capteurs dans/hors tolérance sur 3671). Ces métriques sont enrichies en coulisses par des IC95 bootstrap (1000 rééchantillonnages, seed 1750), une stratification par volume de trafic et un test de McNemar apparié.*
+*À gauche : étape d'évaluation, mapping reproductible de la feature `year_mapped` (table 2019→1 … 2025→7) avant l'évaluation sur données de validation. Ce même encodage annuel alimente le calcul du drift temporel année par année. À droite : rapport d'évaluation produit par l'outil sur le jeu de validation — R², taux dans la tolérance ±15 % et comptage de capteurs dans/hors tolérance, enrichis en coulisses par des IC95 bootstrap (1000 rééchantillonnages, seed 1750), une stratification par volume de trafic et un test de McNemar apparié. Les résultats chiffrés mesurés sont détaillés ci-dessous.*
+
+#### Résultats mesurés (exemple : Saint-Étienne)
+
+Chiffres réels d'un livrable, sur le modèle **Tous Véhicules redressé (TVr)** confronté aux mesures capteurs terrain — **928 observations, 850 capteurs**, millésimes 2022-2025, **ensemble de 6 réseaux de neurones** :
+
+| Indicateur | Valeur | Précision |
+|---|---|---|
+| **Taux dans la tolérance ±15 %** | **82,5 %** | 766 / 928 · plage inter-seed 76–86 % |
+| **R²** (TVr vs mesuré) | **0,88** | IC95 [0,84 ; 0,91] |
+| **GEH < 5** | **98,4 %** | le seuil de « bon accord » de l'ingénierie trafic (DMRB) — quasi tous les capteurs le franchissent |
+| Erreur relative médiane | **7,8 %** | cible métier ≤ 15 % |
+| Sur les **axes structurants** (≥ 4 000 v/j) | **87,1 %** dans la tolérance · **R² 0,93** | l'essentiel du trafic — le plus fiable à redresser |
+
+La performance croît avec le débit — de **83,6 %** dans la tolérance sur les faibles débits à **94,6 %** sur les forts (20k+ v/j) : le modèle est le plus précis là où l'enjeu métier est le plus fort. *(Les indicateurs FCD internes ne sont pas diffusés.)*
+
+> La même chaîne — redressement puis évaluation sous contrainte métier — a été déployée sur **23 territoires** (métropoles et départements français), avec des résultats comparables. Les chiffres ci-dessus (Saint-Étienne) en sont un exemple représentatif.
 
 ### Reproductibilité bit-exact (seed 1750)
 
@@ -342,8 +363,9 @@ Points vérifiés dans le code :
 
 ## Tests & CI
 
-- **pytest** (`apps/api/tests/`, 451 tests — `cd apps/api && python -m pytest -q --co` → `451 tests collected in 7.64s`) : fixtures métier, transformations de données (`test_data_prep`, `test_normalize`, `test_mapping`), ML (`test_losses`, `test_seeding`, `test_packaging`, `test_grid_search`, `test_stats_compare`), sécurité (`test_ownership` IDOR + path-traversal, `test_security_headers`, `test_auth_flow`), et tous les routers.
-- **CI GitHub Actions** (`.github/workflows/ci.yml`) : `ruff` + `black --check` (backend), `eslint` (frontend), `pytest` avec service Redis, puis build d'images Docker **multi-arch (amd64/arm64)** poussées sur GHCR et déploiement SSH (avec approbation manuelle via environnement `production`).
+- **pytest** (`apps/api/tests/`, 509 tests — `cd apps/api && python -m pytest -q --co` → `509 tests collected in 9.69s`) : fixtures métier, transformations de données (`test_data_prep`, `test_normalize`, `test_mapping`), ML (`test_losses`, `test_seeding`, `test_packaging`, `test_grid_search`, `test_stats_compare`), sécurité (`test_ownership` IDOR + path-traversal, `test_security_headers`, `test_auth_flow`), et tous les routers.
+- **CI — GitHub Actions** (`.github/workflows/ci.yml`, ce que suit le badge) : `ruff` + `black --check` (backend), `eslint` (frontend), et `pytest` avec un service Redis — sur chaque push et pull request.
+- **CD — déploiement** (`.github/workflows/deploy.yml`, séparé du CI) : build des images Docker **linux/amd64** → push sur GHCR → déploiement SSH avec **approbation manuelle** via l'environnement `production`.
 
 ---
 
@@ -417,7 +439,7 @@ npm run docker:down
 │   ├── discontinuity_methodology/   # méthodologie discontinuités TVr (étude de cas)
 │   └── map_2025_light/              # optimisation du payload GeoJSON carte
 ├── infra/                    # Docker Compose, Dockerfiles, nginx.conf, Caddyfile
-├── .github/workflows/ci.yml  # lint + tests + build multi-arch + déploiement
+├── .github/workflows/ci.yml  # lint + tests + build image (amd64) + déploiement
 ├── turbo.json                # pipeline Turborepo
 └── .env.example
 ```
@@ -426,4 +448,6 @@ npm run docker:down
 
 ## Contact
 
-**Samir Anbri** — [samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
+**Samir Anbri** — Senior Data & AI Engineer · 8 ans d'expérience
+
+[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)

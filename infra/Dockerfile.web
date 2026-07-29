@@ -1,5 +1,5 @@
 # infra/Dockerfile.web
-# Multi-stage Next.js standalone image. Buildable for linux/amd64 AND linux/arm64.
+# Multi-stage Next.js standalone image. Built for linux/amd64.
 #
 # Base image pinned to a manifest-list digest (resolves per-arch automatically).
 # To bump:  docker buildx imagetools inspect node:20-alpine
@@ -8,13 +8,17 @@
 # the production URL via --build-arg (see .github/workflows/ci.yml).
 
 # ============ Stage 1: deps ============
-FROM node:20-alpine@sha256:c628bdc7ebb07d2fdaf6e1f9c2dcf9b80a0e15bbe98b06fce8d0c1f9e89f5d6c AS deps
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS deps
 WORKDIR /app
+# TODO(CD): npm-workspaces monorepo — the lockfile is at the repo ROOT, not in
+# apps/web, so `npm ci` here fails (no lockfile). Before the deploy workflow can
+# build this image, copy the root package.json + package-lock.json and install
+# the workspace (e.g. `npm ci` at root, then build with --workspace=apps/web).
 COPY apps/web/package.json apps/web/package-lock.json* ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 # ============ Stage 2: build ============
-FROM node:20-alpine@sha256:c628bdc7ebb07d2fdaf6e1f9c2dcf9b80a0e15bbe98b06fce8d0c1f9e89f5d6c AS builder
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS builder
 WORKDIR /app
 
 # NEXT_PUBLIC_* must be present at build time so Next.js inlines them into the JS bundle.
@@ -29,7 +33,7 @@ COPY apps/web/ .
 RUN npm run build
 
 # ============ Stage 3: runtime ============
-FROM node:20-alpine@sha256:c628bdc7ebb07d2fdaf6e1f9c2dcf9b80a0e15bbe98b06fce8d0c1f9e89f5d6c AS runner
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \
