@@ -17,12 +17,17 @@
 
 **[Démo en ligne](https://Trafic-Tool.anbri-tools-ia.online)** · **[Méthodologie discontinuités](scripts/discontinuity_methodology/00_METHODOLOGY.md)**
 
-Auteur : **Samir Anbri**
+**Samir Anbri** — Senior Data & AI Engineer · 8 ans d'expérience
 
-[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
-<!-- LinkedIn: <url a ajouter> · CV: <url a ajouter> -->
+[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
 
 </div>
+
+---
+
+> **En bref.** Les données de trafic issues du GPS (*Floating Car Data*) sous-estiment systématiquement les débits réels du réseau. **MDL Redressement** les corrige automatiquement par apprentissage automatique, puis produit une **carte de débits fiable à l'échelle d'un réseau entier** — en gardant chaque étape **reproductible et auditable**, là où ce travail reste d'ordinaire artisanal. Conçue, développée et évaluée de bout en bout par une seule personne.
+>
+> **In short.** GPS-based traffic data (*Floating Car Data*) systematically underestimates real network flows. **MDL Redressement** automatically corrects it with machine learning, then produces a **reliable, network-wide flow map** — keeping every step **reproducible and auditable**, where such work is usually manual and hard to trust. Designed, built and evaluated end-to-end by a single engineer.
 
 ---
 
@@ -418,4 +423,6 @@ npm run docker:down
 
 ## Contact
 
-**Samir Anbri** — [samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
+**Samir Anbri** — Senior Data & AI Engineer · 8 ans d'expérience
+
+[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
