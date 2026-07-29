@@ -179,7 +179,23 @@ L'enjeu n'est pas seulement d'entraîner un réseau : c'est de pouvoir **prouver
 |:---:|:---:|
 | <img src="docs/screenshots/evaluation-1.png" width="100%"> | <img src="docs/screenshots/evaluation-2.png" width="100%"> |
 
-*À gauche : étape d'évaluation, mapping reproductible de la feature `year_mapped` (table 2019→1 … 2025→7) avant l'évaluation sur données de validation. Ce même encodage annuel alimente le calcul du drift temporel année par année. À droite : rapport d'évaluation sur le jeu de validation — best run sélectionné (R²=0.6015, taux dans tolérance 88.12 %, comptage de capteurs dans/hors tolérance sur 3671). Ces métriques sont enrichies en coulisses par des IC95 bootstrap (1000 rééchantillonnages, seed 1750), une stratification par volume de trafic et un test de McNemar apparié.*
+*À gauche : étape d'évaluation, mapping reproductible de la feature `year_mapped` (table 2019→1 … 2025→7) avant l'évaluation sur données de validation. Ce même encodage annuel alimente le calcul du drift temporel année par année. À droite : rapport d'évaluation produit par l'outil sur le jeu de validation — R², taux dans la tolérance ±15 % et comptage de capteurs dans/hors tolérance, enrichis en coulisses par des IC95 bootstrap (1000 rééchantillonnages, seed 1750), une stratification par volume de trafic et un test de McNemar apparié. Les résultats chiffrés mesurés sont détaillés ci-dessous.*
+
+#### Résultats mesurés (exemple : Saint-Étienne)
+
+Chiffres réels d'un livrable, sur le modèle **Tous Véhicules redressé (TVr)** confronté aux mesures capteurs terrain — **928 observations, 850 capteurs**, millésimes 2022-2025, **ensemble de 6 réseaux de neurones** :
+
+| Indicateur | Valeur | Précision |
+|---|---|---|
+| **Taux dans la tolérance ±15 %** | **82,5 %** | 766 / 928 · plage inter-seed 76–86 % |
+| **R²** (TVr vs mesuré) | **0,88** | IC95 [0,84 ; 0,91] |
+| **GEH < 5** | **98,4 %** | le seuil de « bon accord » de l'ingénierie trafic (DMRB) — quasi tous les capteurs le franchissent |
+| Erreur relative médiane | **7,8 %** | cible métier ≤ 15 % |
+| Sur les **axes structurants** (≥ 4 000 v/j) | **87,1 %** dans la tolérance · **R² 0,93** | l'essentiel du trafic — le plus fiable à redresser |
+
+La performance croît avec le débit — de **83,6 %** dans la tolérance sur les faibles débits à **94,6 %** sur les forts (20k+ v/j) : le modèle est le plus précis là où l'enjeu métier est le plus fort. *(Les indicateurs FCD internes ne sont pas diffusés.)*
+
+> La même chaîne — redressement puis évaluation sous contrainte métier — a été déployée sur **23 territoires** (métropoles et départements français), avec des résultats comparables. Les chiffres ci-dessus (Saint-Étienne) en sont un exemple représentatif.
 
 ### Reproductibilité bit-exact (seed 1750)
 
