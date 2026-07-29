@@ -19,8 +19,11 @@ dependencies = [
     "python-jose[cryptography]>=3.3",
     # T2 cleanup: passlib[bcrypt] retire — bcrypt est utilise directement
     # par app.auth (hash_password / verify_password).
-    # T2 cleanup: email-validator retire — couvert transitivement par
-    # pydantic.EmailStr (FastAPI ramene pydantic[email] via fastapi[standard]).
+    # email-validator est une dependance DIRECTE : app.auth utilise
+    # pydantic.EmailStr. (L'hypothese "tiree transitivement via
+    # fastapi[standard]" etait fausse — fastapi est installe sans cet extra,
+    # d'ou une CI rouge sur toute install fraiche.)
+    "email-validator>=2.0",
     "slowapi>=0.1.9",
     "sentry-sdk[fastapi]>=1.40",
     "prometheus-fastapi-instrumentator>=6.1",
