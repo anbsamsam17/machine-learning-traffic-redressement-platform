@@ -36,6 +36,19 @@ class TestSession:
 
 
 class TestSessionManager:
+    @pytest.fixture(autouse=True)
+    def _pin_memory_backend(self, monkeypatch):
+        # These are UNIT tests of SessionManager's logic (create, expire,
+        # store, cleanup, active_count). Pin them to the in-memory backend so
+        # they stay deterministic and independent of a live Redis and its TTL
+        # semantics in CI (previously they only ever ran on the memory fallback
+        # and silently assumed it). The Redis session path is covered
+        # end-to-end by the router/API tests.
+        import app.session as session_mod
+
+        mem_settings = session_mod.get_settings().model_copy(update={"REDIS_URL": ""})
+        monkeypatch.setattr(session_mod, "get_settings", lambda: mem_settings)
+
     def test_create_session(self):
         mgr = SessionManager()
         session = mgr.create_session(mode="TV")
