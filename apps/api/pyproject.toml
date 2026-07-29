@@ -15,7 +15,7 @@ dependencies = [
     "pyarrow>=14.0",
     "scipy>=1.11",
     "scikit-learn>=1.3",
-    "redis>=5.0",
+    "redis>=8.0.0",
     "python-jose[cryptography]>=3.3",
     # T2 cleanup: passlib[bcrypt] retire — bcrypt est utilise directement
     # par app.auth (hash_password / verify_password).
