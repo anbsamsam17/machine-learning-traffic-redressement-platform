@@ -64,7 +64,7 @@ Chaque brique est implémentée et vérifiable dans le code. Le tableau ci-desso
 | `meta.json` + seed déterministe + data lineage SHA-256 (`packaging.py`, `seeding.py`) | Traçabilité, rejouabilité, packaging d'artefacts | **MLOps** |
 | Pipeline FCD → GeoJSON + map-matching inter-millésimes (`data_prep.py`, `geo.py`, `evolution/matching.py`) | Ingestion, transformations géospatiales, projections CRS | **Data Engineer (géo)** |
 | Grid search + curriculum / hard-example mining + k-fold (`grid_search.py`, `kfold.py`, `training_pipeline.py`) | Recherche d'hyperparamètres, validation croisée | **ML Engineer** |
-| CI (build image + push GHCR) + Docker Compose + déploiement SSH (`.github/workflows/ci.yml`, `infra/`) | Conteneurisation, intégration et livraison continues | **DevOps / MLOps** |
+| CI (lint + tests) + CD séparé (build image amd64 + push GHCR + déploiement SSH) + Docker Compose (`.github/workflows/`, `infra/`) | Conteneurisation, intégration et livraison continues | **DevOps / MLOps** |
 | Évaluation McNemar apparié + bootstrap CI95 + drift temporel (`stats_compare.py`, `metrics_advanced.py`) | Statistiques inférentielles, comparaison rigoureuse de modèles | **ML / Stats** |
 | Garde-fous d'entraînement + sécurité (IDOR, path-traversal, zip-bomb) (`training_guard.py`, `security.py`) | Durcissement applicatif, contraintes de production | **Backend / MLOps** |
 
@@ -356,7 +356,8 @@ Points vérifiés dans le code :
 ## Tests & CI
 
 - **pytest** (`apps/api/tests/`, 509 tests — `cd apps/api && python -m pytest -q --co` → `509 tests collected in 9.69s`) : fixtures métier, transformations de données (`test_data_prep`, `test_normalize`, `test_mapping`), ML (`test_losses`, `test_seeding`, `test_packaging`, `test_grid_search`, `test_stats_compare`), sécurité (`test_ownership` IDOR + path-traversal, `test_security_headers`, `test_auth_flow`), et tous les routers.
-- **CI GitHub Actions** (`.github/workflows/ci.yml`) : `ruff` + `black --check` (backend), `eslint` (frontend), `pytest` avec service Redis, puis build d'images Docker **(linux/amd64)** poussées sur GHCR et déploiement SSH (avec approbation manuelle via environnement `production`).
+- **CI — GitHub Actions** (`.github/workflows/ci.yml`, ce que suit le badge) : `ruff` + `black --check` (backend), `eslint` (frontend), et `pytest` avec un service Redis — sur chaque push et pull request.
+- **CD — déploiement** (`.github/workflows/deploy.yml`, séparé du CI) : build des images Docker **linux/amd64** → push sur GHCR → déploiement SSH avec **approbation manuelle** via l'environnement `production`.
 
 ---
 

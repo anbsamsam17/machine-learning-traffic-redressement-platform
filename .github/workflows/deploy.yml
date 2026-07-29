@@ -1,0 +1,109 @@
+name: Deploy
+
+# Continuous Delivery (CD), kept separate from CI so an unfinished build path
+# never turns the CI badge red. Builds the images, pushes them to GHCR, then
+# deploys over SSH (gated by a manual-approval `production` environment).
+#
+# Manual trigger for now (Run workflow button). Switch back to
+# `on: push: branches: [main]` once the build below is green end to end.
+#
+# KNOWN TODO before this runs green: infra/Dockerfile.web must install with the
+# monorepo root package-lock.json (npm workspaces) — `npm ci` from apps/web
+# alone has no lockfile. See the note in that Dockerfile.
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE: ghcr.io/${{ github.repository }}/api
+  WEB_IMAGE: ghcr.io/${{ github.repository }}/web
+  # Public production URL — inlined into the Next.js bundle at build time.
+  PROD_API_URL: https://Trafic-Tool.anbri-tools-ia.online
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----- API image (linux/amd64) -----
+      # amd64 only: tensorflow-cpu ships no linux/arm64 wheels.
+      - name: Build and push API (linux/amd64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/Dockerfile.api
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.API_IMAGE }}:${{ github.sha }}
+            ${{ env.API_IMAGE }}:latest
+          cache-from: type=gha,scope=api
+          cache-to:   type=gha,mode=max,scope=api
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # ----- Web image (linux/amd64) -----
+      - name: Build and push Web (linux/amd64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/Dockerfile.web
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ env.PROD_API_URL }}
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ github.sha }}
+            ${{ env.WEB_IMAGE }}:latest
+          cache-from: type=gha,scope=web
+          cache-to:   type=gha,mode=max,scope=web
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      # Configure a `production` environment in GitHub repo settings with a required
+      # reviewer so each deploy needs manual approval (one click).
+      name: production
+      url: https://Trafic-Tool.anbri-tools-ia.online
+    steps:
+      - name: Deploy via SSH to Oracle VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key:      ${{ secrets.ORACLE_SSH_KEY }}
+          port:     22
+          # Pull fresh images by SHA, then up -d (no rebuild, no downtime for the web service)
+          envs: GITHUB_SHA
+          script: |
+            set -euo pipefail
+            cd /opt/mdl
+            git fetch --quiet origin main
+            git checkout -q "${GITHUB_SHA}"
+            export IMAGE_TAG="${GITHUB_SHA}"
+            docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod pull
+            docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d
+            docker image prune -f
+            docker compose -f infra/docker-compose.prod.yml ps
+        env:
+          GITHUB_SHA: ${{ github.sha }}
