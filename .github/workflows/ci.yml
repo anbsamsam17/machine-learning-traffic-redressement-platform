@@ -64,11 +64,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # QEMU is required to build linux/arm64 from an amd64 GitHub runner.
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
@@ -79,19 +74,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ----- API image (multi-arch) -----
-      - name: Build and push API (linux/amd64,linux/arm64)
+      # ----- API image -----
+      # amd64 only: tensorflow-cpu ships no linux/arm64 wheels, and the
+      # deployment target is amd64.
+      - name: Build and push API (linux/amd64)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: infra/Dockerfile.api
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           provenance: false
           tags: |
             ${{ env.API_IMAGE }}:${{ github.sha }}
             ${{ env.API_IMAGE }}:latest
-            ${{ env.API_IMAGE }}:latest-arm64
           cache-from: type=gha,scope=api
           cache-to:   type=gha,mode=max,scope=api
           labels: |
@@ -99,13 +95,13 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ github.event.repository.updated_at }}
 
-      # ----- Web image (multi-arch) -----
-      - name: Build and push Web (linux/amd64,linux/arm64)
+      # ----- Web image -----
+      - name: Build and push Web (linux/amd64)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: infra/Dockerfile.web
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           provenance: false
           build-args: |
@@ -113,7 +109,6 @@ jobs:
           tags: |
             ${{ env.WEB_IMAGE }}:${{ github.sha }}
             ${{ env.WEB_IMAGE }}:latest
-            ${{ env.WEB_IMAGE }}:latest-arm64
           cache-from: type=gha,scope=web
           cache-to:   type=gha,mode=max,scope=web
           labels: |
