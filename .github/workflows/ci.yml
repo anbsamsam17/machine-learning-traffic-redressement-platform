@@ -46,7 +46,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: cd apps/api && pip install ".[dev]"
+      # [dev,prod] : prod carries tensorflow-cpu/keras — required by the ML
+      # tests (test_losses, test_kfold, test_model_builder, …) to collect.
+      - run: cd apps/api && pip install ".[dev,prod]"
       - run: cd apps/api && pytest tests/ -v --tb=short --timeout=120 --cov=app --cov-report=term-missing
         env:
           REDIS_URL: redis://localhost:6379/0
