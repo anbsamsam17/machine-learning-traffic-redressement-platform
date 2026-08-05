@@ -77,7 +77,7 @@ tmp/
 *.tmp
 
 # ─────────────────────────────────────────────────────────────
-# Portfolio hygiene — test artefacts, captures & local scratch.
+# Repo hygiene — test artefacts, captures & local scratch.
 # The code is versioned; derived data, screenshots and media are not.
 # ─────────────────────────────────────────────────────────────
 
@@ -106,7 +106,7 @@ plans/
 tmp_workdir/
 
 # Heavy media projects (demo video hosted externally — see README)
-video-portfolio/
+video-demo/
 presentation/
 
 # Prototype media — keep the .html, drop the heavy captures/clips

@@ -53,7 +53,7 @@ def build_meta(
     skipped) rather than raised, so packaging never fails on a missing tool.
     """
     meta = {
-        "saved_at": datetime.now(UTC).isoformat() + "Z",
+        "saved_at": datetime.now(UTC).isoformat(),
         "python_version": sys.version.split()[0],
         "platform": platform.platform(),
         "hostname": socket.gethostname(),

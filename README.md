@@ -15,19 +15,19 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/anbsamsam17/machine-learning-traffic-redressement-platform/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/anbsamsam17/machine-learning-traffic-redressement-platform/actions)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 
-**[Démo en ligne](https://Trafic-Tool.anbri-tools-ia.online)** · **[Méthodologie discontinuités](scripts/discontinuity_methodology/00_METHODOLOGY.md)**
-
-**Samir Anbri** — Senior Data & AI Engineer · 8 ans d'expérience
-
-[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
+**[Méthodologie discontinuités](scripts/discontinuity_methodology/00_METHODOLOGY.md)**
 
 </div>
 
 ---
 
-> **En bref.** Les données de trafic issues du GPS (*Floating Car Data*) sous-estiment systématiquement les débits réels du réseau. **MDL Redressement** les corrige automatiquement par apprentissage automatique, puis produit une **carte de débits fiable à l'échelle d'un réseau entier** — en gardant chaque étape **reproductible et auditable**, là où ce travail reste d'ordinaire artisanal. Conçue, développée et évaluée de bout en bout par une seule personne.
+> **En bref.** Les données de trafic issues du GPS (*Floating Car Data*) sous-estiment systématiquement les débits réels du réseau. **MDL Redressement** les corrige automatiquement par apprentissage automatique, puis produit une **carte de débits fiable à l'échelle d'un réseau entier** — en gardant chaque étape **reproductible et auditable**, là où ce travail reste d'ordinaire artisanal.
 >
-> **In short.** GPS-based traffic data (*Floating Car Data*) systematically underestimates real network flows. **MDL Redressement** automatically corrects it with machine learning, then produces a **reliable, network-wide flow map** — keeping every step **reproducible and auditable**, where such work is usually manual and hard to trust. Designed, built and evaluated end-to-end by a single engineer.
+> **Mesuré terrain (Saint-Étienne, 928 obs.)** : **82,5 %** des capteurs dans la tolérance métier ±15 % · **R² 0,88** (IC95 [0,84 ; 0,91]) · **GEH < 5 : 98,4 %** — chaîne déployée sur **23 territoires**.
+>
+> **In short.** GPS-based traffic data (*Floating Car Data*) systematically underestimates real network flows. **MDL Redressement** automatically corrects it with machine learning, then produces a **reliable, network-wide flow map** — keeping every step **reproducible and auditable**, where such work is usually manual and hard to trust.
+>
+> **Field-measured (Saint-Étienne, 928 obs.)**: **82.5%** of sensors within the ±15% business tolerance · **R² 0.88** (CI95 [0.84; 0.91]) · **GEH < 5: 98.4%** — deployed across **23 territories**.
 
 ---
 
@@ -62,31 +62,19 @@ S'y ajoutent l'**export Fichier Compteurs** (format standardisé) et la **visual
 
 ---
 
-## Ce que ce repo démontre
+## Sous le capot
 
-Chaque brique est implémentée et vérifiable dans le code. Le tableau ci-dessous fait le lien entre les compétences mises en œuvre et les profils auxquels elles correspondent.
+Chaque brique est implémentée et vérifiable dans le code.
 
-| Brique technique | Compétence démontrée | Type de poste |
-|---|---|---|
-| Moteur MLP quantile + pertes custom (`model_builder.py`, `losses.py`) | Conception d'architectures, fonctions de perte métier, Keras 3 | **ML Engineer** |
-| `meta.json` + seed déterministe + data lineage SHA-256 (`packaging.py`, `seeding.py`) | Traçabilité, rejouabilité, packaging d'artefacts | **MLOps** |
-| Pipeline FCD → GeoJSON + map-matching inter-millésimes (`data_prep.py`, `geo.py`, `evolution/matching.py`) | Ingestion, transformations géospatiales, projections CRS | **Data Engineer (géo)** |
-| Grid search + curriculum / hard-example mining + k-fold (`grid_search.py`, `kfold.py`, `training_pipeline.py`) | Recherche d'hyperparamètres, validation croisée | **ML Engineer** |
-| CI (lint + tests) + CD séparé (build image amd64 + push GHCR + déploiement SSH) + Docker Compose (`.github/workflows/`, `infra/`) | Conteneurisation, intégration et livraison continues | **DevOps / MLOps** |
-| Évaluation McNemar apparié + bootstrap CI95 + drift temporel (`stats_compare.py`, `metrics_advanced.py`) | Statistiques inférentielles, comparaison rigoureuse de modèles | **ML / Stats** |
-| Garde-fous d'entraînement + sécurité (IDOR, path-traversal, zip-bomb) (`training_guard.py`, `security.py`) | Durcissement applicatif, contraintes de production | **Backend / MLOps** |
-
----
-
-## Démo
-
-**[Trafic-Tool.anbri-tools-ia.online](https://Trafic-Tool.anbri-tools-ia.online)**
-
-Ce qu'on peut y tester en ligne :
-
-- Le pipeline complet d'un modèle TV ou PL : upload → mapping de colonnes → configuration du grid search → entraînement → évaluation.
-- La carte interactive des débits redressés du Grand Lyon (12-15k+ tronçons, filtres et seuils éditables en runtime).
-- L'analyse des discontinuités du réseau (conservation des flux aux nœuds, classification automatique des causes).
+| Brique technique | Ce qu'elle apporte à l'outil |
+|---|---|
+| Moteur MLP quantile + pertes custom (`model_builder.py`, `losses.py`) | Des architectures et fonctions de perte alignées sur la tolérance métier ±15 % (Keras 3) |
+| `meta.json` + seed déterministe + data lineage SHA-256 (`packaging.py`, `seeding.py`) | Traçabilité et rejouabilité exacte de chaque modèle livré |
+| Pipeline FCD → GeoJSON + map-matching inter-millésimes (`data_prep.py`, `geo.py`, `evolution/matching.py`) | Des transformations géospatiales fiables (projections CRS, appariements 1↔1) |
+| Grid search + curriculum / hard-example mining + k-fold (`grid_search.py`, `kfold.py`, `training_pipeline.py`) | Une sélection d'hyperparamètres défendable, variance mesurée |
+| CI (lint + tests) + CD séparé (build image amd64 + push GHCR + déploiement SSH) + Docker Compose (`.github/workflows/`, `infra/`) | Une livraison reproductible de l'outil |
+| Évaluation McNemar apparié + bootstrap CI95 + drift temporel (`stats_compare.py`, `metrics_advanced.py`) | Une comparaison de modèles statistiquement rigoureuse avant mise en production |
+| Garde-fous d'entraînement + sécurité (IDOR, path-traversal, zip-bomb) (`training_guard.py`, `security.py`) | Un service multi-utilisateurs qui tient en conditions réelles |
 
 ---
 
@@ -115,7 +103,7 @@ Monorepo **Turborepo** (`turbo.json`, workspaces `apps/*`) : un frontend **Next.
 
 ## Pipeline ML illustré
 
-Le cœur de la démonstration : l'enchaînement **configuration du grid search → entraînement → évaluation**, entièrement piloté depuis l'interface.
+Le cœur de l'outil : l'enchaînement **configuration du grid search → entraînement → évaluation**, entièrement piloté depuis l'interface.
 
 #### Configuration du grid search (modèle TV)
 
@@ -156,7 +144,7 @@ Trois pertes métier sont implémentées comme sous-classes `keras.losses.Loss` 
 - **`ToleranceAwareLoss(tolerance=0.15, penalty_factor=1.5)`** — MAE en espace z-score avec surpénalité (+50 %) des échantillons hors de la bande de tolérance. La docstring est honnête sur l'approximation : la tolérance est interprétée en fraction d'écart-type plutôt qu'en % relatif dénormalisé, faute d'injecter `mu_y/sigma_y` comme constantes du graphe.
 - **`HuberLoss(delta=0.25)`** — Huber avec delta resserré (vs 1.0 par défaut Keras), adapté à des résidus z-scorés vivant dans ~[0, 1].
 
-Détail qui trahit une vraie maîtrise de Keras 3 : les alias sont injectés non seulement dans `get_custom_objects()` mais aussi directement dans `keras.src.losses.ALL_OBJECTS_DICT`, car le chemin de résolution string de Keras 3 ne consulte pas le premier registre.
+Détail d'implémentation Keras 3 : les alias sont injectés non seulement dans `get_custom_objects()` mais aussi directement dans `keras.src.losses.ALL_OBJECTS_DICT`, car le chemin de résolution string de Keras 3 ne consulte pas le premier registre.
 
 ### Anti-fuite de données : normalisation train-only
 
@@ -226,7 +214,7 @@ Exemple de `meta.json` produit par `build_meta()` (valeurs tronquées, plausible
 
 ```json
 {
-  "saved_at": "2026-06-18T14:32:07.481236+00:00Z",
+  "saved_at": "2026-06-18T14:32:07.481236+00:00",
   "python_version": "3.11.9",
   "platform": "Linux-6.8.0-45-generic-x86_64-with-glibc2.39",
   "hostname": "mdl-train-01",
@@ -241,7 +229,7 @@ Exemple de `meta.json` produit par `build_meta()` (valeurs tronquées, plausible
 }
 ```
 
-### Évaluation statistique rare pour le domaine
+### Statistiques inférentielles appliquées au redressement
 
 `metrics_advanced.py` et `stats_compare.py` calculent, en pur NumPy/pandas (donc testables unitairement) :
 
@@ -264,7 +252,7 @@ Ces garde-fous vivent dans `app/` (pas dans la couche TensorFlow), donc testable
 
 Au-delà de la seed unique, plusieurs mécanismes concrets garantissent qu'un run est rejouable à l'identique et qu'une étape réexécutée ne corrompt rien :
 
-- **Re-seed déterministe par run** (`training_pipeline.py`) : avant chaque `model.fit`, le pipeline calcule `run_seed = seed + run_idx` (base-seed 1750, `run_idx` 0-based) puis appelle `seed_everything(run_seed, enable_op_determinism=False)` et `tf.keras.utils.set_random_seed(run_seed)`. Chaque candidat du grid est ainsi initialisé reproductiblement et distinctement. *(`derive_seed` dans `seeding.py` est du code mort, conservé sans être appelé par cette boucle.)*
+- **Re-seed déterministe par run** — voir [Reproductibilité bit-exact](#reproductibilité-bit-exact-seed-1750) ; la même `run_seed` est embarquée dans le `meta.json`. *(`derive_seed` dans `seeding.py` est du code mort, conservé sans être appelé par cette boucle.)*
 - **`seed_everything` multi-RNG + op-determinism** (`seeding.py:23`) : propagation à Python `random`, NumPy, TensorFlow et Keras, `PYTHONHASHSEED` fixé, et `tf.config.experimental.enable_op_determinism()` activé une seule fois en amont (idempotent).
 - **Écritures Parquet déterministes** (`session.py:83`, `_df_to_parquet_safe`) : sérialisation via `pyarrow`, casting JSON stable des cellules dict/list, **aucun fallback Pickle** — le même DataFrame produit les mêmes octets.
 - **Dérivations idempotentes** (`data_prep.py:47`, `derive_hpm_hps_columns`) : les colonnes HPM/HPS et `TxPen` ne sont (re)calculées que si absentes ; un snapshot déjà enrichi est laissé intact, donc réexécuter la préparation est sans effet de bord.
@@ -333,7 +321,7 @@ Détails prod : appels BAN par **lots de 8 000** avec **retry backoff exponentie
 Le diagnostic repose sur une reconstruction de graphe routier dirigé, puis sur la physique de conservation des flux — pas sur des seuils arbitraires :
 
 - **Graphe orienté depuis le schéma HERE** : direction déduite du suffixe `-F`/`-T` de `agregId` (`in_node = NREF_IN_ID` / `out_node = REF_IN_ID` et inversement), avec **alignement de la géométrie** sur le sens de circulation, drop des endpoints invalides et auto-boucles, dédup `agregId` (`discontinuites.py:271`). L'adjacence native HERE encode déjà la jonction physique.
-- **Conservation aux nœuds via GEH** : à chaque jonction, Σ flux entrant vs Σ flux sortant. Le **GEH** (`sqrt(2·(M−C)² / (M+C))`, statistique standard DMRB / Highways England) est calculé par nœud. Flag en **OR** (GEH > 15 **ou** déséquilibre relatif > 18 %, plancher 3 000 véh/j), les deux captant des régimes différents.
+- **Conservation aux nœuds via GEH** : à chaque jonction, Σ flux entrant vs Σ flux sortant. Le **GEH** (`sqrt(2·(M−C)² / (M+C))`, statistique standard DMRB / Highways England) est calculé par nœud. Dans l'app, flag sur l'écart absolu Σentrant/Σsortant avec seuil bimodal selon le débit max du nœud (2 000 / 4 000 véh/j, tier rouge à 2×) — `discontinuites.py:429`. L'étude méthodologique hors-app pousse plus loin avec un flag GEH > 15 OU déséquilibre relatif > 18 % (plancher 3 000 véh/j) — `scripts/discontinuity_methodology/00_METHODOLOGY.md`.
 - **Classification automatique des causes** : scoring de drivers (falaise FCD VL/PL via ratio max/min ≥ 1,5, transition de classe fonctionnelle, anomalie de distance), **cascade de cause principale** et **topologie** (Bretelle > Carrefour > Continuité). Variante **vectorisée numpy** (`_detect_drivers_from_arrays`) pour passer à l'échelle réseau sans conversion pandas par nœud.
 
 ### Rendu MapLibre performant
@@ -439,15 +427,19 @@ npm run docker:down
 │   ├── discontinuity_methodology/   # méthodologie discontinuités TVr (étude de cas)
 │   └── map_2025_light/              # optimisation du payload GeoJSON carte
 ├── infra/                    # Docker Compose, Dockerfiles, nginx.conf, Caddyfile
-├── .github/workflows/ci.yml  # lint + tests + build image (amd64) + déploiement
+├── .github/workflows/ci.yml  # CI : lint + tests (deploy.yml : build amd64 + déploiement SSH)
 ├── turbo.json                # pipeline Turborepo
 └── .env.example
 ```
 
 ---
 
+## Voir aussi
+
+La même discipline statistique (bootstrap CI95, tests appariés, reproductibilité bit-exact) est appliquée aux systèmes LLM dans [hybrid-rag-pipeline](https://github.com/anbsamsam17/hybrid-rag-pipeline), [multi-agent-orchestrator](https://github.com/anbsamsam17/multi-agent-orchestrator) et [eval-dataset-generator](https://github.com/anbsamsam17/Eval-dataset-generator) — outils que je construis et utilise ensemble.
+
+---
+
 ## Contact
 
-**Samir Anbri** — Senior Data & AI Engineer · 8 ans d'expérience
-
-[samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
+**Samir Anbri** — [samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
