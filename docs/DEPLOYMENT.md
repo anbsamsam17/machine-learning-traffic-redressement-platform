@@ -70,7 +70,7 @@ n'est publié sur l'hôte : seul Caddy expose 80/443. C'est aligné sur
 
 ### 2.4 GitHub
 
-- Dépôt `anbsamsam17/machine-learning-traffic-redressement-platform`.
+- Dépôt `AnbriSamir/machine-learning-traffic-redressement-platform`.
 - GHCR activé (packages). Le workflow utilise `secrets.GITHUB_TOKEN` avec la
   permission `packages: write` pour pousser les images.
 - Un **environnement GitHub `production`** configuré dans les settings du dépôt,
@@ -161,7 +161,7 @@ Le job `deploy` attend le dépôt dans `/opt/mdl` :
 
 ```bash
 sudo install -d -o samir -g samir /opt/mdl
-git clone https://github.com/anbsamsam17/machine-learning-traffic-redressement-platform.git /opt/mdl
+git clone https://github.com/AnbriSamir/machine-learning-traffic-redressement-platform.git /opt/mdl
 cd /opt/mdl
 ```
 
@@ -181,8 +181,8 @@ chmod 600 infra/.env.prod
 Le job `build-and-push` du CI construit deux images **multi-arch**
 `linux/amd64,linux/arm64` (QEMU + Buildx) et les pousse uniquement sur `push` vers `main` :
 
-- `ghcr.io/anbsamsam17/machine-learning-traffic-redressement-platform/api`
-- `ghcr.io/anbsamsam17/machine-learning-traffic-redressement-platform/web`
+- `ghcr.io/AnbriSamir/machine-learning-traffic-redressement-platform/api`
+- `ghcr.io/AnbriSamir/machine-learning-traffic-redressement-platform/web`
 
 Tags publiés pour chacune :
 

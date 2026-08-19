@@ -50,7 +50,7 @@ services:
       start_period: 5s
 
   api:
-    image: ghcr.io/anbsamsam17/machine-learning-traffic-redressement-platform/api:${IMAGE_TAG:-latest}
+    image: ghcr.io/AnbriSamir/machine-learning-traffic-redressement-platform/api:${IMAGE_TAG:-latest}
     pull_policy: always
     restart: unless-stopped
     environment:
@@ -92,7 +92,7 @@ services:
       start_period: 60s
 
   web:
-    image: ghcr.io/anbsamsam17/machine-learning-traffic-redressement-platform/web:${IMAGE_TAG:-latest}
+    image: ghcr.io/AnbriSamir/machine-learning-traffic-redressement-platform/web:${IMAGE_TAG:-latest}
     pull_policy: always
     restart: unless-stopped
     environment:

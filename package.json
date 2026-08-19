@@ -6,7 +6,7 @@
   "homepage": "https://Trafic-Tool.anbri-tools-ia.online",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anbsamsam17/machine-learning-traffic-redressement-platform.git"
+    "url": "git+https://github.com/AnbriSamir/machine-learning-traffic-redressement-platform.git"
   },
   "workspaces": ["apps/*"],
   "scripts": {

@@ -12,7 +12,7 @@
 [![TensorFlow](https://img.shields.io/badge/TensorFlow%2FKeras-CPU-FF6F00?logo=tensorflow&logoColor=white)](https://www.tensorflow.org)
 [![Turborepo](https://img.shields.io/badge/Turborepo-EF4444?logo=turborepo&logoColor=white)](https://turbo.build)
 [![Docker](https://img.shields.io/badge/Docker-amd64-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
-[![CI](https://img.shields.io/github/actions/workflow/status/anbsamsam17/machine-learning-traffic-redressement-platform/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/anbsamsam17/machine-learning-traffic-redressement-platform/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/AnbriSamir/machine-learning-traffic-redressement-platform/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/AnbriSamir/machine-learning-traffic-redressement-platform/actions)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 
 **[Méthodologie discontinuités](scripts/discontinuity_methodology/00_METHODOLOGY.md)**
@@ -436,10 +436,10 @@ npm run docker:down
 
 ## Voir aussi
 
-La même discipline statistique (bootstrap CI95, tests appariés, reproductibilité bit-exact) est appliquée aux systèmes LLM dans [hybrid-rag-pipeline](https://github.com/anbsamsam17/hybrid-rag-pipeline), [multi-agent-orchestrator](https://github.com/anbsamsam17/multi-agent-orchestrator) et [eval-dataset-generator](https://github.com/anbsamsam17/Eval-dataset-generator) — outils que je construis et utilise ensemble.
+La même discipline statistique (bootstrap CI95, tests appariés, reproductibilité bit-exact) est appliquée aux systèmes LLM dans [hybrid-rag-pipeline](https://github.com/AnbriSamir/hybrid-rag-pipeline), [multi-agent-orchestrator](https://github.com/AnbriSamir/multi-agent-orchestrator) et [eval-dataset-generator](https://github.com/AnbriSamir/Eval-dataset-generator) — outils que je construis et utilise ensemble.
 
 ---
 
 ## Contact
 
-**Samir Anbri** — [samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @anbsamsam17](https://github.com/anbsamsam17)
+**Samir Anbri** — [samir.anbri@gmail.com](mailto:samir.anbri@gmail.com) · [LinkedIn](https://www.linkedin.com/in/samir-anbri/) · [GitHub @AnbriSamir](https://github.com/AnbriSamir)
